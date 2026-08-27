@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useRef } from "react";
 import {
   LayoutGrid, Ship, Wrench, Package, Wallet, Calculator,
-  Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle,
-  Download, Upload, FileText, LogOut, Lock, User, X, Settings
+  Plus, Trash2, ChevronDown, ChevronUp, ChevronRight, AlertTriangle,
+  Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
@@ -389,6 +389,16 @@ const STATUS_PAGAMENTO_OPTIONS = [
   "Aguardando Orçamento", "Aguardando Suprimentos", "Aguardando Medição", "Aprovação Pendente",
   "Aguardando NF", "Pagamento Programado", "Pago", "Cancelado",
 ];
+const STATUS_PAGAMENTO_COLOR = {
+  "Aguardando Orçamento": "#8D9BB5",
+  "Aguardando Suprimentos": "#F2C94C",
+  "Aguardando Medição": "#3FC1C9",
+  "Aprovação Pendente": "#F2685B",
+  "Aguardando NF": "#F2A93B",
+  "Pagamento Programado": "#9B8CF2",
+  "Pago": "#35D399",
+  "Cancelado": "#5D6E8C",
+};
 const INV_COLS = [
   ["id", "ID"], ["date", "Data"], ["assunto", "Manutenção"], ["empresa", "Empresa"], ["md", "MD"],
   ["mdSentDate", "Data de Envio da MD"], ["diffDays", "Diferença de Dias"], ["daysOpenTotal", "Dias em Aberto Total"],
@@ -459,8 +469,8 @@ const EDateTime = ({ value, onChange }) => (
   <input type="datetime-local" className="g-edit mono" value={value || ""}
     onChange={(e) => onChange(e.target.value)} />
 );
-const ESelect = ({ value, onChange, options }) => (
-  <select className="g-edit" value={value} onChange={(e) => onChange(e.target.value)}>
+const ESelect = ({ value, onChange, options, style }) => (
+  <select className="g-edit" style={style} value={value} onChange={(e) => onChange(e.target.value)}>
     {options.map((o) => <option key={o} value={o}>{o}</option>)}
   </select>
 );
@@ -474,6 +484,115 @@ const SituationPill = ({ situation }) => (
     <span className="g-dot" style={{ background: situationColor[situation] }} />{situation}
   </span>
 );
+
+/* dropdown de Status de Pagamento com destaque de cor forte, para chamar atenção nas tabelas */
+const StatusPagamentoSelect = ({ value, onChange }) => {
+  const color = STATUS_PAGAMENTO_COLOR[value] || "var(--warn)";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        width: "100%", minWidth: 190, fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+        color, background: `${color}20`, border: `1.5px solid ${color}`, borderRadius: 5,
+        padding: "6px 8px", fontFamily: "var(--sans)",
+      }}
+    >
+      {STATUS_PAGAMENTO_OPTIONS.map((o) => <option key={o} value={o} style={{ color: "#000" }}>{o}</option>)}
+    </select>
+  );
+};
+
+/* mesma ideia, para o vocabulário de status usado no Dashboard de Valores (PAY_STATUS) */
+const PAY_STATUS_COLOR = {
+  "Orçamento": "#8D9BB5",
+  "Aprovado": "#3FC1C9",
+  "PO emitida": "#F2C94C",
+  "Serviço executado": "#F2A93B",
+  "Medição aprovada": "#3FC1C9",
+  "NF recebida": "#F2C94C",
+  "NF validada": "#9B8CF2",
+  "Pagamento programado": "#9B8CF2",
+  "Pago": "#35D399",
+};
+const PayStatusSelect = ({ value, onChange }) => {
+  const color = PAY_STATUS_COLOR[value] || "var(--warn)";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        width: "100%", minWidth: 190, fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+        color, background: `${color}20`, border: `1.5px solid ${color}`, borderRadius: 5,
+        padding: "6px 8px", fontFamily: "var(--sans)",
+      }}
+    >
+      {PAY_STATUS.map((o) => <option key={o} value={o} style={{ color: "#000" }}>{o}</option>)}
+    </select>
+  );
+};
+
+/* ---------- ordenação de tabela ao clicar no cabeçalho ---------- */
+const compareRows = (a, b, key, dir) => {
+  let av = a[key], bv = b[key];
+  const an = parseFloat(av), bn = parseFloat(bv);
+  const numeric = av !== "" && av !== null && av !== undefined && bv !== "" && bv !== null && bv !== undefined && !isNaN(an) && !isNaN(bn);
+  if (numeric) return (an - bn) * dir;
+  av = (av ?? "").toString().toLowerCase();
+  bv = (bv ?? "").toString().toLowerCase();
+  if (av < bv) return -dir;
+  if (av > bv) return dir;
+  return 0;
+};
+const sortRows = (rows, sort) => (sort.key ? [...rows].sort((a, b) => compareRows(a, b, sort.key, sort.dir)) : rows);
+const SortTh = ({ children, sortKey, sort, setSort, style }) => {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      style={{ cursor: "pointer", userSelect: "none", ...style }}
+      onClick={() => setSort((s) => (s.key === sortKey ? { key: sortKey, dir: -s.dir } : { key: sortKey, dir: 1 }))}
+      title="Clique para ordenar"
+    >
+      <span className="g-flex" style={{ gap: 4 }}>
+        {children}
+        <span style={{ fontSize: 9, opacity: active ? 1 : 0.3, color: active ? "var(--accent)" : undefined }}>
+          {active && sort.dir === -1 ? "▼" : "▲"}
+        </span>
+      </span>
+    </th>
+  );
+};
+
+/* cabeçalho de tabela clicável para ordenar — usado nas 3 tabelas da aba Pagamentos */
+const SortableTh = ({ label, sortKey, sort, setSort, style }) => {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      style={{ ...style, cursor: "pointer", userSelect: "none" }}
+      onClick={() => setSort((s) => (s.key === sortKey ? { key: sortKey, dir: -s.dir } : { key: sortKey, dir: 1 }))}
+    >
+      <span className="g-flex" style={{ gap: 3 }}>
+        {label}
+        {active
+          ? (sort.dir === 1 ? <ChevronUp size={11} /> : <ChevronDown size={11} />)
+          : <ChevronDown size={11} style={{ opacity: 0.25 }} />}
+      </span>
+    </th>
+  );
+};
+
+/* aplica a ordenação corrente a uma lista, usando getters opcionais para colunas calculadas */
+function applySort(rows, sort, getters = {}) {
+  if (!sort.key) return rows;
+  const getVal = getters[sort.key] || ((r) => r[sort.key]);
+  return [...rows].sort((a, b) => {
+    let av = getVal(a), bv = getVal(b);
+    if (av === null || av === undefined) av = "";
+    if (bv === null || bv === undefined) bv = "";
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * sort.dir;
+    return String(av).localeCompare(String(bv), "pt-BR", { numeric: true }) * sort.dir;
+  });
+}
 
 /* ============================================================
    LOGIN SCREEN (client-side demo gate — no real backend/security)
@@ -518,11 +637,43 @@ function LoginScreen({ users, onLogin }) {
 }
 
 /* ============================================================
-   INITIAL / SEED DATA — used only the very first time the shared
-   backend has no saved state yet. After that, everything below
-   is loaded from and saved back to the server (see Root()).
+   ROOT — auth gate with multiple accounts
    ============================================================ */
-const INITIAL_WORK_PACKAGES = [
+export default function Root() {
+  const [users, setUsers] = useState(DEFAULT_USERS);
+  const [currentUser, setCurrentUser] = useState(null);
+  if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
+  return (
+    <Genesis
+      currentUser={currentUser}
+      onLogout={() => setCurrentUser(null)}
+      users={users} setUsers={setUsers}
+    />
+  );
+}
+
+/* ============================================================
+   MAIN APP
+   ============================================================ */
+function Genesis({ currentUser, onLogout, users, setUsers }) {
+  const [tab, setTab] = useState("dashboard");
+  const [expandedWp, setExpandedWp] = useState(null);
+  const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
+  const [importMsg, setImportMsg] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const [exchangeRate, setExchangeRate] = useState(5.30); // USD -> BRL, editável
+
+  /* global period filter — present on every page */
+  const [period, setPeriod] = useState({
+    mode: "mes", // "mes" | "periodo" | "ano"
+    month: 8,
+    year: 2026,
+    start: "2026-08-25",
+    end: "2026-09-10",
+  });
+
+      const [workPackages, setWorkPackages] = useState([
     { id: "MAN-2026-001", name: "Alinhamento do Eixo do Compressor", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/01", empresa: "Norpem", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-002", name: "Detectores de Gases para Manutenção", discipline: "Hse", group: "Segurança", portCall: "Port Call 23/01", empresa: "Casa Offshore", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-003", name: "Manutenção do Motor do Bote", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/01", empresa: "Sea Services", md: "Sim", rc: "10303580", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
@@ -690,22 +841,27 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-165", name: "Certificação dos Olhais da Praça de Máquinas", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432162", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
     { id: "MAN-2026-166", name: "Substituição da Gate Valve do Sistema HiPAP", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432169", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
     { id: "MAN-2026-167", name: "Reparo do Detector Multigás Modelo 4X", discipline: "Marine", group: "Bridge", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432170", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-];
-const INITIAL_MATERIALS = [
+  ]);
+
+  
+  const [materials, setMaterials] = useState([
     { id: "MAT-0084", wp: "", tmMaster: "TM-04521", departamento: "Manutenção", sap: "10098231", descricao: "Seal Kit - Bow Thruster", quantidade: 2, priority: "Crítica", dataSolicitacao: "2026-08-18", dataNecessidade: "2026-09-05", reserva: "RES-3321", rc: "10410632", po: "4600012345", linhaPo: "10", valor: 18500, eta: "2026-09-03", obs: "", dataRecebimento: "", status: "Em trânsito" },
     { id: "MAT-0085", wp: "", tmMaster: "TM-04521", departamento: "Manutenção", sap: "10098232", descricao: "O-Ring Set", quantidade: 6, priority: "Alta", dataSolicitacao: "2026-08-19", dataNecessidade: "2026-09-05", reserva: "RES-3322", rc: "10410633", po: "", linhaPo: "", valor: 2400, eta: "", obs: "Aguardando cotação", dataRecebimento: "", status: "Cotação" },
     { id: "MAT-0090", wp: "", tmMaster: "TM-05011", departamento: "Elétrica", sap: "10098240", descricao: "Bobina Estator", quantidade: 1, priority: "Crítica", dataSolicitacao: "2026-08-15", dataNecessidade: "2026-09-08", reserva: "RES-3340", rc: "10410650", po: "4600012390", linhaPo: "20", valor: 41200, eta: "2026-09-06", obs: "", dataRecebimento: "", status: "Em fabricação" },
     { id: "MAT-0091", wp: "", tmMaster: "TM-05011", departamento: "Elétrica", sap: "10098241", descricao: "Placa AVR", quantidade: 3, priority: "Média", dataSolicitacao: "2026-08-10", dataNecessidade: "2026-08-30", reserva: "RES-3341", rc: "10410651", po: "4600012391", linhaPo: "10", valor: 6800, eta: "2026-08-28", obs: "", dataRecebimento: "2026-08-27", status: "Recebido" },
     { id: "MAT-0092", wp: "", tmMaster: "TM-06120", departamento: "Mecânica", sap: "10098255", descricao: "Rotor Kit", quantidade: 1, priority: "Alta", dataSolicitacao: "2026-08-21", dataNecessidade: "2026-09-01", reserva: "RES-3355", rc: "10410670", po: "4600012410", linhaPo: "10", valor: 27300, eta: "", obs: "Fornecedor confirmou pedido", dataRecebimento: "", status: "PO emitida" },
-];
-const INITIAL_PAYMENTS = [
+  ]);
+
+  const [payments, setPayments] = useState([
     { id: "PAY-001", service: "Manutenção de Defensas", po: "450001245", poValue: 132000, nf: "9847", nfValue: 130800, issue: "2026-08-30", due: "2026-09-29", status: "Pagamento programado" },
     { id: "PAY-002", service: "Overhaul Bow Thruster #2", po: "450001300", poValue: 270000, nf: "5521", nfValue: 270000, issue: "2026-09-05", due: "2026-10-05", status: "NF validada" },
     { id: "PAY-003", service: "AVR Upgrade", po: "450001350", poValue: 190000, nf: "", nfValue: 0, issue: "", due: "", status: "Serviço executado" },
     { id: "PAY-004", service: "Overhaul SW Pump", po: "450001410", poValue: 165000, nf: "771", nfValue: 165000, issue: "2026-09-04", due: "2026-10-04", status: "Pago" },
     { id: "PAY-005", service: "Overhaul Motor Elétrico Thruster #4", po: "450001420", poValue: 420000, nf: "", nfValue: 0, issue: "", due: "", status: "PO emitida" },
-];
-const INITIAL_SERVICE_INVOICES = [
+  ]);
+
+  /* status de pagamento por serviço — importado da planilha "Pagamento Pendente (Serviços)" */
+  const [serviceInvoices, setServiceInvoices] = useState([
     { id: "INV-001", date: "2026-04-07", assunto: "Reparo da Rede - DG2", empresa: "Attech", md: "Sim", mdSentDate: "2026-04-07", diffDays: 0, daysOpenTotal: 121, rc: "10368488", serviceStatus: "Fechado", poContrato: "4500161492/4292564", medicao: "4306119", valorTotal: 94518.9, saldoPo: 0.0, obs: "Pagamento Programado para 06/08", statusPagamento: "Pago", dataPagamento: "2026-08-06" },
     { id: "INV-002", date: "2026-05-26", assunto: "Troca de Rede - DG2", empresa: "Attech", md: "Sim", mdSentDate: "2026-05-20", diffDays: 6, daysOpenTotal: 78, rc: "10378377", serviceStatus: "Fechado", poContrato: "4300387", medicao: "4306029", valorTotal: 80995.0, saldoPo: 0.0, obs: "Pagamento Programado para 06/08", statusPagamento: "Pago", dataPagamento: "2026-08-06" },
     { id: "INV-003", date: "2026-06-23", assunto: "Adequação da bomba do ROV", empresa: "Attech", md: "Sim", mdSentDate: "2026-06-02", diffDays: 21, daysOpenTotal: 85, rc: "10368489", serviceStatus: "Fechado", poContrato: "4324509", medicao: "4340561", valorTotal: 152083.58, saldoPo: 0.0, obs: "Medição 4323106 excluída. Aguardando aprovação do Alexandre Rosa", statusPagamento: "Aprovação Pendente", dataPagamento: "" },
@@ -778,127 +934,7 @@ const INITIAL_SERVICE_INVOICES = [
     { id: "INV-070", date: "", assunto: "Certificação dos Olhais da Praça de Máquinas", empresa: "", md: "Sim", mdSentDate: "2026-07-27", diffDays: -46230, daysOpenTotal: 30, rc: "10432162", serviceStatus: "Aberto", poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0, obs: "Status no Portal: Em Agendamento", statusPagamento: "Aguardando Suprimentos", dataPagamento: "" },
     { id: "INV-071", date: "", assunto: "Substituição da Gate Valve do Sistema HiPAP", empresa: "", md: "Sim", mdSentDate: "2026-07-27", diffDays: -46230, daysOpenTotal: 30, rc: "10432169", serviceStatus: "Aberto", poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0, obs: "Status no Portal: Aguardando Proposta", statusPagamento: "Aguardando Suprimentos", dataPagamento: "" },
     { id: "INV-072", date: "", assunto: "Reparo do Detector Multigás Modelo 4X", empresa: "", md: "Sim", mdSentDate: "2026-07-27", diffDays: -46230, daysOpenTotal: 30, rc: "10432170", serviceStatus: "Aberto", poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0, obs: "Status no Portal: Em Agendamento", statusPagamento: "Aguardando Suprimentos", dataPagamento: "" },
-];
-const INITIAL_PORT_CALL_META = {};
-const INITIAL_OP_CATEGORIES = [
-  "Manobras", "Troca de Turma", "Visitantes", "Manutenção", "Inspeção", "Base Açu", "Load", "Backload",
-];
-const INITIAL_EXCHANGE_RATE = 5.30;
-
-/* ============================================================
-   ROOT — auth gate + shared persisted state (loaded from and
-   saved to the backend, so everyone sees the same live data)
-   ============================================================ */
-export default function Root() {
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-
-  const [users, setUsers] = useState(DEFAULT_USERS);
-  const [currentUser, setCurrentUser] = useState(null);
-
-  const [workPackages, setWorkPackages] = useState(INITIAL_WORK_PACKAGES);
-  const [materials, setMaterials] = useState(INITIAL_MATERIALS);
-  const [payments, setPayments] = useState(INITIAL_PAYMENTS);
-  const [serviceInvoices, setServiceInvoices] = useState(INITIAL_SERVICE_INVOICES);
-  const [portCallMeta, setPortCallMeta] = useState(INITIAL_PORT_CALL_META);
-  const [opCategories, setOpCategories] = useState(INITIAL_OP_CATEGORIES);
-  const [exchangeRate, setExchangeRate] = useState(INITIAL_EXCHANGE_RATE);
-
-  /* carrega o estado salvo assim que o site abre */
-  React.useEffect(() => {
-    fetch("/api/state")
-      .then((r) => r.json())
-      .then((res) => {
-        const d = res && res.data;
-        if (d) {
-          if (d.users) setUsers(d.users);
-          if (d.workPackages) setWorkPackages(d.workPackages);
-          if (d.materials) setMaterials(d.materials);
-          if (d.payments) setPayments(d.payments);
-          if (d.serviceInvoices) setServiceInvoices(d.serviceInvoices);
-          if (d.portCallMeta) setPortCallMeta(d.portCallMeta);
-          if (d.opCategories) setOpCategories(d.opCategories);
-          if (typeof d.exchangeRate === "number") setExchangeRate(d.exchangeRate);
-        }
-        setLoaded(true);
-      })
-      .catch(() => { setLoadError("Não foi possível conectar ao servidor — trabalhando localmente por enquanto."); setLoaded(true); });
-  }, []);
-
-  /* salva no servidor (com um pequeno atraso) toda vez que algo muda, para todo mundo ver */
-  React.useEffect(() => {
-    if (!loaded) return;
-    const t = setTimeout(() => {
-      fetch("/api/state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate },
-        }),
-      }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
-    }, 700);
-    return () => clearTimeout(t);
-  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate]);
-
-  if (!loaded) {
-    return (
-      <div className="genesis g-login-wrap"><Theme />
-        <div style={{ color: "var(--text-dim)", fontFamily: "var(--mono)", fontSize: 13 }}>Carregando dados…</div>
-      </div>
-    );
-  }
-
-  if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
-
-  return (
-    <Genesis
-      currentUser={currentUser}
-      onLogout={() => setCurrentUser(null)}
-      users={users} setUsers={setUsers}
-      workPackages={workPackages} setWorkPackages={setWorkPackages}
-      materials={materials} setMaterials={setMaterials}
-      payments={payments} setPayments={setPayments}
-      serviceInvoices={serviceInvoices} setServiceInvoices={setServiceInvoices}
-      portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta}
-      opCategories={opCategories} setOpCategories={setOpCategories}
-      exchangeRate={exchangeRate} setExchangeRate={setExchangeRate}
-      loadError={loadError}
-    />
-  );
-}
-
-/* ============================================================
-   MAIN APP
-   ============================================================ */
-function Genesis({ currentUser, onLogout, users, setUsers,
-  workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
-  serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
-  opCategories, setOpCategories, exchangeRate, setExchangeRate, loadError }) {
-  const [tab, setTab] = useState("dashboard");
-  const [expandedWp, setExpandedWp] = useState(null);
-  const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
-  const [importMsg, setImportMsg] = useState(null);
-  const fileInputRef = useRef(null);
-
-
-  /* global period filter — present on every page */
-  const [period, setPeriod] = useState({
-    mode: "mes", // "mes" | "periodo" | "ano"
-    month: 8,
-    year: 2026,
-    start: "2026-08-25",
-    end: "2026-09-10",
-  });
-
-  /* workPackages vem de props (compartilhado via backend) */
-
-  
-  /* materials vem de props (compartilhado via backend) */
-
-  /* payments vem de props (compartilhado via backend) */
-
-  /* status de pagamento por serviço — importado da planilha "Pagamento Pendente (Serviços)" */
-  /* serviceInvoices vem de props (compartilhado via backend) */
+  ]);
 
   /* ---------- generic row update/add/remove ---------- */
   const upd = (setter) => (idx, field, value) =>
@@ -939,7 +975,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
   /* metadados extras de cada Port Call (duração em dias e local) — permite cadastrar um Port Call
      antes mesmo de ter atividades vinculadas a ele */
-  /* portCallMeta veio de props (compartilhado via backend) */
+  const [portCallMeta, setPortCallMeta] = useState({});
   const addPortCallRecord = (dateKey, duration, local) => {
     setPortCallMeta((m) => ({ ...m, [dateKey]: { duration: Number(duration) || 24, local: local || "" } }));
   };
@@ -986,6 +1022,9 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   }]);
 
   /* categorias operacionais do cronograma — globais, editáveis (renomear/adicionar/remover) */
+  const [opCategories, setOpCategories] = useState([
+    "Manobras", "Troca de Turma", "Visitantes", "Manutenção", "Inspeção", "Base Açu", "Load", "Backload",
+  ]);
   const catOf = (w) => w.ganttCategory || "Manutenção";
   const addOpCategory = () => {
     let name = "Nova categoria";
@@ -1261,7 +1300,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         {onLogout && <div className="g-logout" onClick={onLogout}><LogOut size={14} />Sair</div>}
       </div>
 
-      {/* Global period filter — present on every page */}
+      {/* Global period filter — presente em todas as páginas, exceto Pagamentos (que tem seu próprio filtro por período) */}
+      {tab !== "payments" && (
       <div className="g-filterbar">
         <div className="g-field">
           <label>Port Call</label>
@@ -1323,6 +1363,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         <div className="g-filter-spacer" />
         <div className="g-filter-summary">{fmtPeriodDate(effectiveRange.start)} → {fmtPeriodDate(effectiveRange.end)}</div>
       </div>
+      )}
 
       <div className="g-pageactions">
         <div>
@@ -1336,8 +1377,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           <button className="g-btn" onClick={handleExportReport} title="Exportar relatório (HTML, imprimível como PDF)"><FileText size={14} />Exportar relatório</button>
           {tab === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
           {tab === "materials" && <button className="g-btn primary" onClick={addMat}><Plus size={14} />Nova requisição</button>}
-          {tab === "payments" && paySubTab === "dashboard" && <button className="g-btn primary" onClick={addPay}><Plus size={14} />Novo pagamento</button>}
-          {tab === "payments" && (paySubTab === "status" || paySubTab === "total") && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
+          {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
         </div>
       </div>
 
@@ -1376,8 +1416,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         {tab === "payments" && (
           <PaymentsSection
             paySubTab={paySubTab} setPaySubTab={setPaySubTab}
-            payments={payments} updPay={updPay} remPay={remPay}
-            serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv}
+            serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} addInv={addInv}
           />
         )}
 
@@ -1966,11 +2005,11 @@ function MultiSelectStatus({ options, selected, onChange }) {
   );
 }
 
-const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "" };
+const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
-function PaymentsSection({ paySubTab, setPaySubTab, payments, updPay, remPay, serviceInvoices, updInv, remInv }) {
+function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv }) {
   const [f, setF] = useState(emptyPayFilter);
-  const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa;
+  const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
   return (
     <>
@@ -2003,6 +2042,14 @@ function PaymentsSection({ paySubTab, setPaySubTab, payments, updPay, remPay, se
           <input type="text" value={f.empresa} onChange={(e) => setF((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
         </div>
         <div className="g-field">
+          <label>Período — de</label>
+          <input type="date" value={f.dataInicio} onChange={(e) => setF((p) => ({ ...p, dataInicio: e.target.value }))} />
+        </div>
+        <div className="g-field">
+          <label>Período — até</label>
+          <input type="date" value={f.dataFim} onChange={(e) => setF((p) => ({ ...p, dataFim: e.target.value }))} />
+        </div>
+        <div className="g-field">
           <label>&nbsp;</label>
           <button className="g-btn" onClick={() => setF(emptyPayFilter)} disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
@@ -2012,13 +2059,14 @@ function PaymentsSection({ paySubTab, setPaySubTab, payments, updPay, remPay, se
 
       {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} />}
       {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} />}
-      {paySubTab === "dashboard" && <PaymentsView payments={payments} updPay={updPay} remPay={remPay} f={f} />}
+      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} />}
     </>
   );
 }
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
 function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
+  const [sort, setSort] = useState({ key: null, dir: 1 });
   const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
   const execToPayDays = (r) => {
     if (!r.date) return null;
@@ -2037,9 +2085,12 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
       (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.rc || norm(r.rc).includes(norm(f.rc))) &&
-      (!f.empresa || norm(r.empresa).includes(norm(f.empresa)))
+      (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
+      (!f.dataInicio || !r.date || r.date >= f.dataInicio) &&
+      (!f.dataFim || !r.date || r.date <= f.dataFim)
     );
   }, [serviceInvoices, f]);
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
   const execPayVals = filtered.map(execToPayDays).filter((v) => v !== null);
@@ -2049,35 +2100,27 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
   const valorTotalSum = filtered.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
   const saldoPoSum = filtered.reduce((s, r) => s + Number(r.saldoPo || 0), 0);
 
+  const bigKpi = (label, value, color, Icon) => (
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
+      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
+        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+      </div>
+      <div className="g-kpi-value" style={{ fontSize: 24, color }}>{value}</div>
+    </div>
+  );
+
   return (
     <>
       <div className="g-kpi-row">
-        <div className="g-kpi" style={{ "--kpi-accent": "var(--teal)" }}>
-          <div className="g-kpi-label">Registros</div>
-          <div className="g-kpi-value">{filtered.length}</div>
-        </div>
-        <div className="g-kpi" style={{ "--kpi-accent": "var(--ok)" }}>
-          <div className="g-kpi-label">Valor Total</div>
-          <div className="g-kpi-value small">{fmt(valorTotalSum)}</div>
-        </div>
-        <div className="g-kpi" style={{ "--kpi-accent": "var(--warn)" }}>
-          <div className="g-kpi-label">Saldo PO</div>
-          <div className="g-kpi-value small">{fmt(saldoPoSum)}</div>
-        </div>
+        {bigKpi("Registros", filtered.length, "var(--teal)", LayoutGrid)}
+        {bigKpi("Valor Total", fmt(valorTotalSum), "var(--ok)", Wallet)}
+        {bigKpi("Saldo PO", fmt(saldoPoSum), "var(--warn)", AlertTriangle)}
       </div>
       <div className="g-kpi-row">
-        <div className="g-kpi" style={{ "--kpi-accent": "var(--teal)" }}>
-          <div className="g-kpi-label">Média Execução → Pagamento</div>
-          <div className="g-kpi-value small">{avg(execPayVals).toFixed(1)} dias</div>
-        </div>
-        <div className="g-kpi" style={{ "--kpi-accent": "var(--teal)" }}>
-          <div className="g-kpi-label">Média MD → Execução</div>
-          <div className="g-kpi-value small">{avg(mdExecVals).toFixed(1)} dias</div>
-        </div>
-        <div className="g-kpi" style={{ "--kpi-accent": "var(--crit)" }}>
-          <div className="g-kpi-label">Total de Dias em Aberto</div>
-          <div className="g-kpi-value small">{totalDiasAberto} dias</div>
-        </div>
+        {bigKpi("Média Execução → Pagamento", `${avg(execPayVals).toFixed(1)} dias`, "var(--teal)")}
+        {bigKpi("Média MD → Execução", `${avg(mdExecVals).toFixed(1)} dias`, "var(--teal)")}
+        {bigKpi("Total de Dias em Aberto", `${totalDiasAberto} dias`, "var(--crit)", AlertTriangle)}
       </div>
 
       <div className="g-panel">
@@ -2085,14 +2128,27 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
         <table className="g-table">
           <thead>
             <tr>
-              <th>Data</th><th style={{ minWidth: 260 }}>Manutenção</th><th>Empresa</th><th>MD</th><th>Envio MD</th>
-              <th>MD→Exec (d)</th><th>Dias Aberto Total</th><th>RC</th><th>Status Serviço</th>
-              <th>PO/Contrato</th><th>Medição</th><th>Valor Total</th><th>Saldo PO</th>
-              <th style={{ minWidth: 240 }}>Observações</th><th>Status Pagamento</th><th>Data Pagamento</th><th>Exec→Pgto (d)</th><th></th>
+              <SortTh sortKey="date" sort={sort} setSort={setSort}>Data</SortTh>
+              <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 260 }}>Manutenção</SortTh>
+              <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
+              <SortTh sortKey="md" sort={sort} setSort={setSort}>MD</SortTh>
+              <SortTh sortKey="mdSentDate" sort={sort} setSort={setSort}>Envio MD</SortTh>
+              <th>MD→Exec (d)</th>
+              <SortTh sortKey="daysOpenTotal" sort={sort} setSort={setSort}>Dias Aberto Total</SortTh>
+              <SortTh sortKey="rc" sort={sort} setSort={setSort}>RC</SortTh>
+              <SortTh sortKey="serviceStatus" sort={sort} setSort={setSort}>Status Serviço</SortTh>
+              <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO/Contrato</SortTh>
+              <SortTh sortKey="medicao" sort={sort} setSort={setSort}>Medição</SortTh>
+              <SortTh sortKey="valorTotal" sort={sort} setSort={setSort}>Valor Total</SortTh>
+              <SortTh sortKey="saldoPo" sort={sort} setSort={setSort}>Saldo PO</SortTh>
+              <th style={{ minWidth: 240 }}>Observações</th>
+              <SortTh sortKey="statusPagamento" sort={sort} setSort={setSort} style={{ minWidth: 210 }}>Status Pagamento</SortTh>
+              <SortTh sortKey="dataPagamento" sort={sort} setSort={setSort}>Data Pagamento</SortTh>
+              <th>Exec→Pgto (d)</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => {
+            {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
                 <tr className="g-row" key={r.id}>
@@ -2112,7 +2168,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
                   <td><ENum value={r.valorTotal} onChange={(v) => updInv(i, "valorTotal", v)} /></td>
                   <td><ENum value={r.saldoPo} onChange={(v) => updInv(i, "saldoPo", v)} /></td>
                   <td style={{ minWidth: 240, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.obs} onChange={(v) => updInv(i, "obs", v)} /></td>
-                  <td><ESelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} options={STATUS_PAGAMENTO_OPTIONS} /></td>
+                  <td style={{ minWidth: 210 }}><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
                   <td><EDate value={r.dataPagamento} onChange={(v) => updInv(i, "dataPagamento", v)} /></td>
                   <td style={{ fontFamily: "var(--mono)", textAlign: "right" }}>{execToPayDays(r) ?? "—"}</td>
                   <td><span className="g-btn ghost danger" onClick={() => remInv(i)}><Trash2 size={13} /></span></td>
@@ -2130,13 +2186,9 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
 function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
+  const [sort, setSort] = useState({ key: null, dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
-  const statusColorMap = {
-    "Aguardando Medição": "var(--teal)",
-    "Aguardando Suprimentos": "var(--warn)",
-    "Aprovação Pendente": "var(--crit)",
-    "Aguardando NF": "var(--accent)",
-  };
+  const statusColorMap = STATUS_PAGAMENTO_COLOR;
   const countOf = (s) => serviceInvoices.filter((r) => r.statusPagamento === s).length;
   const toggleStatus = (s) => setF((p) => ({
     ...p, statuses: p.statuses.includes(s) ? p.statuses.filter((x) => x !== s) : [...p.statuses, s],
@@ -2149,9 +2201,12 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
       (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.rc || norm(r.rc).includes(norm(f.rc))) &&
-      (!f.empresa || norm(r.empresa).includes(norm(f.empresa)))
+      (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
+      (!f.dataInicio || !r.date || r.date >= f.dataInicio) &&
+      (!f.dataFim || !r.date || r.date <= f.dataFim)
     );
   }, [serviceInvoices, f]);
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   return (
     <>
@@ -2183,12 +2238,17 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
         <table className="g-table">
           <thead>
             <tr>
-              <th style={{ minWidth: 260 }}>Manutenção</th><th>Empresa</th><th>PO/Contrato</th><th>Medição</th>
-              <th style={{ minWidth: 56 }}>Dias<br/>Aberto</th><th>Status Pagamento</th><th></th>
+              <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 260 }}>Manutenção</SortTh>
+              <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
+              <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO/Contrato</SortTh>
+              <SortTh sortKey="medicao" sort={sort} setSort={setSort}>Medição</SortTh>
+              <SortTh sortKey="daysOpenTotal" sort={sort} setSort={setSort} style={{ minWidth: 64 }}>Dias<br />Aberto</SortTh>
+              <SortTh sortKey="statusPagamento" sort={sort} setSort={setSort} style={{ minWidth: 210 }}>Status Pagamento</SortTh>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => {
+            {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               const color = statusColorMap[r.statusPagamento];
               const days = Number(r.daysOpenTotal || 0);
@@ -2206,12 +2266,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
                       <span style={{ fontSize: 9, fontFamily: "var(--mono)", color: daysColor, fontWeight: 700 }}>d</span>
                     </div>
                   </td>
-                  <td>
-                    <div className="g-flex" style={{ gap: 6 }}>
-                      {color && <span className="g-dot" style={{ background: color, flexShrink: 0 }} />}
-                      <ESelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} options={STATUS_PAGAMENTO_OPTIONS} />
-                    </div>
-                  </td>
+                  <td style={{ minWidth: 210 }}><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
                   <td><span className="g-btn ghost danger" onClick={() => remInv(i)}><Trash2 size={13} /></span></td>
                 </tr>
               );
@@ -2225,35 +2280,62 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
   );
 }
 
-function PaymentsView({ payments, updPay, remPay, f }) {
-  const [filter, setFilter] = useState("Todos");
-  const pagos = payments.filter((p) => paymentSituation(p) === "Pago");
-  const pendentes = payments.filter((p) => paymentSituation(p) === "Pendente");
-  const atrasados = payments.filter((p) => paymentSituation(p) === "Atrasado");
-  const sum = (arr) => arr.reduce((s, p) => s + (p.nfValue || p.poValue), 0);
+/* situação derivada do status de pagamento, no mesmo padrão Pago/Pendente/Atrasado usado no resto do sistema */
+const invoiceSituation = (r) => {
+  if (r.statusPagamento === "Pago") return "Pago";
+  if (r.statusPagamento === "Cancelado") return "Cancelado";
+  return Number(r.daysOpenTotal || 0) > 60 ? "Atrasado" : "Pendente";
+};
+const invoiceSituationColor = { Pago: "var(--ok)", Pendente: "var(--warn)", Atrasado: "var(--crit)", Cancelado: "var(--text-faint)" };
+const InvoiceSituationPill = ({ situation }) => (
+  <span className="g-pill" style={{ background: "var(--panel-raised)", color: "var(--text)" }}>
+    <span className="g-dot" style={{ background: invoiceSituationColor[situation] }} />{situation}
+  </span>
+);
+
+/* ---------- Página 3: Dashboard de Valores — visão enxuta puxando os mesmos dados do Dashboard Total ---------- */
+function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
+  const [situationFilter, setSituationFilter] = useState("Todos");
+  const [sort, setSort] = useState({ key: null, dir: 1 });
+
+  const withSituation = useMemo(() => serviceInvoices.map((r) => ({ ...r, _situation: invoiceSituation(r) })), [serviceInvoices]);
+  const pagos = withSituation.filter((r) => r._situation === "Pago");
+  const pendentes = withSituation.filter((r) => r._situation === "Pendente");
+  const atrasados = withSituation.filter((r) => r._situation === "Atrasado");
+  const sum = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
 
   const cards = [
-    { key: "Todos", label: "Todos", value: payments.length, color: "var(--text-dim)" },
-    { key: "Pago", label: "Pago", value: `${pagos.length} · ${fmt(sum(pagos))}`, color: "var(--ok)" },
-    { key: "Pendente", label: "Pendente", value: `${pendentes.length} · ${fmt(sum(pendentes))}`, color: "var(--warn)" },
-    { key: "Atrasado", label: "Atrasado", value: `${atrasados.length} · ${fmt(sum(atrasados))}`, color: "var(--crit)" },
+    { key: "Todos", label: "Todos", value: withSituation.length, color: "var(--text-dim)", icon: LayoutGrid },
+    { key: "Pago", label: "Pago", value: `${pagos.length} · ${fmt(sum(pagos))}`, color: "var(--ok)", icon: Wallet },
+    { key: "Pendente", label: "Pendente", value: `${pendentes.length} · ${fmt(sum(pendentes))}`, color: "var(--warn)", icon: AlertTriangle },
+    { key: "Atrasado", label: "Atrasado", value: `${atrasados.length} · ${fmt(sum(atrasados))}`, color: "var(--crit)", icon: AlertTriangle },
   ];
+
   const filtered = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
-    return payments.filter((p) =>
-      (filter === "Todos" || paymentSituation(p) === filter) &&
-      (!f.servico || norm(p.service).includes(norm(f.servico))) &&
-      (!f.po || norm(p.po).includes(norm(f.po)))
+    return withSituation.filter((r) =>
+      (situationFilter === "Todos" || r._situation === situationFilter) &&
+      (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
+      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
+      (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
+      (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
+      (!f.dataInicio || !r.date || r.date >= f.dataInicio) &&
+      (!f.dataFim || !r.date || r.date <= f.dataFim)
     );
-  }, [payments, filter, f]);
+  }, [withSituation, situationFilter, f]);
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   return (
     <>
       <div className="g-kpi-row">
         {cards.map((c) => (
-          <div key={c.key} className={`g-kpi clickable ${filter === c.key ? "active" : ""}`} style={{ "--kpi-accent": c.color }} onClick={() => setFilter(c.key)}>
-            <div className="g-kpi-label">{c.label}</div>
-            <div className="g-kpi-value small" style={{ color: c.color }}>{c.value}</div>
+          <div key={c.key} className={`g-kpi clickable ${situationFilter === c.key ? "active" : ""}`}
+            style={{ "--kpi-accent": c.color, padding: "18px 16px" }} onClick={() => setSituationFilter(c.key)}>
+            <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
+              <c.icon size={14} style={{ color: c.color, flexShrink: 0 }} />
+              <div className="g-kpi-label" style={{ fontSize: 11 }}>{c.label}</div>
+            </div>
+            <div className="g-kpi-value" style={{ fontSize: 22, color: c.color }}>{c.value}</div>
           </div>
         ))}
       </div>
@@ -2263,42 +2345,38 @@ function PaymentsView({ payments, updPay, remPay, f }) {
         <table className="g-table">
           <thead>
             <tr>
-              <th>Serviço</th><th>PO</th><th>Valor PO</th>
-              <th>NF</th><th>Valor NF</th><th>Emissão</th><th>Vencimento</th><th>Dias em atraso</th><th>Situação</th><th>Status</th><th></th>
+              <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 220 }}>Serviço</SortTh>
+              <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
+              <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO</SortTh>
+              <SortTh sortKey="valorTotal" sort={sort} setSort={setSort}>Valor</SortTh>
+              <SortTh sortKey="daysOpenTotal" sort={sort} setSort={setSort}>Dias em atraso</SortTh>
+              <SortTh sortKey="statusPagamento" sort={sort} setSort={setSort} style={{ minWidth: 210 }}>Status</SortTh>
+              <th>Situação</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => {
-              const i = payments.indexOf(p);
-              const alert = p.nfValue > p.poValue && p.nfValue > 0;
-              const situation = paymentSituation(p);
+            {sorted.map((r) => {
+              const i = serviceInvoices.indexOf(r);
+              const days = Number(r.daysOpenTotal || 0);
               return (
-                <tr className="g-row" key={p.id}>
-                  <td style={{ minWidth: 170 }}><EText value={p.service} onChange={(v) => updPay(i, "service", v)} /></td>
-                  <td><EText value={p.po} onChange={(v) => updPay(i, "po", v)} mono /></td>
-                  <td><ENum value={p.poValue} onChange={(v) => updPay(i, "poValue", v)} /></td>
-                  <td><EText value={p.nf} onChange={(v) => updPay(i, "nf", v)} mono /></td>
-                  <td style={{ color: alert ? "var(--crit)" : undefined }}><ENum value={p.nfValue} onChange={(v) => updPay(i, "nfValue", v)} /></td>
-                  <td><EDate value={p.issue} onChange={(v) => updPay(i, "issue", v)} /></td>
-                  <td><EDate value={p.due} onChange={(v) => updPay(i, "due", v)} /></td>
-                  <td style={{ fontFamily: "var(--mono)", color: situation === "Atrasado" ? "var(--crit)" : "var(--text-faint)" }}>
-                    {situation === "Atrasado" ? daysLate(p) : "—"}
+                <tr className="g-row" key={r.id}>
+                  <td style={{ minWidth: 220 }}><EText value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
+                  <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
+                  <td style={{ minWidth: 110 }}><EText value={r.poContrato} onChange={(v) => updInv(i, "poContrato", v)} mono /></td>
+                  <td><ENum value={r.valorTotal} onChange={(v) => updInv(i, "valorTotal", v)} /></td>
+                  <td style={{ fontFamily: "var(--mono)", textAlign: "right", color: days > 60 ? "var(--crit)" : days > 30 ? "var(--warn)" : undefined }}>
+                    <ENum value={r.daysOpenTotal} onChange={(v) => updInv(i, "daysOpenTotal", v)} />
                   </td>
-                  <td><SituationPill situation={situation} /></td>
-                  <td><ESelect value={p.status} onChange={(v) => updPay(i, "status", v)} options={PAY_STATUS} /></td>
-                  <td><span className="g-btn ghost danger" onClick={() => remPay(i)}><Trash2 size={13} /></span></td>
+                  <td style={{ minWidth: 210 }}><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
+                  <td><InvoiceSituationPill situation={r._situation} /></td>
+                  <td><span className="g-btn ghost danger" onClick={() => remInv(i)}><Trash2 size={13} /></span></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
         </div>
-        {payments.some((p) => p.nfValue > p.poValue && p.nfValue > 0) && (
-          <div className="g-alert" style={{ marginTop: 12 }}>
-            <AlertTriangle size={14} style={{ marginTop: 1 }} />
-            Existe(m) nota(s) fiscal(is) com valor acima do PO emitido — verifique antes de programar o pagamento.
-          </div>
-        )}
+        {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum registro encontrado com esses filtros.</div>}
       </div>
     </>
   );
