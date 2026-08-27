@@ -260,11 +260,11 @@ const Theme = () => (
 
     /* ---------- Gantt ---------- */
     .g-gantt-wrap { overflow-x: auto; }
-    .g-gantt { min-width: 760px; }
-    .g-gantt-header { display: flex; margin-left: 220px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 4px; }
+    .g-gantt { min-width: 1100px; }
+    .g-gantt-header { display: flex; margin-left: 400px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 4px; }
     .g-gantt-day { flex: 1; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
-    .g-gantt-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--border-soft); }
-    .g-gantt-label { width: 220px; flex-shrink: 0; font-size: 11.5px; padding-right: 10px; display: flex; align-items: center; gap: 4px; overflow: hidden; }
+    .g-gantt-row { display: flex; align-items: flex-start; min-height: 52px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); }
+    .g-gantt-taskinfo { width: 400px; flex-shrink: 0; padding-right: 10px; }
     .g-gantt-track { flex: 1; position: relative; height: 20px; background:
       repeating-linear-gradient(90deg, var(--border-soft) 0, var(--border-soft) 1px, transparent 1px, transparent calc(100% / var(--gantt-days, 10))); }
     .g-gantt-bar { position: absolute; top: 2px; height: 16px; border-radius: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 9.5px; font-weight: 600; font-family: var(--mono); color: #0A1220; overflow: hidden; white-space: nowrap; cursor: pointer; }
@@ -280,16 +280,14 @@ const Theme = () => (
       padding: 2px 4px; flex: 1; min-width: 100px;
     }
     .g-gantt-group-title:focus { outline: none; background: var(--panel-alt); border-radius: 3px; }
-    .g-gantt-empty { margin-left: 220px; padding: 8px 0; color: var(--text-faint); font-size: 11px; font-style: italic; }
+    .g-gantt-empty { margin-left: 400px; padding: 8px 0; color: var(--text-faint); font-size: 11px; font-style: italic; }
     .g-gantt-name-edit {
-      background: transparent; border: 1px solid transparent; color: var(--text); font-size: 11.5px;
-      font-family: var(--sans); padding: 2px 4px; border-radius: 3px; width: 100%; min-width: 0;
+      font-size: 12px; font-family: var(--sans); padding: 4px 6px; min-height: 40px;
+      width: 100%; flex: 1;
     }
-    .g-gantt-name-edit:hover { border-color: var(--border); }
-    .g-gantt-name-edit:focus { outline: none; border-color: var(--accent); background: var(--panel-raised); }
     .g-gantt-editrow {
       display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
-      margin-left: 220px; padding: 8px 10px; margin-bottom: 4px;
+      margin-left: 400px; padding: 8px 10px; margin-bottom: 4px;
       background: var(--panel-alt); border: 1px solid var(--border-soft); border-radius: 4px;
     }
 
@@ -639,41 +637,13 @@ function LoginScreen({ users, onLogin }) {
 /* ============================================================
    ROOT — auth gate with multiple accounts
    ============================================================ */
-export default function Root() {
-  const [users, setUsers] = useState(DEFAULT_USERS);
-  const [currentUser, setCurrentUser] = useState(null);
-  if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
-  return (
-    <Genesis
-      currentUser={currentUser}
-      onLogout={() => setCurrentUser(null)}
-      users={users} setUsers={setUsers}
-    />
-  );
-}
-
 /* ============================================================
-   MAIN APP
+   INITIAL / SEED DATA — usados apenas na primeiríssima vez que o
+   backend compartilhado ainda não tem nada salvo. A partir daí,
+   tudo abaixo é carregado do servidor e salvo de volta nele (ver
+   Root()), independente de qual usuário estiver logado.
    ============================================================ */
-function Genesis({ currentUser, onLogout, users, setUsers }) {
-  const [tab, setTab] = useState("dashboard");
-  const [expandedWp, setExpandedWp] = useState(null);
-  const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
-  const [importMsg, setImportMsg] = useState(null);
-  const fileInputRef = useRef(null);
-
-  const [exchangeRate, setExchangeRate] = useState(5.30); // USD -> BRL, editável
-
-  /* global period filter — present on every page */
-  const [period, setPeriod] = useState({
-    mode: "mes", // "mes" | "periodo" | "ano"
-    month: 8,
-    year: 2026,
-    start: "2026-08-25",
-    end: "2026-09-10",
-  });
-
-      const [workPackages, setWorkPackages] = useState([
+const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-001", name: "Alinhamento do Eixo do Compressor", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/01", empresa: "Norpem", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-002", name: "Detectores de Gases para Manutenção", discipline: "Hse", group: "Segurança", portCall: "Port Call 23/01", empresa: "Casa Offshore", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-003", name: "Manutenção do Motor do Bote", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/01", empresa: "Sea Services", md: "Sim", rc: "10303580", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
@@ -841,27 +811,22 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
     { id: "MAN-2026-165", name: "Certificação dos Olhais da Praça de Máquinas", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432162", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
     { id: "MAN-2026-166", name: "Substituição da Gate Valve do Sistema HiPAP", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432169", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
     { id: "MAN-2026-167", name: "Reparo do Detector Multigás Modelo 4X", discipline: "Marine", group: "Bridge", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432170", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-  ]);
-
-  
-  const [materials, setMaterials] = useState([
+];
+const INITIAL_MATERIALS = [
     { id: "MAT-0084", wp: "", tmMaster: "TM-04521", departamento: "Manutenção", sap: "10098231", descricao: "Seal Kit - Bow Thruster", quantidade: 2, priority: "Crítica", dataSolicitacao: "2026-08-18", dataNecessidade: "2026-09-05", reserva: "RES-3321", rc: "10410632", po: "4600012345", linhaPo: "10", valor: 18500, eta: "2026-09-03", obs: "", dataRecebimento: "", status: "Em trânsito" },
     { id: "MAT-0085", wp: "", tmMaster: "TM-04521", departamento: "Manutenção", sap: "10098232", descricao: "O-Ring Set", quantidade: 6, priority: "Alta", dataSolicitacao: "2026-08-19", dataNecessidade: "2026-09-05", reserva: "RES-3322", rc: "10410633", po: "", linhaPo: "", valor: 2400, eta: "", obs: "Aguardando cotação", dataRecebimento: "", status: "Cotação" },
     { id: "MAT-0090", wp: "", tmMaster: "TM-05011", departamento: "Elétrica", sap: "10098240", descricao: "Bobina Estator", quantidade: 1, priority: "Crítica", dataSolicitacao: "2026-08-15", dataNecessidade: "2026-09-08", reserva: "RES-3340", rc: "10410650", po: "4600012390", linhaPo: "20", valor: 41200, eta: "2026-09-06", obs: "", dataRecebimento: "", status: "Em fabricação" },
     { id: "MAT-0091", wp: "", tmMaster: "TM-05011", departamento: "Elétrica", sap: "10098241", descricao: "Placa AVR", quantidade: 3, priority: "Média", dataSolicitacao: "2026-08-10", dataNecessidade: "2026-08-30", reserva: "RES-3341", rc: "10410651", po: "4600012391", linhaPo: "10", valor: 6800, eta: "2026-08-28", obs: "", dataRecebimento: "2026-08-27", status: "Recebido" },
     { id: "MAT-0092", wp: "", tmMaster: "TM-06120", departamento: "Mecânica", sap: "10098255", descricao: "Rotor Kit", quantidade: 1, priority: "Alta", dataSolicitacao: "2026-08-21", dataNecessidade: "2026-09-01", reserva: "RES-3355", rc: "10410670", po: "4600012410", linhaPo: "10", valor: 27300, eta: "", obs: "Fornecedor confirmou pedido", dataRecebimento: "", status: "PO emitida" },
-  ]);
-
-  const [payments, setPayments] = useState([
+];
+const INITIAL_PAYMENTS = [
     { id: "PAY-001", service: "Manutenção de Defensas", po: "450001245", poValue: 132000, nf: "9847", nfValue: 130800, issue: "2026-08-30", due: "2026-09-29", status: "Pagamento programado" },
     { id: "PAY-002", service: "Overhaul Bow Thruster #2", po: "450001300", poValue: 270000, nf: "5521", nfValue: 270000, issue: "2026-09-05", due: "2026-10-05", status: "NF validada" },
     { id: "PAY-003", service: "AVR Upgrade", po: "450001350", poValue: 190000, nf: "", nfValue: 0, issue: "", due: "", status: "Serviço executado" },
     { id: "PAY-004", service: "Overhaul SW Pump", po: "450001410", poValue: 165000, nf: "771", nfValue: 165000, issue: "2026-09-04", due: "2026-10-04", status: "Pago" },
     { id: "PAY-005", service: "Overhaul Motor Elétrico Thruster #4", po: "450001420", poValue: 420000, nf: "", nfValue: 0, issue: "", due: "", status: "PO emitida" },
-  ]);
-
-  /* status de pagamento por serviço — importado da planilha "Pagamento Pendente (Serviços)" */
-  const [serviceInvoices, setServiceInvoices] = useState([
+];
+const INITIAL_SERVICE_INVOICES = [
     { id: "INV-001", date: "2026-04-07", assunto: "Reparo da Rede - DG2", empresa: "Attech", md: "Sim", mdSentDate: "2026-04-07", diffDays: 0, daysOpenTotal: 121, rc: "10368488", serviceStatus: "Fechado", poContrato: "4500161492/4292564", medicao: "4306119", valorTotal: 94518.9, saldoPo: 0.0, obs: "Pagamento Programado para 06/08", statusPagamento: "Pago", dataPagamento: "2026-08-06" },
     { id: "INV-002", date: "2026-05-26", assunto: "Troca de Rede - DG2", empresa: "Attech", md: "Sim", mdSentDate: "2026-05-20", diffDays: 6, daysOpenTotal: 78, rc: "10378377", serviceStatus: "Fechado", poContrato: "4300387", medicao: "4306029", valorTotal: 80995.0, saldoPo: 0.0, obs: "Pagamento Programado para 06/08", statusPagamento: "Pago", dataPagamento: "2026-08-06" },
     { id: "INV-003", date: "2026-06-23", assunto: "Adequação da bomba do ROV", empresa: "Attech", md: "Sim", mdSentDate: "2026-06-02", diffDays: 21, daysOpenTotal: 85, rc: "10368489", serviceStatus: "Fechado", poContrato: "4324509", medicao: "4340561", valorTotal: 152083.58, saldoPo: 0.0, obs: "Medição 4323106 excluída. Aguardando aprovação do Alexandre Rosa", statusPagamento: "Aprovação Pendente", dataPagamento: "" },
@@ -934,7 +899,124 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
     { id: "INV-070", date: "", assunto: "Certificação dos Olhais da Praça de Máquinas", empresa: "", md: "Sim", mdSentDate: "2026-07-27", diffDays: -46230, daysOpenTotal: 30, rc: "10432162", serviceStatus: "Aberto", poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0, obs: "Status no Portal: Em Agendamento", statusPagamento: "Aguardando Suprimentos", dataPagamento: "" },
     { id: "INV-071", date: "", assunto: "Substituição da Gate Valve do Sistema HiPAP", empresa: "", md: "Sim", mdSentDate: "2026-07-27", diffDays: -46230, daysOpenTotal: 30, rc: "10432169", serviceStatus: "Aberto", poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0, obs: "Status no Portal: Aguardando Proposta", statusPagamento: "Aguardando Suprimentos", dataPagamento: "" },
     { id: "INV-072", date: "", assunto: "Reparo do Detector Multigás Modelo 4X", empresa: "", md: "Sim", mdSentDate: "2026-07-27", diffDays: -46230, daysOpenTotal: 30, rc: "10432170", serviceStatus: "Aberto", poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0, obs: "Status no Portal: Em Agendamento", statusPagamento: "Aguardando Suprimentos", dataPagamento: "" },
-  ]);
+];
+const INITIAL_PORT_CALL_META = {};
+const INITIAL_OP_CATEGORIES = [
+"Manobras", "Troca de Turma", "Visitantes", "Manutenção", "Inspeção", "Base Açu", "Load", "Backload",
+];
+const INITIAL_EXCHANGE_RATE = 5.30;
+
+export default function Root() {
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+
+  const [users, setUsers] = useState(DEFAULT_USERS);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const [workPackages, setWorkPackages] = useState(INITIAL_WORK_PACKAGES);
+  const [materials, setMaterials] = useState(INITIAL_MATERIALS);
+  const [payments, setPayments] = useState(INITIAL_PAYMENTS);
+  const [serviceInvoices, setServiceInvoices] = useState(INITIAL_SERVICE_INVOICES);
+  const [portCallMeta, setPortCallMeta] = useState(INITIAL_PORT_CALL_META);
+  const [opCategories, setOpCategories] = useState(INITIAL_OP_CATEGORIES);
+  const [exchangeRate, setExchangeRate] = useState(INITIAL_EXCHANGE_RATE);
+
+  /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar */
+  React.useEffect(() => {
+    fetch("/api/state")
+      .then((r) => r.json())
+      .then((res) => {
+        const d = res && res.data;
+        if (d) {
+          if (d.users) setUsers(d.users);
+          if (d.workPackages) setWorkPackages(d.workPackages);
+          if (d.materials) setMaterials(d.materials);
+          if (d.payments) setPayments(d.payments);
+          if (d.serviceInvoices) setServiceInvoices(d.serviceInvoices);
+          if (d.portCallMeta) setPortCallMeta(d.portCallMeta);
+          if (d.opCategories) setOpCategories(d.opCategories);
+          if (typeof d.exchangeRate === "number") setExchangeRate(d.exchangeRate);
+        }
+        setLoaded(true);
+      })
+      .catch(() => { setLoadError("Não foi possível conectar ao servidor — trabalhando localmente por enquanto."); setLoaded(true); });
+  }, []);
+
+  /* salva no servidor (com um pequeno atraso) toda vez que qualquer coisa muda — adicionar, editar,
+     excluir linhas em qualquer aba — assim fica salvo automaticamente para todo mundo que acessar,
+     independente de qual usuário fez a alteração */
+  React.useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => {
+      fetch("/api/state", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate },
+        }),
+      }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
+    }, 700);
+    return () => clearTimeout(t);
+  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate]);
+
+  if (!loaded) {
+    return (
+      <div className="genesis g-login-wrap"><Theme />
+        <div style={{ color: "var(--text-dim)", fontFamily: "var(--mono)", fontSize: 13 }}>Carregando dados…</div>
+      </div>
+    );
+  }
+
+  if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
+
+  return (
+    <Genesis
+      currentUser={currentUser}
+      onLogout={() => setCurrentUser(null)}
+      users={users} setUsers={setUsers}
+      workPackages={workPackages} setWorkPackages={setWorkPackages}
+      materials={materials} setMaterials={setMaterials}
+      payments={payments} setPayments={setPayments}
+      serviceInvoices={serviceInvoices} setServiceInvoices={setServiceInvoices}
+      portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta}
+      opCategories={opCategories} setOpCategories={setOpCategories}
+      exchangeRate={exchangeRate} setExchangeRate={setExchangeRate}
+      loadError={loadError}
+    />
+  );
+}
+
+/* ============================================================
+   MAIN APP
+   ============================================================ */
+function Genesis({ currentUser, onLogout, users, setUsers,
+  workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
+  serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
+  opCategories, setOpCategories, exchangeRate, setExchangeRate, loadError }) {
+  const [tab, setTab] = useState("dashboard");
+  const [expandedWp, setExpandedWp] = useState(null);
+  const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
+  const [importMsg, setImportMsg] = useState(null);
+  const fileInputRef = useRef(null);
+
+  /* global period filter — present on every page */
+  const [period, setPeriod] = useState({
+    mode: "mes", // "mes" | "periodo" | "ano"
+    month: 8,
+    year: 2026,
+    start: "2026-08-25",
+    end: "2026-09-10",
+  });
+
+  /* workPackages vem de props (compartilhado via backend) */
+
+  
+  /* materials vem de props (compartilhado via backend) */
+
+  /* payments vem de props (compartilhado via backend) */
+
+  /* status de pagamento por serviço — importado da planilha "Pagamento Pendente (Serviços)" */
+  /* serviceInvoices vem de props (compartilhado via backend) */
 
   /* ---------- generic row update/add/remove ---------- */
   const upd = (setter) => (idx, field, value) =>
@@ -974,18 +1056,25 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
   const dateKeyOf = (dtStr) => (dtStr ? dtStr.slice(0, 10) : null);
 
   /* metadados extras de cada Port Call (duração em dias e local) — permite cadastrar um Port Call
-     antes mesmo de ter atividades vinculadas a ele */
-  const [portCallMeta, setPortCallMeta] = useState({});
+     antes mesmo de ter atividades vinculadas a ele; portCallMeta/setPortCallMeta vêm de props (backend) */
   const addPortCallRecord = (dateKey, duration, local) => {
     setPortCallMeta((m) => ({ ...m, [dateKey]: { duration: Number(duration) || 24, local: local || "" } }));
   };
 
   const portCallLabel = (dateKey) => {
-    const d = new Date(`${dateKey}T12:00:00`);
     const meta = portCallMeta[dateKey];
-    let label = `Port Call ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+    const start = new Date(`${dateKey}T00:00:00`);
+    const hours = meta?.duration || 24;
+    const end = new Date(start.getTime() + hours * 3600000);
+    let label;
+    if (hours > 24) {
+      const lastDay = new Date(end.getTime() - 1);
+      label = `Port Call ${pad2(start.getDate())}/${pad2(start.getMonth() + 1)} — ${pad2(lastDay.getDate())}/${pad2(lastDay.getMonth() + 1)}`;
+    } else {
+      label = `Port Call ${pad2(start.getDate())}/${pad2(start.getMonth() + 1)}`;
+    }
     if (meta?.local) label += ` · ${meta.local}`;
-    if (meta?.duration) label += ` · ${meta.duration}h`;
+    label += ` · ${hours}h`;
     return label;
   };
 
@@ -1007,10 +1096,37 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
     });
   }, [allPortCallDates, filterRange]);
 
+  /* agrupa dias consecutivos que pertencem ao mesmo Port Call (quando a duração passa de 24h) em um
+     único "span" — assim um Port Call de 01/09 até 03/09 aparece como um bloco só no Gantt, com seu
+     próprio eixo de horas, em vez de três blocos separados */
+  const portCallSpans = useMemo(() => {
+    const sorted = [...visiblePortCallDates].sort();
+    const spans = [];
+    let i = 0;
+    while (i < sorted.length) {
+      const dk = sorted[i];
+      const meta = portCallMeta[dk];
+      const start = new Date(`${dk}T00:00:00`);
+      const hours = meta?.duration || 24;
+      const end = new Date(start.getTime() + hours * 3600000);
+      spans.push({ startKey: dk, start, end, hours, local: meta?.local || "" });
+      i++;
+      while (i < sorted.length) {
+        const nextStart = new Date(`${sorted[i]}T00:00:00`);
+        if (nextStart < end) i++; else break;
+      }
+    }
+    return spans;
+  }, [visiblePortCallDates, portCallMeta]);
+
   const removePortCall = (dateKey) => {
-    const count = workPackages.filter((w) => dateKeyOf(w.start) === dateKey).length;
-    if (count > 0 && !window.confirm(`Remover o ${portCallLabel(dateKey)} também vai remover ${count} atividade(s) vinculada(s). Continuar?`)) return;
-    setWorkPackages((wps) => wps.filter((w) => dateKeyOf(w.start) !== dateKey));
+    const meta = portCallMeta[dateKey];
+    const hours = meta?.duration || 24;
+    const start = new Date(`${dateKey}T00:00:00`);
+    const end = new Date(start.getTime() + hours * 3600000);
+    const affected = workPackages.filter((w) => { const d = new Date(w.start); return d >= start && d < end; });
+    if (affected.length > 0 && !window.confirm(`Remover o ${portCallLabel(dateKey)} também vai remover ${affected.length} atividade(s) vinculada(s). Continuar?`)) return;
+    setWorkPackages((wps) => wps.filter((w) => !affected.includes(w)));
     setPortCallMeta((m) => { const n = { ...m }; delete n[dateKey]; return n; });
   };
   const addWpOnDate = (dateKey, category) => setWorkPackages((r) => [...r, {
@@ -1022,9 +1138,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
   }]);
 
   /* categorias operacionais do cronograma — globais, editáveis (renomear/adicionar/remover) */
-  const [opCategories, setOpCategories] = useState([
-    "Manobras", "Troca de Turma", "Visitantes", "Manutenção", "Inspeção", "Base Açu", "Load", "Backload",
-  ]);
+  /* opCategories vem de props (compartilhado via backend) */
   const catOf = (w) => w.ganttCategory || "Manutenção";
   const addOpCategory = () => {
     let name = "Nova categoria";
@@ -1056,18 +1170,23 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
 
   /* datas efetivamente exibidas: se um Port Call específico foi escolhido, mostra só ele; senão, todos do período */
   const effectivePortCallDates = selectedPortCallDate ? [selectedPortCallDate] : visiblePortCallDates;
+  const effectivePortCallSpans = selectedPortCallDate
+    ? portCallSpans.filter((s) => s.startKey === selectedPortCallDate)
+    : portCallSpans;
 
   /* intervalo de tempo efetivo: um único dia (Port Call escolhido) ou o período/mês/ano inteiro selecionado —
      usado pelo eixo do Gantt, total de horas/dias, e pelo resumo de datas no canto superior direito */
   const effectiveRange = useMemo(() => {
     if (selectedPortCallDate) {
+      const span = portCallSpans.find((s) => s.startKey === selectedPortCallDate);
+      if (span) return { start: span.start, end: span.end };
       return {
         start: new Date(`${selectedPortCallDate}T00:00:00`),
         end: new Date(`${selectedPortCallDate}T23:59:59`),
       };
     }
     return filterRange;
-  }, [selectedPortCallDate, filterRange]);
+  }, [selectedPortCallDate, filterRange, portCallSpans]);
 
   const addMat = () => setMaterials((r) => [...r, {
     id: uid("MAT"), wp: "", tmMaster: "", departamento: "", sap: "", descricao: "Novo item",
@@ -1147,10 +1266,6 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
     });
     return Object.values(map);
   }, [workPackages, exchangeRate]);
-
-  const hourOffset = (dtStr) => (new Date(dtStr) - effectiveRange.start) / 3600000;
-  const ganttTotalHours = Math.max(1, (effectiveRange.end - effectiveRange.start) / 3600000);
-  const ganttDays = Math.max(1, Math.ceil((effectiveRange.end - effectiveRange.start) / 86400000) + 1);
 
   /* ---------- EXPORT: full workbook (.xlsx) ---------- */
   const handleExportXlsx = () => {
@@ -1397,11 +1512,10 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
         )}
 
         {tab === "gantt" && (
-          <GanttView workPackages={workPackages} filterRange={effectiveRange} hourOffset={hourOffset}
-            totalHours={ganttTotalHours} days={ganttDays} portCallName={selectedPortCallLabel}
-            visibleDates={effectivePortCallDates} portCallLabel={portCallLabel}
+          <GanttView workPackages={workPackages} portCallName={selectedPortCallLabel}
+            spans={effectivePortCallSpans} portCallLabel={portCallLabel}
             updWp={updWp} remWp={remWp} removePortCall={removePortCall} addWpOnDate={addWpOnDate}
-            addPortCallRecord={addPortCallRecord}
+            addPortCallRecord={addPortCallRecord} filterRange={effectiveRange}
             opCategories={opCategories} catOf={catOf} addOpCategory={addOpCategory}
             renameOpCategory={renameOpCategory} removeOpCategory={removeOpCategory} />
         )}
@@ -1631,48 +1745,82 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
    GANTT / PORT CALL — hour precision, day grid, driven by the
    global period filter (mês ou período)
    ============================================================ */
-function GanttView({ workPackages, filterRange, hourOffset, totalHours, days, portCallName,
-  visibleDates, portCallLabel, updWp, remWp, removePortCall, addWpOnDate, addPortCallRecord,
+function GanttView({ workPackages, filterRange, portCallName,
+  spans, portCallLabel, updWp, remWp, removePortCall, addWpOnDate, addPortCallRecord,
   opCategories, catOf, addOpCategory, renameOpCategory, removeOpCategory }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const isoMin = filterRange.start.toISOString().slice(0, 10);
   const isoMax = filterRange.end.toISOString().slice(0, 10);
-  const [newPc, setNewPc] = useState({ date: isoMin, duration: 24, local: "" });
+  const [newPc, setNewPc] = useState({ date: isoMin, endDate: isoMin, duration: 24, local: "" });
 
-  const dayLabels = Array.from({ length: days }, (_, i) => {
-    const d = new Date(filterRange.start);
-    d.setDate(d.getDate() + i);
-    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
-  });
+  /* calculadora bidirecional: mudar a Data Fim recalcula a Duração (horas), e vice-versa */
+  const setNewPcStart = (date) => {
+    const end = new Date(`${newPc.endDate || date}T23:59:59`);
+    const start = new Date(`${date}T00:00:00`);
+    const hours = Math.max(1, Math.round((end - start) / 3600000));
+    setNewPc((p) => ({ ...p, date, duration: end >= start ? hours : 24 }));
+  };
+  const setNewPcEnd = (endDate) => {
+    const start = new Date(`${newPc.date}T00:00:00`);
+    const end = new Date(`${endDate}T23:59:59`);
+    const hours = Math.max(1, Math.round((end - start) / 3600000));
+    setNewPc((p) => ({ ...p, endDate, duration: hours }));
+  };
+  const setNewPcDuration = (hours) => {
+    const start = new Date(`${newPc.date}T00:00:00`);
+    const end = new Date(start.getTime() + Number(hours || 0) * 3600000);
+    setNewPc((p) => ({ ...p, duration: hours, endDate: end.toISOString().slice(0, 10) }));
+  };
 
-  const renderBar = (w) => {
-    const startH = Math.max(0, hourOffset(w.start));
-    const endH = Math.min(totalHours, hourOffset(w.end));
-    const durationH = Math.max(0, endH - startH);
-    if (endH < 0 || startH > totalHours) return <div className="g-gantt-track" />;
-    const left = (startH / totalHours) * 100;
-    const width = Math.max(0.6, (durationH / totalHours) * 100);
-    return (
-      <div className="g-gantt-track">
-        <div className="g-gantt-bar" style={{ left: `${left}%`, width: `${width}%`, background: statusColor(w.status) }}
-          title={`${w.name} · ${fmtDateTime(w.start)} → ${fmtDateTime(w.end)} · ${Math.round(durationH)}h · ${w.progress}%`}>
-          {Math.round(durationH)}h
+  const handleStatusChange = (i, v) => {
+    updWp(i, "status", v);
+    if (v === "Concluído") updWp(i, "progress", 100);
+  };
+
+  /* uma linha de dias + barras posicionadas em horas, calculada a partir do próprio intervalo do Port Call */
+  const renderSpanTimeline = (span, activities) => {
+    const totalHours = Math.max(1, span.hours);
+    const days = Math.max(1, Math.ceil(span.hours / 24));
+    const dayLabels = Array.from({ length: days }, (_, i) => {
+      const d = new Date(span.start);
+      d.setDate(d.getDate() + i);
+      return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+    });
+    const hourOffset = (dtStr) => (new Date(dtStr) - span.start) / 3600000;
+    const renderBar = (w) => {
+      const startH = Math.max(0, hourOffset(w.start));
+      const endH = Math.min(totalHours, hourOffset(w.end));
+      const durationH = Math.max(0, endH - startH);
+      if (endH < 0 || startH > totalHours) return <div className="g-gantt-track" />;
+      const left = (startH / totalHours) * 100;
+      const width = Math.max(0.6, (durationH / totalHours) * 100);
+      return (
+        <div className="g-gantt-track">
+          <div className="g-gantt-bar" style={{ left: `${left}%`, width: `${width}%`, background: statusColor(w.status) }}
+            title={`${w.name} · ${fmtDateTime(w.start)} → ${fmtDateTime(w.end)} · ${Math.round(durationH)}h · ${w.progress}%`}>
+            {Math.round(durationH)}h
+          </div>
         </div>
-      </div>
-    );
+      );
+    };
+    return { dayLabels, days, renderBar };
   };
 
   return (
     <div className="g-panel">
-      {/* ---- criar novo Port Call: data, duração e local ---- */}
+      {/* ---- criar novo Port Call: data início, data fim (ou duração em horas — calculadas uma a partir da outra) e local ---- */}
       <div className="g-period-bar" style={{ marginBottom: 16 }}>
         <div className="g-field">
-          <label>Nova Port Call — Data</label>
-          <input type="date" value={newPc.date} onChange={(e) => setNewPc((p) => ({ ...p, date: e.target.value }))} />
+          <label>Novo Port Call — Início</label>
+          <input type="date" value={newPc.date} onChange={(e) => setNewPcStart(e.target.value)} />
         </div>
         <div className="g-field">
-          <label>Duração (horas)</label>
-          <input type="number" min="1" value={newPc.duration} onChange={(e) => setNewPc((p) => ({ ...p, duration: e.target.value }))} style={{ width: 80 }} />
+          <label>Fim</label>
+          <input type="date" value={newPc.endDate} onChange={(e) => setNewPcEnd(e.target.value)} />
+        </div>
+        <div className="g-field">
+          <label>ou Duração (horas)</label>
+          <input type="number" min="1" value={newPc.duration} onChange={(e) => setNewPcDuration(e.target.value)} style={{ width: 90 }} />
         </div>
         <div className="g-field">
           <label>Local</label>
@@ -1684,36 +1832,36 @@ function GanttView({ workPackages, filterRange, hourOffset, totalHours, days, po
       </div>
 
       <div className="g-panel-head">
-        <span className="g-panel-title">Cronograma — {portCallName} (agrupado por Port Call, grade por dia, precisão em horas)</span>
-        <span className="g-flex">
-          <span className="g-muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{Math.round(totalHours)}h · {days} dias no período selecionado</span>
-          <button className="g-btn" onClick={addOpCategory}><Plus size={13} />Nova categoria</button>
-        </span>
+        <span className="g-muted" style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{spans.length} Port Call(s) no período selecionado</span>
+        <button className="g-btn" onClick={addOpCategory}><Plus size={13} />Nova categoria</button>
       </div>
 
       <div className="g-gantt-wrap">
-        <div className="g-gantt" style={{ "--gantt-days": days }}>
-          <div className="g-gantt-header">
-            {dayLabels.map((d, i) => <div className="g-gantt-day" key={i}>{d}</div>)}
-          </div>
-
-          {visibleDates.length === 0 && (
+        <div className="g-gantt">
+          {spans.length === 0 && (
             <div className="g-gantt-empty" style={{ marginLeft: 0, padding: "18px 0" }}>
               Nenhum Port Call encontrado para o período selecionado.
             </div>
           )}
 
-          {visibleDates.map((dateKey) => {
-            const pcTitle = portCallLabel(dateKey);
-            const pcActivities = workPackages.filter((w) => (w.start || "").slice(0, 10) === dateKey);
+          {spans.map((span) => {
+            const pcTitle = portCallLabel(span.startKey);
+            const pcActivities = workPackages.filter((w) => {
+              const d = new Date(w.start);
+              return d >= span.start && d < span.end;
+            });
+            const { dayLabels, days, renderBar } = renderSpanTimeline(span, pcActivities);
             return (
-              <div key={dateKey} style={{ marginBottom: 14 }}>
-                {/* ---- título do Port Call ---- */}
+              <div key={span.startKey} style={{ marginBottom: 20 }}>
+                {/* ---- título do Port Call + seu próprio eixo de horas/dias ---- */}
                 <div className="g-gantt-group-row" style={{ background: "var(--panel-raised)", borderLeftColor: "var(--accent)" }}>
                   <span className="g-gantt-group-title" style={{ cursor: "default", fontSize: 12.5 }}>{pcTitle}</span>
                   <span className="g-flex" style={{ gap: 4 }}>
-                    <span className="g-btn ghost" title="Remover este Port Call" onClick={() => removePortCall(dateKey)}><Trash2 size={13} /></span>
+                    <span className="g-btn ghost" title="Remover este Port Call" onClick={() => removePortCall(span.startKey)}><Trash2 size={13} /></span>
                   </span>
+                </div>
+                <div className="g-gantt-header" style={{ "--gantt-days": days }}>
+                  {dayLabels.map((d, i) => <div className="g-gantt-day" key={i}>{d}</div>)}
                 </div>
 
                 {pcActivities.length === 0 && (
@@ -1733,7 +1881,7 @@ function GanttView({ workPackages, filterRange, hourOffset, totalHours, days, po
                           onChange={(e) => renameOpCategory(cat, e.target.value)}
                         />
                         <span className="g-flex" style={{ gap: 4 }}>
-                          <span className="g-btn ghost" title="Adicionar atividade nesta categoria" onClick={() => addWpOnDate(dateKey, cat)}><Plus size={13} /></span>
+                          <span className="g-btn ghost" title="Adicionar atividade nesta categoria" onClick={() => addWpOnDate(span.startKey, cat)}><Plus size={13} /></span>
                           <span className="g-btn ghost danger" title="Remover categoria (global)" onClick={() => removeOpCategory(cat)}><Trash2 size={13} /></span>
                         </span>
                       </div>
@@ -1746,23 +1894,36 @@ function GanttView({ workPackages, filterRange, hourOffset, totalHours, days, po
                         const i = workPackages.indexOf(w);
                         const isOpen = expandedRow === w.id;
                         return (
-                          <div key={w.id}>
+                          <div key={w.id} style={{ "--gantt-days": days }}>
                             <div className="g-gantt-row">
-                              <div className="g-gantt-label">
-                                <span className="g-btn ghost" style={{ padding: 2 }} onClick={() => setExpandedRow(isOpen ? null : w.id)}>
-                                  {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                </span>
-                                <input className="g-gantt-name-edit" value={w.name} onChange={(e) => updWp(i, "name", e.target.value)} />
+                              <div className="g-gantt-taskinfo">
+                                <div className="g-flex" style={{ gap: 4, alignItems: "flex-start" }}>
+                                  <span className="g-btn ghost" style={{ padding: 2, marginTop: 2 }} onClick={() => setExpandedRow(isOpen ? null : w.id)}>
+                                    {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                  </span>
+                                  <textarea className="g-edit-wrap g-gantt-name-edit" rows={2} value={w.name}
+                                    onChange={(e) => updWp(i, "name", e.target.value)} />
+                                </div>
+                                <div className="g-flex" style={{ gap: 5, marginTop: 4, marginLeft: 20, flexWrap: "wrap" }}>
+                                  <input type="text" className="g-edit" placeholder="Empresa" value={w.empresa || ""}
+                                    onChange={(e) => updWp(i, "empresa", e.target.value)}
+                                    style={{ width: 100, fontSize: 10.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "3px 5px" }} />
+                                  <StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} />
+                                  <div className="g-flex" style={{ gap: 3 }}>
+                                    <div className="g-bar-bg" style={{ width: 30 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
+                                    <input type="number" min="0" max="100" className="g-edit num" style={{ width: 34, fontSize: 10.5, padding: "2px 3px" }}
+                                      value={w.progress} onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
+                                    <span style={{ fontSize: 9, color: "var(--text-faint)" }}>%</span>
+                                  </div>
+                                </div>
                               </div>
-                              {renderBar(w)}
-                              <span className="g-btn ghost danger" style={{ marginLeft: 6 }} onClick={() => remWp(i)}><Trash2 size={12} /></span>
+                              <div style={{ flex: 1, alignSelf: "center" }}>{renderBar(w)}</div>
+                              <span className="g-btn ghost danger" style={{ marginLeft: 6, alignSelf: "center" }} onClick={() => remWp(i)}><Trash2 size={12} /></span>
                             </div>
                             {isOpen && (
                               <div className="g-gantt-editrow">
                                 <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
                                 <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
-                                <div className="g-field"><label>Status</label><ESelect value={w.status} onChange={(v) => updWp(i, "status", v)} options={WP_STATUS} /></div>
-                                <div className="g-field"><label>Progresso (%)</label><ENum value={w.progress} onChange={(v) => updWp(i, "progress", v)} /></div>
                                 <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
                               </div>
                             )}
