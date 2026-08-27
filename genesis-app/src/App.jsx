@@ -1301,7 +1301,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
       </div>
 
       {/* Global period filter — presente em todas as páginas, exceto Pagamentos (que tem seu próprio filtro por período) */}
-      {tab !== "payments" && (
+      {tab !== "payments" && tab !== "materials" && (
       <div className="g-filterbar">
         <div className="g-field">
           <label>Port Call</label>
@@ -1408,7 +1408,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
 
         {tab === "services" && (
           <ServicesView workPackages={workPackages} visibleWorkPackages={filteredWorkPackages} updWp={updWp} remWp={remWp}
-            expandedWp={expandedWp} setExpandedWp={setExpandedWp} materials={materials} payments={payments} />
+            expandedWp={expandedWp} setExpandedWp={setExpandedWp} />
         )}
 
         {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} />}
@@ -1420,7 +1420,10 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
           />
         )}
 
-        {tab === "costs" && <CostsView workPackages={filteredWorkPackages} />}
+        {tab === "costs" && (
+          <CostsView serviceInvoices={serviceInvoices} updInv={updInv} effectiveRange={effectiveRange}
+            exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
+        )}
 
         {tab === "settings" && (
           <SettingsView currentUser={currentUser} users={users} setUsers={setUsers} />
@@ -1788,7 +1791,36 @@ function GanttView({ workPackages, filterRange, hourOffset, totalHours, days, po
 /* ============================================================
    SERVICES / WORK PACKAGES
    ============================================================ */
-function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expandedWp, setExpandedWp, materials, payments }) {
+/* dropdown de Status de Serviço com destaque de cor forte, no mesmo padrão usado em Pagamentos */
+const WP_STATUS_COLOR = {
+  "Planejamento": "#5D6E8C",
+  "Em andamento": "#3FC1C9",
+  "Crítico": "#F2685B",
+  "Atrasado": "#F2685B",
+  "Concluído": "#35D399",
+};
+const StatusServicoSelect = ({ value, onChange }) => {
+  const color = WP_STATUS_COLOR[value] || "#F2C94C";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        width: "100%", minWidth: 160, fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+        color, background: `${color}20`, border: `1.5px solid ${color}`, borderRadius: 5,
+        padding: "6px 8px", fontFamily: "var(--sans)",
+      }}
+    >
+      {WP_STATUS.map((o) => <option key={o} value={o} style={{ color: "#000" }}>{o}</option>)}
+    </select>
+  );
+};
+
+function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expandedWp, setExpandedWp }) {
+  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const [sf, setSf] = useState({ empresa: "", rc: "", manutencao: "", status: "Todos" });
+  const hasActiveFilter = sf.empresa || sf.rc || sf.manutencao || sf.status !== "Todos";
+
   const setDateKeepTime = (i, w, newDate) => {
     const startTime = w.start ? w.start.slice(11) : "08:00";
     const endTime = w.end ? w.end.slice(11) : "17:00";
@@ -1796,95 +1828,140 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
     updWp(i, "end", `${newDate}T${endTime}`);
   };
 
-  if (visibleWorkPackages.length === 0) {
-    return (
-      <div className="g-panel">
-        <div className="g-muted">Nenhum serviço encontrado para o Port Call / período selecionado.</div>
-      </div>
+  const filtered = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return visibleWorkPackages.filter((w) =>
+      (!sf.empresa || norm(w.empresa).includes(norm(sf.empresa))) &&
+      (!sf.rc || norm(w.rc).includes(norm(sf.rc))) &&
+      (!sf.manutencao || norm(w.name).includes(norm(sf.manutencao))) &&
+      (sf.status === "Todos" || w.status === sf.status)
     );
-  }
+  }, [visibleWorkPackages, sf]);
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+
+  const concluidos = filtered.filter((w) => w.status === "Concluído").length;
+  const emAndamento = filtered.filter((w) => w.status === "Em andamento").length;
+  const planejados = filtered.filter((w) => w.status === "Planejamento").length;
+  const criticos = filtered.filter((w) => w.status === "Crítico" || w.status === "Atrasado").length;
+  const taxaConclusao = filtered.length ? Math.round((concluidos / filtered.length) * 100) : 0;
+
+  const bigKpi = (label, value, color, Icon) => (
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
+      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
+        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+      </div>
+      <div className="g-kpi-value" style={{ fontSize: 24, color }}>{value}</div>
+    </div>
+  );
 
   return (
-    <div className="g-panel">
-      <table className="g-table">
-        <thead>
-          <tr>
-            <th></th><th>Data</th><th>Categoria</th><th>Manutenção</th><th>Empresa</th>
-            <th>MD</th><th>RC</th><th>Status</th><th>Observação</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleWorkPackages.map((w) => {
-            const i = workPackages.indexOf(w);
-            const isOpen = expandedWp === w.id;
-            const relMat = materials.filter((m) => m.wp === w.id);
-            const relPay = payments.filter((p) => p.service === w.name);
-            return (
-              <React.Fragment key={w.id}>
-                <tr className="g-row">
-                  <td>
-                    <span className="g-btn ghost" onClick={() => setExpandedWp(isOpen ? null : w.id)}>
-                      {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    </span>
-                  </td>
-                  <td><EDate value={(w.start || "").slice(0, 10)} onChange={(v) => setDateKeepTime(i, w, v)} /></td>
-                  <td style={{ minWidth: 130 }}><EText value={w.group || ""} onChange={(v) => updWp(i, "group", v)} /></td>
-                  <td style={{ minWidth: 220 }}><EText value={w.name} onChange={(v) => updWp(i, "name", v)} /></td>
-                  <td style={{ minWidth: 130 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
-                  <td><ESelect value={w.md || "Não"} onChange={(v) => updWp(i, "md", v)} options={["Sim", "Não"]} /></td>
-                  <td style={{ minWidth: 100 }}><EText value={w.rc || ""} onChange={(v) => updWp(i, "rc", v)} mono /></td>
-                  <td><ESelect value={w.status} onChange={(v) => updWp(i, "status", v)} options={WP_STATUS} /></td>
-                  <td style={{ minWidth: 200 }}><EText value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></td>
-                  <td><span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span></td>
-                </tr>
-                {isOpen && (
-                  <tr className="g-expand-row">
-                    <td></td>
-                    <td colSpan={9} style={{ padding: "10px 8px 16px 8px" }}>
-                      <div className="g-grid-2">
-                        <div>
-                          <div className="g-panel-title" style={{ marginBottom: 8 }}>Planejamento e custo (ID: {w.id})</div>
-                          <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 10 }}>
-                            <div className="g-field"><label>Disciplina (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={DISCIPLINES} /></div>
-                            <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
-                            <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
-                            <div className="g-field"><label>Progresso (%)</label><ENum value={w.progress} onChange={(v) => updWp(i, "progress", v)} /></div>
-                          </div>
-                          <div className="g-flex" style={{ flexWrap: "wrap", gap: 14 }}>
-                            <div className="g-field"><label>Budget</label><ENum value={w.budget} onChange={(v) => updWp(i, "budget", v)} /></div>
-                            <div className="g-field"><label>Comprometido</label><ENum value={w.committed} onChange={(v) => updWp(i, "committed", v)} /></div>
-                            <div className="g-field"><label>Realizado</label><ENum value={w.actual} onChange={(v) => updWp(i, "actual", v)} /></div>
-                            <div className="g-field"><label>Forecast</label><ENum value={w.forecast} onChange={(v) => updWp(i, "forecast", v)} /></div>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="g-panel-title" style={{ marginBottom: 8 }}>Materiais vinculados</div>
-                          {relMat.length === 0 && <div className="g-muted">Nenhum material vinculado a este serviço.</div>}
-                          {relMat.map((m) => (
-                            <div className="g-list-item" key={m.id}>
-                              <span><span className="g-tag" style={{ marginRight: 8 }}>{m.id}</span>{m.descricao} × {m.quantidade}</span>
-                              <Pill status={m.status} />
-                            </div>
-                          ))}
-                          <div className="g-panel-title" style={{ margin: "14px 0 8px" }}>Pagamentos vinculados</div>
-                          {relPay.length === 0 && <div className="g-muted">Nenhum pagamento vinculado a este serviço.</div>}
-                          {relPay.map((p) => (
-                            <div className="g-list-item" key={p.id}>
-                              <span><span className="g-tag" style={{ marginRight: 8 }}>{p.id}</span>PO {p.po} · {fmt(p.poValue)}</span>
-                              <SituationPill situation={paymentSituation(p)} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+    <>
+      {/* filtros locais — Portcall e Período já vêm do filtro global no topo */}
+      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+        <div className="g-field">
+          <label>Manutenção</label>
+          <input type="text" value={sf.manutencao} onChange={(e) => setSf((p) => ({ ...p, manutencao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 160 }} />
+        </div>
+        <div className="g-field">
+          <label>Empresa</label>
+          <input type="text" value={sf.empresa} onChange={(e) => setSf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
+        </div>
+        <div className="g-field">
+          <label>RC</label>
+          <input type="text" value={sf.rc} onChange={(e) => setSf((p) => ({ ...p, rc: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
+        </div>
+        <div className="g-field">
+          <label>Status</label>
+          <select value={sf.status} onChange={(e) => setSf((p) => ({ ...p, status: e.target.value }))}>
+            <option>Todos</option>
+            {WP_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="g-field">
+          <label>&nbsp;</label>
+          <button className="g-btn" onClick={() => setSf({ empresa: "", rc: "", manutencao: "", status: "Todos" })}
+            disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
+            <X size={13} />Limpar filtro
+          </button>
+        </div>
+      </div>
+
+      {/* KPIs de análise dos serviços */}
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {bigKpi("Total de Serviços", filtered.length, "var(--teal)", Wrench)}
+        {bigKpi("Concluídos", concluidos, "var(--ok)", Wrench)}
+        {bigKpi("Em Andamento", emAndamento, "var(--teal)", Wrench)}
+        {bigKpi("Críticos / Atrasados", criticos, "var(--crit)", AlertTriangle)}
+        {bigKpi("Taxa de Conclusão", `${taxaConclusao}%`, "var(--warn)", LayoutGrid)}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="g-panel">
+          <div className="g-muted">Nenhum serviço encontrado com esses filtros.</div>
+        </div>
+      ) : (
+      <div className="g-panel">
+        <div className="g-table-wrap">
+        <table className="g-table">
+          <thead>
+            <tr>
+              <th></th>
+              <SortTh sortKey="start" sort={sort} setSort={setSort}>Data</SortTh>
+              <SortTh sortKey="group" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Categoria</SortTh>
+              <SortTh sortKey="name" sort={sort} setSort={setSort} style={{ minWidth: 220 }}>Manutenção</SortTh>
+              <SortTh sortKey="empresa" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Empresa</SortTh>
+              <SortTh sortKey="md" sort={sort} setSort={setSort}>MD</SortTh>
+              <SortTh sortKey="rc" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>RC</SortTh>
+              <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 170 }}>Status</SortTh>
+              <th style={{ minWidth: 200 }}>Observação</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((w) => {
+              const i = workPackages.indexOf(w);
+              const isOpen = expandedWp === w.id;
+              return (
+                <React.Fragment key={w.id}>
+                  <tr className="g-row">
+                    <td>
+                      <span className="g-btn ghost" onClick={() => setExpandedWp(isOpen ? null : w.id)}>
+                        {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </span>
                     </td>
+                    <td><EDate value={(w.start || "").slice(0, 10)} onChange={(v) => setDateKeepTime(i, w, v)} /></td>
+                    <td style={{ minWidth: 130 }}><EText value={w.group || ""} onChange={(v) => updWp(i, "group", v)} /></td>
+                    <td style={{ minWidth: 220 }}><EText value={w.name} onChange={(v) => updWp(i, "name", v)} /></td>
+                    <td style={{ minWidth: 130 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
+                    <td><ESelect value={w.md || "Não"} onChange={(v) => updWp(i, "md", v)} options={["Sim", "Não"]} /></td>
+                    <td style={{ minWidth: 100 }}><EText value={w.rc || ""} onChange={(v) => updWp(i, "rc", v)} mono /></td>
+                    <td style={{ minWidth: 170 }}><StatusServicoSelect value={w.status} onChange={(v) => updWp(i, "status", v)} /></td>
+                    <td style={{ minWidth: 200 }}><EText value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></td>
+                    <td><span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span></td>
                   </tr>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  {isOpen && (
+                    <tr className="g-expand-row">
+                      <td></td>
+                      <td colSpan={9} style={{ padding: "10px 8px 16px 8px" }}>
+                        <div className="g-panel-title" style={{ marginBottom: 8 }}>Planejamento</div>
+                        <div className="g-flex" style={{ flexWrap: "wrap", gap: 14 }}>
+                          <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
+                          <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
+                          <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
+                          <div className="g-field"><label>Progresso (%)</label><ENum value={w.progress} onChange={(v) => updWp(i, "progress", v)} /></div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      )}
+    </>
   );
 }
 
@@ -1893,71 +1970,186 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
    ============================================================ */
 function MaterialsView({ materials, updMat, remMat, workPackages }) {
   const [expandedRow, setExpandedRow] = useState(null);
-  return (
-    <div className="g-panel">
-      <table className="g-table">
-        <thead>
-          <tr>
-            <th></th><th>TM Master</th><th>Departamento</th><th>SAP</th><th>Descrição</th><th>Quantidade</th>
-            <th>Prioridade</th><th>Data da solicitação</th><th>Data da Necessidade</th><th>Reserva</th><th>RC</th><th>PO</th><th>Linha da PO</th>
-            <th>Valor</th><th>ETA</th><th>Observação</th><th>Data de Recebimento</th><th>Status</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {materials.map((m, i) => {
-            const isOpen = expandedRow === i;
-            return (
-              <React.Fragment key={i}>
-                <tr className="g-row">
-                  <td>
-                    <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : i)}>
-                      {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    </span>
-                  </td>
-                  <td style={{ minWidth: 100 }}><EText value={m.tmMaster} onChange={(v) => updMat(i, "tmMaster", v)} mono /></td>
-                  <td style={{ minWidth: 120 }}><EText value={m.departamento} onChange={(v) => updMat(i, "departamento", v)} /></td>
-                  <td style={{ minWidth: 100 }}><EText value={m.sap} onChange={(v) => updMat(i, "sap", v)} mono /></td>
-                  <td style={{ minWidth: 190 }}><EText value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} /></td>
-                  <td><ENum value={m.quantidade} onChange={(v) => updMat(i, "quantidade", v)} /></td>
-                  <td><ESelect value={m.priority} onChange={(v) => updMat(i, "priority", v)} options={PRIORITY} /></td>
-                  <td><EDate value={m.dataSolicitacao} onChange={(v) => updMat(i, "dataSolicitacao", v)} /></td>
-                  <td><EDate value={m.dataNecessidade} onChange={(v) => updMat(i, "dataNecessidade", v)} /></td>
-                  <td style={{ minWidth: 90 }}><EText value={m.reserva} onChange={(v) => updMat(i, "reserva", v)} mono /></td>
-                  <td style={{ minWidth: 100 }}><EText value={m.rc} onChange={(v) => updMat(i, "rc", v)} mono /></td>
-                  <td style={{ minWidth: 100 }}><EText value={m.po} onChange={(v) => updMat(i, "po", v)} mono /></td>
-                  <td><EText value={m.linhaPo} onChange={(v) => updMat(i, "linhaPo", v)} mono /></td>
-                  <td><ENum value={m.valor} onChange={(v) => updMat(i, "valor", v)} /></td>
-                  <td>
-                    {m.eta
-                      ? <EDate value={m.eta} onChange={(v) => updMat(i, "eta", v)} />
-                      : <span className="g-flex"><span style={{ color: "var(--crit)", fontSize: 11 }}>sem ETA</span>
-                          <input type="date" className="g-edit mono" onChange={(e) => updMat(i, "eta", e.target.value)} /></span>}
-                  </td>
-                  <td style={{ minWidth: 160 }}><EText value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></td>
-                  <td><EDate value={m.dataRecebimento} onChange={(v) => updMat(i, "dataRecebimento", v)} /></td>
-                  <td><ESelect value={m.status} onChange={(v) => updMat(i, "status", v)} options={MAT_STATUS} /></td>
-                  <td><span className="g-btn ghost danger" onClick={() => remMat(i)}><Trash2 size={13} /></span></td>
-                </tr>
-                {isOpen && (
-                  <tr className="g-expand-row">
-                    <td></td>
-                    <td colSpan={18} style={{ padding: "10px 8px 16px 8px" }}>
-                      <div className="g-field" style={{ maxWidth: 320 }}>
-                        <label>Vincular a um serviço (opcional)</label>
-                        <select className="g-edit" value={m.wp || ""} onChange={(e) => updMat(i, "wp", e.target.value)}>
-                          <option value="">— nenhum —</option>
-                          {workPackages.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                        </select>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const [mf, setMf] = useState({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos" });
+  const hasActiveFilter = mf.tmMaster || mf.sap || mf.descricao || mf.rc || mf.reserva || mf.po || mf.status !== "Todos" || mf.priority !== "Todos";
+
+  const filtered = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return materials.filter((m) =>
+      (!mf.tmMaster || norm(m.tmMaster).includes(norm(mf.tmMaster))) &&
+      (!mf.sap || norm(m.sap).includes(norm(mf.sap))) &&
+      (!mf.descricao || norm(m.descricao).includes(norm(mf.descricao))) &&
+      (!mf.rc || norm(m.rc).includes(norm(mf.rc))) &&
+      (!mf.reserva || norm(m.reserva).includes(norm(mf.reserva))) &&
+      (!mf.po || norm(m.po).includes(norm(mf.po))) &&
+      (mf.status === "Todos" || m.status === mf.status) &&
+      (mf.priority === "Todos" || m.priority === mf.priority)
+    );
+  }, [materials, mf]);
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+
+  const naoRecebido = (m) => !["Recebido", "Entregue a bordo"].includes(m.status);
+  const urgentes = filtered.filter((m) => ["Alta", "Crítica"].includes(m.priority) && naoRecebido(m));
+  const abertas = filtered.filter(naoRecebido);
+  const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
+  const valorAberto = abertas.reduce((s, m) => s + Number(m.valor || 0), 0);
+
+  const bigKpi = (label, value, color, Icon) => (
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
+      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
+        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+      </div>
+      <div className="g-kpi-value" style={{ fontSize: 24, color }}>{value}</div>
     </div>
+  );
+
+  return (
+    <>
+      {/* filtros da aba Materiais — digitáveis + selecionáveis */}
+      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+        <div className="g-field">
+          <label>TM Master</label>
+          <input type="text" value={mf.tmMaster} onChange={(e) => setMf((p) => ({ ...p, tmMaster: e.target.value }))} placeholder="digitar..." style={{ minWidth: 110 }} />
+        </div>
+        <div className="g-field">
+          <label>SAP</label>
+          <input type="text" value={mf.sap} onChange={(e) => setMf((p) => ({ ...p, sap: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
+        </div>
+        <div className="g-field">
+          <label>Descrição</label>
+          <input type="text" value={mf.descricao} onChange={(e) => setMf((p) => ({ ...p, descricao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 150 }} />
+        </div>
+        <div className="g-field">
+          <label>RC</label>
+          <input type="text" value={mf.rc} onChange={(e) => setMf((p) => ({ ...p, rc: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
+        </div>
+        <div className="g-field">
+          <label>Reserva</label>
+          <input type="text" value={mf.reserva} onChange={(e) => setMf((p) => ({ ...p, reserva: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
+        </div>
+        <div className="g-field">
+          <label>PO</label>
+          <input type="text" value={mf.po} onChange={(e) => setMf((p) => ({ ...p, po: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
+        </div>
+        <div className="g-field">
+          <label>Status</label>
+          <select value={mf.status} onChange={(e) => setMf((p) => ({ ...p, status: e.target.value }))}>
+            <option>Todos</option>
+            {MAT_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="g-field">
+          <label>Prioridade</label>
+          <select value={mf.priority} onChange={(e) => setMf((p) => ({ ...p, priority: e.target.value }))}>
+            <option>Todos</option>
+            {PRIORITY.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div className="g-field">
+          <label>&nbsp;</label>
+          <button className="g-btn" onClick={() => setMf({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos" })}
+            disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
+            <X size={13} />Limpar filtro
+          </button>
+        </div>
+      </div>
+
+      {/* KPIs de análise de materiais */}
+      <div className="g-kpi-row">
+        {bigKpi("Total de Materiais", filtered.length, "var(--teal)", Package)}
+        {bigKpi("Materiais Urgentes", urgentes.length, "var(--crit)", AlertTriangle)}
+        {bigKpi("Requisições Abertas", abertas.length, "var(--warn)", AlertTriangle)}
+        {bigKpi("Sem ETA", semEta.length, "var(--crit)", AlertTriangle)}
+        {bigKpi("Valor em Aberto", fmt(valorAberto), "var(--ok)", Wallet)}
+      </div>
+
+      <div className="g-panel">
+        <div className="g-table-wrap">
+        <table className="g-table">
+          <thead>
+            <tr>
+              <th></th>
+              <SortTh sortKey="tmMaster" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>TM Master</SortTh>
+              <SortTh sortKey="departamento" sort={sort} setSort={setSort} style={{ minWidth: 120 }}>Departamento</SortTh>
+              <SortTh sortKey="sap" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>SAP</SortTh>
+              <SortTh sortKey="descricao" sort={sort} setSort={setSort} style={{ minWidth: 190 }}>Descrição</SortTh>
+              <SortTh sortKey="quantidade" sort={sort} setSort={setSort}>Quantidade</SortTh>
+              <SortTh sortKey="priority" sort={sort} setSort={setSort}>Prioridade</SortTh>
+              <SortTh sortKey="dataSolicitacao" sort={sort} setSort={setSort}>Data da solicitação</SortTh>
+              <SortTh sortKey="dataNecessidade" sort={sort} setSort={setSort}>Data da Necessidade</SortTh>
+              <SortTh sortKey="reserva" sort={sort} setSort={setSort} style={{ minWidth: 90 }}>Reserva</SortTh>
+              <SortTh sortKey="rc" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>RC</SortTh>
+              <SortTh sortKey="po" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>PO</SortTh>
+              <SortTh sortKey="linhaPo" sort={sort} setSort={setSort}>Linha da PO</SortTh>
+              <SortTh sortKey="valor" sort={sort} setSort={setSort}>Valor</SortTh>
+              <SortTh sortKey="eta" sort={sort} setSort={setSort}>ETA</SortTh>
+              <SortTh sortKey="obs" sort={sort} setSort={setSort} style={{ minWidth: 160 }}>Observação</SortTh>
+              <SortTh sortKey="dataRecebimento" sort={sort} setSort={setSort}>Data de Recebimento</SortTh>
+              <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 180 }}>Status</SortTh>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((m) => {
+              const i = materials.indexOf(m);
+              const isOpen = expandedRow === i;
+              return (
+                <React.Fragment key={i}>
+                  <tr className="g-row">
+                    <td>
+                      <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : i)}>
+                        {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </span>
+                    </td>
+                    <td style={{ minWidth: 100 }}><EText value={m.tmMaster} onChange={(v) => updMat(i, "tmMaster", v)} mono /></td>
+                    <td style={{ minWidth: 120 }}><EText value={m.departamento} onChange={(v) => updMat(i, "departamento", v)} /></td>
+                    <td style={{ minWidth: 100 }}><EText value={m.sap} onChange={(v) => updMat(i, "sap", v)} mono /></td>
+                    <td style={{ minWidth: 190 }}><EText value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} /></td>
+                    <td><ENum value={m.quantidade} onChange={(v) => updMat(i, "quantidade", v)} /></td>
+                    <td><ESelect value={m.priority} onChange={(v) => updMat(i, "priority", v)} options={PRIORITY} /></td>
+                    <td><EDate value={m.dataSolicitacao} onChange={(v) => updMat(i, "dataSolicitacao", v)} /></td>
+                    <td><EDate value={m.dataNecessidade} onChange={(v) => updMat(i, "dataNecessidade", v)} /></td>
+                    <td style={{ minWidth: 90 }}><EText value={m.reserva} onChange={(v) => updMat(i, "reserva", v)} mono /></td>
+                    <td style={{ minWidth: 100 }}><EText value={m.rc} onChange={(v) => updMat(i, "rc", v)} mono /></td>
+                    <td style={{ minWidth: 100 }}><EText value={m.po} onChange={(v) => updMat(i, "po", v)} mono /></td>
+                    <td><EText value={m.linhaPo} onChange={(v) => updMat(i, "linhaPo", v)} mono /></td>
+                    <td><ENum value={m.valor} onChange={(v) => updMat(i, "valor", v)} /></td>
+                    <td>
+                      {m.eta
+                        ? <EDate value={m.eta} onChange={(v) => updMat(i, "eta", v)} />
+                        : <span className="g-flex"><span style={{ color: "var(--crit)", fontSize: 11 }}>sem ETA</span>
+                            <input type="date" className="g-edit mono" onChange={(e) => updMat(i, "eta", e.target.value)} /></span>}
+                    </td>
+                    <td style={{ minWidth: 160 }}><EText value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></td>
+                    <td><EDate value={m.dataRecebimento} onChange={(v) => updMat(i, "dataRecebimento", v)} /></td>
+                    <td style={{ minWidth: 180 }}><ESelect value={m.status} onChange={(v) => updMat(i, "status", v)} options={MAT_STATUS} /></td>
+                    <td><span className="g-btn ghost danger" onClick={() => remMat(i)}><Trash2 size={13} /></span></td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="g-expand-row">
+                      <td></td>
+                      <td colSpan={18} style={{ padding: "10px 8px 16px 8px" }}>
+                        <div className="g-field" style={{ maxWidth: 320 }}>
+                          <label>Vincular a um serviço (opcional)</label>
+                          <select className="g-edit" value={m.wp || ""} onChange={(e) => updMat(i, "wp", e.target.value)}>
+                            <option value="">— nenhum —</option>
+                            {workPackages.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+        {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum material encontrado com esses filtros.</div>}
+      </div>
+    </>
   );
 }
 
@@ -2005,11 +2197,12 @@ function MultiSelectStatus({ options, selected, onChange }) {
   );
 }
 
-const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
+const emptyPayFilter = { statuses: [], servicos: [], po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
 function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv }) {
   const [f, setF] = useState(emptyPayFilter);
-  const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
+  const hasActiveFilter = f.statuses.length > 0 || f.servicos.length > 0 || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
+  const servicoOptions = useMemo(() => [...new Set(serviceInvoices.map((r) => r.assunto).filter(Boolean))].sort(), [serviceInvoices]);
 
   return (
     <>
@@ -2026,8 +2219,8 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
           <MultiSelectStatus options={STATUS_PAGAMENTO_OPTIONS} selected={f.statuses} onChange={(v) => setF((p) => ({ ...p, statuses: v }))} />
         </div>
         <div className="g-field">
-          <label>Serviço</label>
-          <input type="text" value={f.servico} onChange={(e) => setF((p) => ({ ...p, servico: e.target.value }))} placeholder="digitar..." style={{ minWidth: 140 }} />
+          <label>Serviço (múltipla escolha)</label>
+          <MultiSelectStatus options={servicoOptions} selected={f.servicos} onChange={(v) => setF((p) => ({ ...p, servicos: v }))} />
         </div>
         <div className="g-field">
           <label>PO</label>
@@ -2082,7 +2275,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
     const norm = (s) => (s || "").toString().toLowerCase();
     return serviceInvoices.filter((r) =>
       (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
-      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
+      (f.servicos.length === 0 || f.servicos.includes(r.assunto)) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.rc || norm(r.rc).includes(norm(f.rc))) &&
       (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
@@ -2198,7 +2391,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
     const norm = (s) => (s || "").toString().toLowerCase();
     return serviceInvoices.filter((r) =>
       (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
-      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
+      (f.servicos.length === 0 || f.servicos.includes(r.assunto)) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.rc || norm(r.rc).includes(norm(f.rc))) &&
       (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
@@ -2316,7 +2509,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
     return withSituation.filter((r) =>
       (situationFilter === "Todos" || r._situation === situationFilter) &&
       (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
-      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
+      (f.servicos.length === 0 || f.servicos.includes(r.assunto)) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
       (!f.dataInicio || !r.date || r.date >= f.dataInicio) &&
@@ -2385,49 +2578,184 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
 /* ============================================================
    COSTS
    ============================================================ */
-function CostsView({ workPackages }) {
-  return (
-    <div className="g-panel">
-      <table className="g-table">
-        <thead>
-          <tr>
-            <th>Serviço</th><th>Budget</th><th>Comprometido</th><th>Realizado</th>
-            <th>Forecast</th><th>Variação</th><th>% Budget consumido</th><th>% Comprometimento</th>
-          </tr>
-        </thead>
-        <tbody>
-          {workPackages.map((w) => {
-            const variance = w.forecast - w.budget;
-            const pctActual = w.budget ? (w.actual / w.budget) * 100 : 0;
-            const pctCommitted = w.budget ? (w.committed / w.budget) * 100 : 0;
-            return (
-              <tr className="g-row" key={w.id}>
-                <td>{w.name}</td>
-                <td style={{ fontFamily: "var(--mono)" }}>{fmt(w.budget)}</td>
-                <td style={{ fontFamily: "var(--mono)" }}>{fmt(w.committed)}</td>
-                <td style={{ fontFamily: "var(--mono)" }}>{fmt(w.actual)}</td>
-                <td style={{ fontFamily: "var(--mono)" }}>{fmt(w.forecast)}</td>
-                <td style={{ fontFamily: "var(--mono)", color: variance > 0 ? "var(--crit)" : "var(--ok)" }}>
-                  {variance > 0 ? "+" : ""}{fmt(variance)}
-                </td>
-                <td style={{ minWidth: 110 }}>
-                  <div className="g-flex">
-                    <div className="g-bar-bg"><div className="g-bar-fg" style={{ width: `${Math.min(100, pctActual)}%`, background: pctActual > 100 ? "var(--crit)" : "var(--teal)" }} /></div>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{pctActual.toFixed(0)}%</span>
-                  </div>
-                </td>
-                <td style={{ minWidth: 110 }}>
-                  <div className="g-flex">
-                    <div className="g-bar-bg"><div className="g-bar-fg" style={{ width: `${Math.min(100, pctCommitted)}%`, background: pctCommitted > 100 ? "var(--crit)" : "var(--warn)" }} /></div>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{pctCommitted.toFixed(0)}%</span>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+function CostsView({ serviceInvoices, updInv, effectiveRange, exchangeRate, setExchangeRate }) {
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [cf, setCf] = useState({ statuses: [] });
+
+  /* esta aba só considera serviços que ainda não estão como "Pago" na aba Pagamentos */
+  const naoPagos = useMemo(() => serviceInvoices.filter((r) => r.statusPagamento !== "Pago"), [serviceInvoices]);
+  const statusOptions = useMemo(() => STATUS_PAGAMENTO_OPTIONS.filter((s) => s !== "Pago"), []);
+
+  const filtered = useMemo(() => {
+    return naoPagos.filter((r) => {
+      const inRange = !r.date || (new Date(r.date) >= effectiveRange.start && new Date(r.date) <= effectiveRange.end);
+      const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
+      return inRange && inStatus;
+    });
+  }, [naoPagos, effectiveRange, cf]);
+
+  const allocationsOf = (r) => r.allocations || [];
+  const allocatedSum = (r) => allocationsOf(r).reduce((s, a) => s + Number(a.valor || 0), 0);
+
+  const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0 }]);
+  const updAllocation = (i, r, ai, field, value) => {
+    const next = allocationsOf(r).map((a, idx) => (idx === ai ? { ...a, [field]: value } : a));
+    updInv(i, "allocations", next);
+  };
+  const remAllocation = (i, r, ai) => updInv(i, "allocations", allocationsOf(r).filter((_, idx) => idx !== ai));
+
+  /* resumo por categoria: Orçado (US$ da imagem, convertido p/ R$) × Realizado (soma do rateio) × Disponível */
+  const categoryCosts = useMemo(() => {
+    return CATEGORIES.map((cat) => {
+      const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
+      const orcadoBrl = orcadoUsd * exchangeRate;
+      const realizado = filtered.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+      return { category: cat, orcadoUsd, orcadoBrl, realizado, disponivel: orcadoBrl - realizado };
+    });
+  }, [filtered, exchangeRate]);
+
+  const totalOrcadoBrl = categoryCosts.reduce((s, c) => s + c.orcadoBrl, 0);
+  const totalRealizado = categoryCosts.reduce((s, c) => s + c.realizado, 0);
+  const totalDisponivel = totalOrcadoBrl - totalRealizado;
+  const pctConsumido = totalOrcadoBrl ? Math.round((totalRealizado / totalOrcadoBrl) * 100) : 0;
+  const semRateioCompleto = filtered.filter((r) => Math.round(allocatedSum(r)) !== Math.round(Number(r.valorTotal || 0))).length;
+
+  const bigKpi = (label, value, color, Icon) => (
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
+      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
+        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+      </div>
+      <div className="g-kpi-value" style={{ fontSize: 22, color }}>{value}</div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Portcall e Período vêm do filtro global no topo; Status de pagamento é local, igual ao usado em Pagamentos */}
+      <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
+        Esta aba mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos.
+      </div>
+      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+        <div className="g-field">
+          <label>Status de pagamento (múltipla escolha)</label>
+          <MultiSelectStatus options={statusOptions} selected={cf.statuses} onChange={(v) => setCf({ statuses: v })} />
+        </div>
+        <div className="g-field">
+          <label>&nbsp;</label>
+          <button className="g-btn" onClick={() => setCf({ statuses: [] })} disabled={cf.statuses.length === 0} style={{ opacity: cf.statuses.length ? 1 : 0.5 }}>
+            <X size={13} />Limpar filtro
+          </button>
+        </div>
+      </div>
+
+      {/* KPIs de análise */}
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {bigKpi("Total Realizado (rateado)", fmt(totalRealizado), "var(--teal)", Wallet)}
+        {bigKpi("Total Orçado", fmt(totalOrcadoBrl), "var(--text-dim)", Calculator)}
+        {bigKpi("Saldo Disponível", fmt(totalDisponivel), totalDisponivel < 0 ? "var(--crit)" : "var(--ok)", Wallet)}
+        {bigKpi("% do Orçamento Consumido", `${pctConsumido}%`, pctConsumido > 100 ? "var(--crit)" : "var(--warn)", AlertTriangle)}
+        {bigKpi("Serviços sem Rateio Completo", semRateioCompleto, "var(--crit)", AlertTriangle)}
+      </div>
+
+      {/* Custo por categoria — Orçado (US$/R$) × Realizado × Disponível */}
+      <div className="g-panel">
+        <div className="g-panel-head">
+          <span className="g-panel-title">Custo por categoria — Orçado × Realizado × Disponível</span>
+          <span className="g-flex" style={{ fontSize: 11 }}>
+            <span className="g-muted" style={{ fontFamily: "var(--mono)" }}>Câmbio US$→R$</span>
+            <input type="number" step="0.01" value={exchangeRate} onChange={(e) => setExchangeRate(Number(e.target.value))}
+              style={{ width: 64, background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 11, padding: "4px 6px", borderRadius: 3 }} />
+          </span>
+        </div>
+        <div className="g-table-wrap">
+        <table className="g-table">
+          <thead>
+            <tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th><th>Disponível (R$)</th></tr>
+          </thead>
+          <tbody>
+            {categoryCosts.map((c) => (
+              <tr key={c.category}>
+                <td>{c.category}</td>
+                <td style={{ fontFamily: "var(--mono)" }}>{"US$ " + c.orcadoUsd.toLocaleString("en-US")}</td>
+                <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.orcadoBrl)}</td>
+                <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.realizado)}</td>
+                <td style={{ fontFamily: "var(--mono)", color: c.disponivel < 0 ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{fmt(c.disponivel)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      {/* Tabela de serviços com rateio por categoria */}
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Serviços — rateio de custo por categoria</span></div>
+        <div className="g-table-wrap">
+        <table className="g-table">
+          <thead>
+            <tr>
+              <th></th><th style={{ minWidth: 220 }}>Serviço</th><th>Empresa</th><th>Valor</th><th>PO</th>
+              <th style={{ minWidth: 210 }}>Status de pagamento</th><th>Rateado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r) => {
+              const i = serviceInvoices.indexOf(r);
+              const isOpen = expandedRow === r.id;
+              const alocado = allocatedSum(r);
+              const total = Number(r.valorTotal || 0);
+              const completo = Math.round(alocado) === Math.round(total);
+              return (
+                <React.Fragment key={r.id}>
+                  <tr className="g-row">
+                    <td>
+                      <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : r.id)}>
+                        {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </span>
+                    </td>
+                    <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
+                    <td style={{ minWidth: 130 }}>{r.empresa}</td>
+                    <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
+                    <td style={{ fontFamily: "var(--mono)" }}>{r.poContrato}</td>
+                    <td style={{ minWidth: 210 }}><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 11, color: completo ? "var(--ok)" : "var(--warn)" }}>
+                      {fmt(alocado)} / {fmt(total)}
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="g-expand-row">
+                      <td></td>
+                      <td colSpan={6} style={{ padding: "10px 8px 16px 8px" }}>
+                        <div className="g-panel-title" style={{ marginBottom: 8 }}>
+                          Rateio por categoria — {fmt(alocado)} alocado de {fmt(total)}
+                          {!completo && <span style={{ color: "var(--warn)", marginLeft: 8, fontWeight: 400, fontSize: 11 }}>(ainda não bate com o valor total)</span>}
+                        </div>
+                        {allocationsOf(r).map((a, ai) => (
+                          <div className="g-flex" key={ai} style={{ gap: 10, marginBottom: 6 }}>
+                            <div style={{ minWidth: 200 }}>
+                              <select className="g-edit" value={a.category} onChange={(e) => updAllocation(i, r, ai, "category", e.target.value)}>
+                                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <input type="number" className="g-edit num" style={{ width: 120 }} value={a.valor}
+                              onChange={(e) => updAllocation(i, r, ai, "valor", Number(e.target.value))} />
+                            <span className="g-btn ghost danger" onClick={() => remAllocation(i, r, ai)}><Trash2 size={13} /></span>
+                          </div>
+                        ))}
+                        <button className="g-btn" onClick={() => addAllocation(i, r)}><Plus size={13} />Adicionar categoria</button>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+        {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum serviço encontrado com esses filtros.</div>}
+      </div>
+    </>
   );
 }
 
