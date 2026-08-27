@@ -1301,7 +1301,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
       </div>
 
       {/* Global period filter — presente em todas as páginas, exceto Pagamentos (que tem seu próprio filtro por período) */}
-      {tab !== "payments" && tab !== "materials" && (
+      {tab !== "payments" && tab !== "materials" && tab !== "costs" && (
       <div className="g-filterbar">
         <div className="g-field">
           <label>Port Call</label>
@@ -1421,7 +1421,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
         )}
 
         {tab === "costs" && (
-          <CostsView serviceInvoices={serviceInvoices} updInv={updInv} effectiveRange={effectiveRange}
+          <CostsView serviceInvoices={serviceInvoices} updInv={updInv}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
@@ -1993,7 +1993,6 @@ function MaterialsView({ materials, updMat, remMat, workPackages }) {
   const urgentes = filtered.filter((m) => ["Alta", "Crítica"].includes(m.priority) && naoRecebido(m));
   const abertas = filtered.filter(naoRecebido);
   const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
-  const valorAberto = abertas.reduce((s, m) => s + Number(m.valor || 0), 0);
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2062,7 +2061,6 @@ function MaterialsView({ materials, updMat, remMat, workPackages }) {
         {bigKpi("Materiais Urgentes", urgentes.length, "var(--crit)", AlertTriangle)}
         {bigKpi("Requisições Abertas", abertas.length, "var(--warn)", AlertTriangle)}
         {bigKpi("Sem ETA", semEta.length, "var(--crit)", AlertTriangle)}
-        {bigKpi("Valor em Aberto", fmt(valorAberto), "var(--ok)", Wallet)}
       </div>
 
       <div className="g-panel">
@@ -2197,12 +2195,11 @@ function MultiSelectStatus({ options, selected, onChange }) {
   );
 }
 
-const emptyPayFilter = { statuses: [], servicos: [], po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
+const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
 function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv }) {
   const [f, setF] = useState(emptyPayFilter);
-  const hasActiveFilter = f.statuses.length > 0 || f.servicos.length > 0 || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
-  const servicoOptions = useMemo(() => [...new Set(serviceInvoices.map((r) => r.assunto).filter(Boolean))].sort(), [serviceInvoices]);
+  const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
   return (
     <>
@@ -2219,8 +2216,8 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
           <MultiSelectStatus options={STATUS_PAGAMENTO_OPTIONS} selected={f.statuses} onChange={(v) => setF((p) => ({ ...p, statuses: v }))} />
         </div>
         <div className="g-field">
-          <label>Serviço (múltipla escolha)</label>
-          <MultiSelectStatus options={servicoOptions} selected={f.servicos} onChange={(v) => setF((p) => ({ ...p, servicos: v }))} />
+          <label>Serviço</label>
+          <input type="text" value={f.servico} onChange={(e) => setF((p) => ({ ...p, servico: e.target.value }))} placeholder="digitar..." style={{ minWidth: 140 }} />
         </div>
         <div className="g-field">
           <label>PO</label>
@@ -2275,7 +2272,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
     const norm = (s) => (s || "").toString().toLowerCase();
     return serviceInvoices.filter((r) =>
       (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
-      (f.servicos.length === 0 || f.servicos.includes(r.assunto)) &&
+      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.rc || norm(r.rc).includes(norm(f.rc))) &&
       (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
@@ -2391,7 +2388,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
     const norm = (s) => (s || "").toString().toLowerCase();
     return serviceInvoices.filter((r) =>
       (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
-      (f.servicos.length === 0 || f.servicos.includes(r.assunto)) &&
+      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.rc || norm(r.rc).includes(norm(f.rc))) &&
       (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
@@ -2509,7 +2506,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
     return withSituation.filter((r) =>
       (situationFilter === "Todos" || r._situation === situationFilter) &&
       (f.statuses.length === 0 || f.statuses.includes(r.statusPagamento)) &&
-      (f.servicos.length === 0 || f.servicos.includes(r.assunto)) &&
+      (!f.servico || norm(r.assunto).includes(norm(f.servico))) &&
       (!f.po || norm(r.poContrato).includes(norm(f.po))) &&
       (!f.empresa || norm(r.empresa).includes(norm(f.empresa))) &&
       (!f.dataInicio || !r.date || r.date >= f.dataInicio) &&
@@ -2578,24 +2575,36 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
 /* ============================================================
    COSTS
    ============================================================ */
-function CostsView({ serviceInvoices, updInv, effectiveRange, exchangeRate, setExchangeRate }) {
+function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
   const [expandedRow, setExpandedRow] = useState(null);
-  const [cf, setCf] = useState({ statuses: [] });
+  const defaultPeriod = useMemo(() => {
+    const now = new Date();
+    const start = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const end = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(lastDay)}`;
+    return { start, end };
+  }, []);
+  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categoria: "Todas", dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
+  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categoria !== "Todas" || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end;
 
   /* esta aba só considera serviços que ainda não estão como "Pago" na aba Pagamentos */
   const naoPagos = useMemo(() => serviceInvoices.filter((r) => r.statusPagamento !== "Pago"), [serviceInvoices]);
   const statusOptions = useMemo(() => STATUS_PAGAMENTO_OPTIONS.filter((s) => s !== "Pago"), []);
 
-  const filtered = useMemo(() => {
-    return naoPagos.filter((r) => {
-      const inRange = !r.date || (new Date(r.date) >= effectiveRange.start && new Date(r.date) <= effectiveRange.end);
-      const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
-      return inRange && inStatus;
-    });
-  }, [naoPagos, effectiveRange, cf]);
-
   const allocationsOf = (r) => r.allocations || [];
   const allocatedSum = (r) => allocationsOf(r).reduce((s, a) => s + Number(a.valor || 0), 0);
+
+  const filtered = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return naoPagos.filter((r) => {
+      const inRange = !r.date || (!cf.dataInicio || r.date >= cf.dataInicio) && (!cf.dataFim || r.date <= cf.dataFim);
+      const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
+      const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
+      const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
+      const inCategoria = cf.categoria === "Todas" || allocationsOf(r).some((a) => a.category === cf.categoria);
+      return inRange && inStatus && inServico && inEmpresa && inCategoria;
+    });
+  }, [naoPagos, cf]);
 
   const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0 }]);
   const updAllocation = (i, r, ai, field, value) => {
@@ -2604,7 +2613,9 @@ function CostsView({ serviceInvoices, updInv, effectiveRange, exchangeRate, setE
   };
   const remAllocation = (i, r, ai) => updInv(i, "allocations", allocationsOf(r).filter((_, idx) => idx !== ai));
 
-  /* resumo por categoria: Orçado (US$ da imagem, convertido p/ R$) × Realizado (soma do rateio) × Disponível */
+  /* resumo por categoria: Orçado é um valor mensal fixo (não acumula entre meses); Realizado é sempre
+     recalculado apenas a partir do período selecionado — então ao trocar de mês, o "gasto" zera e o
+     Orçado volta a aparecer inteiro, disponível de novo */
   const categoryCosts = useMemo(() => {
     return CATEGORIES.map((cat) => {
       const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
@@ -2632,18 +2643,42 @@ function CostsView({ serviceInvoices, updInv, effectiveRange, exchangeRate, setE
 
   return (
     <>
-      {/* Portcall e Período vêm do filtro global no topo; Status de pagamento é local, igual ao usado em Pagamentos */}
       <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
         Esta aba mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos.
+        Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.
       </div>
       <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
         <div className="g-field">
           <label>Status de pagamento (múltipla escolha)</label>
-          <MultiSelectStatus options={statusOptions} selected={cf.statuses} onChange={(v) => setCf({ statuses: v })} />
+          <MultiSelectStatus options={statusOptions} selected={cf.statuses} onChange={(v) => setCf((p) => ({ ...p, statuses: v }))} />
+        </div>
+        <div className="g-field">
+          <label>Serviço</label>
+          <input type="text" value={cf.servico} onChange={(e) => setCf((p) => ({ ...p, servico: e.target.value }))} placeholder="digitar..." style={{ minWidth: 150 }} />
+        </div>
+        <div className="g-field">
+          <label>Empresa</label>
+          <input type="text" value={cf.empresa} onChange={(e) => setCf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
+        </div>
+        <div className="g-field">
+          <label>Categoria</label>
+          <select value={cf.categoria} onChange={(e) => setCf((p) => ({ ...p, categoria: e.target.value }))}>
+            <option>Todas</option>
+            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="g-field">
+          <label>Período — de</label>
+          <input type="date" value={cf.dataInicio} onChange={(e) => setCf((p) => ({ ...p, dataInicio: e.target.value }))} />
+        </div>
+        <div className="g-field">
+          <label>Período — até</label>
+          <input type="date" value={cf.dataFim} onChange={(e) => setCf((p) => ({ ...p, dataFim: e.target.value }))} />
         </div>
         <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setCf({ statuses: [] })} disabled={cf.statuses.length === 0} style={{ opacity: cf.statuses.length ? 1 : 0.5 }}>
+          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categoria: "Todas", dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end })}
+            disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
         </div>
