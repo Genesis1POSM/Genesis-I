@@ -1301,7 +1301,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
       </div>
 
       {/* Global period filter — presente em todas as páginas, exceto Pagamentos (que tem seu próprio filtro por período) */}
-      {tab !== "payments" && tab !== "materials" && tab !== "costs" && (
+      {tab !== "payments" && tab !== "materials" && tab !== "costs" && tab !== "services" && (
       <div className="g-filterbar">
         <div className="g-field">
           <label>Port Call</label>
@@ -1407,7 +1407,7 @@ function Genesis({ currentUser, onLogout, users, setUsers }) {
         )}
 
         {tab === "services" && (
-          <ServicesView workPackages={workPackages} visibleWorkPackages={filteredWorkPackages} updWp={updWp} remWp={remWp}
+          <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp}
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} />
         )}
 
@@ -1816,10 +1816,17 @@ const StatusServicoSelect = ({ value, onChange }) => {
   );
 };
 
-function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expandedWp, setExpandedWp }) {
+function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
-  const [sf, setSf] = useState({ empresa: "", rc: "", manutencao: "", status: "Todos" });
-  const hasActiveFilter = sf.empresa || sf.rc || sf.manutencao || sf.status !== "Todos";
+  const [sf, setSf] = useState({ empresa: "", rc: "", manutencao: "", status: "Todos", portCall: "", dataInicio: "", dataFim: "" });
+  const hasActiveFilter = sf.empresa || sf.rc || sf.manutencao || sf.status !== "Todos" || sf.portCall || sf.dataInicio || sf.dataFim;
+
+  const dateKeyOf = (dt) => (dt ? dt.slice(0, 10) : null);
+  const portCallLabel = (dk) => {
+    const d = new Date(`${dk}T12:00:00`);
+    return `Port Call ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+  };
+  const portCallOptions = useMemo(() => [...new Set(workPackages.map((w) => dateKeyOf(w.start)).filter(Boolean))].sort(), [workPackages]);
 
   const setDateKeepTime = (i, w, newDate) => {
     const startTime = w.start ? w.start.slice(11) : "08:00";
@@ -1828,15 +1835,27 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
     updWp(i, "end", `${newDate}T${endTime}`);
   };
 
+  /* mudar o status para Concluído já ajusta o progresso para 100% automaticamente */
+  const handleStatusChange = (i, v) => {
+    updWp(i, "status", v);
+    if (v === "Concluído") updWp(i, "progress", 100);
+  };
+
   const filtered = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
-    return visibleWorkPackages.filter((w) =>
-      (!sf.empresa || norm(w.empresa).includes(norm(sf.empresa))) &&
-      (!sf.rc || norm(w.rc).includes(norm(sf.rc))) &&
-      (!sf.manutencao || norm(w.name).includes(norm(sf.manutencao))) &&
-      (sf.status === "Todos" || w.status === sf.status)
-    );
-  }, [visibleWorkPackages, sf]);
+    return workPackages.filter((w) => {
+      const dk = dateKeyOf(w.start);
+      return (
+        (!sf.empresa || norm(w.empresa).includes(norm(sf.empresa))) &&
+        (!sf.rc || norm(w.rc).includes(norm(sf.rc))) &&
+        (!sf.manutencao || norm(w.name).includes(norm(sf.manutencao))) &&
+        (sf.status === "Todos" || w.status === sf.status) &&
+        (!sf.portCall || dk === sf.portCall) &&
+        (!sf.dataInicio || !dk || dk >= sf.dataInicio) &&
+        (!sf.dataFim || !dk || dk <= sf.dataFim)
+      );
+    });
+  }, [workPackages, sf]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   const concluidos = filtered.filter((w) => w.status === "Concluído").length;
@@ -1857,15 +1876,15 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
 
   return (
     <>
-      {/* filtros locais — Portcall e Período já vêm do filtro global no topo */}
+      {/* filtros locais — Portcall e Período agora são só desta aba, junto com Manutenção/Empresa/RC/Status */}
       <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
         <div className="g-field">
           <label>Manutenção</label>
-          <input type="text" value={sf.manutencao} onChange={(e) => setSf((p) => ({ ...p, manutencao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 160 }} />
+          <input type="text" value={sf.manutencao} onChange={(e) => setSf((p) => ({ ...p, manutencao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 150 }} />
         </div>
         <div className="g-field">
           <label>Empresa</label>
-          <input type="text" value={sf.empresa} onChange={(e) => setSf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
+          <input type="text" value={sf.empresa} onChange={(e) => setSf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 120 }} />
         </div>
         <div className="g-field">
           <label>RC</label>
@@ -1879,8 +1898,23 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
           </select>
         </div>
         <div className="g-field">
+          <label>Port Call</label>
+          <select value={sf.portCall} onChange={(e) => setSf((p) => ({ ...p, portCall: e.target.value }))} style={{ minWidth: 140 }}>
+            <option value="">Todos</option>
+            {portCallOptions.map((dk) => <option key={dk} value={dk}>{portCallLabel(dk)}</option>)}
+          </select>
+        </div>
+        <div className="g-field">
+          <label>Período — de</label>
+          <input type="date" value={sf.dataInicio} onChange={(e) => setSf((p) => ({ ...p, dataInicio: e.target.value }))} />
+        </div>
+        <div className="g-field">
+          <label>Período — até</label>
+          <input type="date" value={sf.dataFim} onChange={(e) => setSf((p) => ({ ...p, dataFim: e.target.value }))} />
+        </div>
+        <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setSf({ empresa: "", rc: "", manutencao: "", status: "Todos" })}
+          <button className="g-btn" onClick={() => setSf({ empresa: "", rc: "", manutencao: "", status: "Todos", portCall: "", dataInicio: "", dataFim: "" })}
             disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
@@ -1914,6 +1948,7 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
               <SortTh sortKey="md" sort={sort} setSort={setSort}>MD</SortTh>
               <SortTh sortKey="rc" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>RC</SortTh>
               <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 170 }}>Status</SortTh>
+              <SortTh sortKey="progress" sort={sort} setSort={setSort} style={{ minWidth: 150 }}>Progresso</SortTh>
               <th style={{ minWidth: 200 }}>Observação</th><th></th>
             </tr>
           </thead>
@@ -1935,20 +1970,28 @@ function ServicesView({ workPackages, visibleWorkPackages, updWp, remWp, expande
                     <td style={{ minWidth: 130 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
                     <td><ESelect value={w.md || "Não"} onChange={(v) => updWp(i, "md", v)} options={["Sim", "Não"]} /></td>
                     <td style={{ minWidth: 100 }}><EText value={w.rc || ""} onChange={(v) => updWp(i, "rc", v)} mono /></td>
-                    <td style={{ minWidth: 170 }}><StatusServicoSelect value={w.status} onChange={(v) => updWp(i, "status", v)} /></td>
+                    <td style={{ minWidth: 170 }}><StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} /></td>
+                    <td style={{ minWidth: 150 }}>
+                      <div className="g-flex" style={{ gap: 6 }}>
+                        <input type="range" min="0" max="100" value={w.progress}
+                          onChange={(e) => updWp(i, "progress", Number(e.target.value))} style={{ width: 70 }} />
+                        <input type="number" min="0" max="100" className="g-edit num" style={{ width: 48 }} value={w.progress}
+                          onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
+                        <span style={{ fontSize: 10, color: "var(--text-faint)" }}>%</span>
+                      </div>
+                    </td>
                     <td style={{ minWidth: 200 }}><EText value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></td>
                     <td><span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span></td>
                   </tr>
                   {isOpen && (
                     <tr className="g-expand-row">
                       <td></td>
-                      <td colSpan={9} style={{ padding: "10px 8px 16px 8px" }}>
+                      <td colSpan={10} style={{ padding: "10px 8px 16px 8px" }}>
                         <div className="g-panel-title" style={{ marginBottom: 8 }}>Planejamento</div>
                         <div className="g-flex" style={{ flexWrap: "wrap", gap: 14 }}>
                           <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
                           <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
                           <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
-                          <div className="g-field"><label>Progresso (%)</label><ENum value={w.progress} onChange={(v) => updWp(i, "progress", v)} /></div>
                         </div>
                       </td>
                     </tr>
@@ -2201,6 +2244,16 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
   const [f, setF] = useState(emptyPayFilter);
   const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
+  /* seleção de linhas (checkboxes) compartilhada entre as três páginas — os KPIs de cada página
+     recalculam com base só nos serviços selecionados, quando houver alguma seleção */
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const toggleSelect = (id) => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const clearSelection = () => setSelectedIds(new Set());
+
   return (
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
@@ -2247,15 +2300,22 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
         </div>
       </div>
 
-      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} />}
-      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} />}
-      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} />}
+      {selectedIds.size > 0 && (
+        <div className="g-alert" style={{ background: "rgba(242,169,59,0.1)", borderColor: "rgba(242,169,59,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
+          <span><strong>{selectedIds.size}</strong> serviço(s) selecionado(s) — os KPIs abaixo refletem só a seleção.</span>
+          <span className="g-btn ghost" onClick={clearSelection} style={{ color: "var(--accent)" }}><X size={13} />Limpar seleção</span>
+        </div>
+      )}
+
+      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} />}
+      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} />}
+      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} />}
     </>
   );
 }
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
-function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
+function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
   const execToPayDays = (r) => {
@@ -2282,13 +2342,16 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
   }, [serviceInvoices, f]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
+  /* quando há seleção, os KPIs refletem só os serviços selecionados (dentro do filtro atual) */
+  const activeRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
+
   const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
-  const execPayVals = filtered.map(execToPayDays).filter((v) => v !== null);
+  const execPayVals = activeRows.map(execToPayDays).filter((v) => v !== null);
   /* valores negativos (MD enviada depois da execução, inconsistência) não entram na média */
-  const mdExecVals = filtered.map(mdToExecDays).filter((v) => v !== null && v >= 0);
-  const totalDiasAberto = filtered.reduce((s, r) => s + Number(r.daysOpenTotal || 0), 0);
-  const valorTotalSum = filtered.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
-  const saldoPoSum = filtered.reduce((s, r) => s + Number(r.saldoPo || 0), 0);
+  const mdExecVals = activeRows.map(mdToExecDays).filter((v) => v !== null && v >= 0);
+  const totalDiasAberto = activeRows.reduce((s, r) => s + Number(r.daysOpenTotal || 0), 0);
+  const valorTotalSum = activeRows.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+  const emAtraso = activeRows.filter((r) => Number(r.daysOpenTotal || 0) > 60).length;
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2302,12 +2365,12 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
 
   return (
     <>
-      <div className="g-kpi-row">
-        {bigKpi("Registros", filtered.length, "var(--teal)", LayoutGrid)}
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+        {bigKpi("Registros", activeRows.length, "var(--teal)", LayoutGrid)}
         {bigKpi("Valor Total", fmt(valorTotalSum), "var(--ok)", Wallet)}
-        {bigKpi("Saldo PO", fmt(saldoPoSum), "var(--warn)", AlertTriangle)}
+        {bigKpi("Serviços em Atraso (+60d)", emAtraso, "var(--crit)", AlertTriangle)}
       </div>
-      <div className="g-kpi-row">
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {bigKpi("Média Execução → Pagamento", `${avg(execPayVals).toFixed(1)} dias`, "var(--teal)")}
         {bigKpi("Média MD → Execução", `${avg(mdExecVals).toFixed(1)} dias`, "var(--teal)")}
         {bigKpi("Total de Dias em Aberto", `${totalDiasAberto} dias`, "var(--crit)", AlertTriangle)}
@@ -2318,6 +2381,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
         <table className="g-table">
           <thead>
             <tr>
+              <th></th>
               <SortTh sortKey="date" sort={sort} setSort={setSort}>Data</SortTh>
               <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 260 }}>Manutenção</SortTh>
               <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
@@ -2341,7 +2405,8 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
             {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
-                <tr className="g-row" key={r.id}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(242,169,59,0.06)" } : undefined}>
+                  <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 120 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -2375,11 +2440,10 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f }) {
 }
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
-function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
+function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
   const statusColorMap = STATUS_PAGAMENTO_COLOR;
-  const countOf = (s) => serviceInvoices.filter((r) => r.statusPagamento === s).length;
   const toggleStatus = (s) => setF((p) => ({
     ...p, statuses: p.statuses.includes(s) ? p.statuses.filter((x) => x !== s) : [...p.statuses, s],
   }));
@@ -2398,13 +2462,17 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
   }, [serviceInvoices, f]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
+  /* KPIs refletem a seleção de linhas quando houver alguma */
+  const activeRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
+  const countOf = (s) => activeRows.filter((r) => r.statusPagamento === s).length;
+
   return (
     <>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         <div className={`g-kpi clickable ${f.statuses.length === 0 ? "active" : ""}`}
           style={{ "--kpi-accent": "var(--text-dim)", padding: "18px 16px" }} onClick={() => setF((p) => ({ ...p, statuses: [] }))}>
           <div className="g-kpi-label" style={{ fontSize: 11 }}>Todos</div>
-          <div className="g-kpi-value" style={{ fontSize: 26 }}>{serviceInvoices.length}</div>
+          <div className="g-kpi-value" style={{ fontSize: 26 }}>{activeRows.length}</div>
         </div>
         {kpiStatuses.map((s) => {
           const color = statusColorMap[s];
@@ -2428,6 +2496,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
         <table className="g-table">
           <thead>
             <tr>
+              <th></th>
               <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 260 }}>Manutenção</SortTh>
               <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
               <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO/Contrato</SortTh>
@@ -2444,7 +2513,8 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF }) {
               const days = Number(r.daysOpenTotal || 0);
               const daysColor = days > 90 ? "var(--crit)" : days > 30 ? "var(--warn)" : "var(--text-dim)";
               return (
-                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: "rgba(255,255,255,0.015)" } : undefined}>
+                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(242,169,59,0.08)" : "rgba(255,255,255,0.015)" } : (selectedIds.has(r.id) ? { background: "rgba(242,169,59,0.08)" } : undefined)}>
+                  <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 140 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
                   <td style={{ minWidth: 130 }}><EText value={r.poContrato} onChange={(v) => updInv(i, "poContrato", v)} mono /></td>
@@ -2484,22 +2554,11 @@ const InvoiceSituationPill = ({ situation }) => (
 );
 
 /* ---------- Página 3: Dashboard de Valores — visão enxuta puxando os mesmos dados do Dashboard Total ---------- */
-function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
+function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect }) {
   const [situationFilter, setSituationFilter] = useState("Todos");
   const [sort, setSort] = useState({ key: null, dir: 1 });
 
   const withSituation = useMemo(() => serviceInvoices.map((r) => ({ ...r, _situation: invoiceSituation(r) })), [serviceInvoices]);
-  const pagos = withSituation.filter((r) => r._situation === "Pago");
-  const pendentes = withSituation.filter((r) => r._situation === "Pendente");
-  const atrasados = withSituation.filter((r) => r._situation === "Atrasado");
-  const sum = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
-
-  const cards = [
-    { key: "Todos", label: "Todos", value: withSituation.length, color: "var(--text-dim)", icon: LayoutGrid },
-    { key: "Pago", label: "Pago", value: `${pagos.length} · ${fmt(sum(pagos))}`, color: "var(--ok)", icon: Wallet },
-    { key: "Pendente", label: "Pendente", value: `${pendentes.length} · ${fmt(sum(pendentes))}`, color: "var(--warn)", icon: AlertTriangle },
-    { key: "Atrasado", label: "Atrasado", value: `${atrasados.length} · ${fmt(sum(atrasados))}`, color: "var(--crit)", icon: AlertTriangle },
-  ];
 
   const filtered = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
@@ -2514,6 +2573,20 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
     );
   }, [withSituation, situationFilter, f]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+
+  /* KPIs refletem a seleção de linhas quando houver alguma */
+  const activeRows = selectedIds.size > 0 ? withSituation.filter((r) => selectedIds.has(r.id)) : withSituation;
+  const pagos = activeRows.filter((r) => r._situation === "Pago");
+  const pendentes = activeRows.filter((r) => r._situation === "Pendente");
+  const atrasados = activeRows.filter((r) => r._situation === "Atrasado");
+  const sum = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+
+  const cards = [
+    { key: "Todos", label: "Todos", value: activeRows.length, color: "var(--text-dim)", icon: LayoutGrid },
+    { key: "Pago", label: "Pago", value: `${pagos.length} · ${fmt(sum(pagos))}`, color: "var(--ok)", icon: Wallet },
+    { key: "Pendente", label: "Pendente", value: `${pendentes.length} · ${fmt(sum(pendentes))}`, color: "var(--warn)", icon: AlertTriangle },
+    { key: "Atrasado", label: "Atrasado", value: `${atrasados.length} · ${fmt(sum(atrasados))}`, color: "var(--crit)", icon: AlertTriangle },
+  ];
 
   return (
     <>
@@ -2535,6 +2608,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
         <table className="g-table">
           <thead>
             <tr>
+              <th></th>
               <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 220 }}>Serviço</SortTh>
               <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
               <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO</SortTh>
@@ -2549,7 +2623,8 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f }) {
               const i = serviceInvoices.indexOf(r);
               const days = Number(r.daysOpenTotal || 0);
               return (
-                <tr className="g-row" key={r.id}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(242,169,59,0.06)" } : undefined}>
+                  <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 220 }}><EText value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
                   <td style={{ minWidth: 110 }}><EText value={r.poContrato} onChange={(v) => updInv(i, "poContrato", v)} mono /></td>
@@ -2584,8 +2659,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
     const end = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(lastDay)}`;
     return { start, end };
   }, []);
-  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categoria: "Todas", dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
-  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categoria !== "Todas" || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end;
+  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
+  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end;
 
   /* esta aba só considera serviços que ainda não estão como "Pago" na aba Pagamentos */
   const naoPagos = useMemo(() => serviceInvoices.filter((r) => r.statusPagamento !== "Pago"), [serviceInvoices]);
@@ -2601,7 +2676,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
       const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
       const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
       const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
-      const inCategoria = cf.categoria === "Todas" || allocationsOf(r).some((a) => a.category === cf.categoria);
+      const inCategoria = cf.categorias.length === 0 || allocationsOf(r).some((a) => cf.categorias.includes(a.category));
       return inRange && inStatus && inServico && inEmpresa && inCategoria;
     });
   }, [naoPagos, cf]);
@@ -2661,11 +2736,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
           <input type="text" value={cf.empresa} onChange={(e) => setCf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
         </div>
         <div className="g-field">
-          <label>Categoria</label>
-          <select value={cf.categoria} onChange={(e) => setCf((p) => ({ ...p, categoria: e.target.value }))}>
-            <option>Todas</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <label>Categoria (múltipla escolha)</label>
+          <MultiSelectStatus options={CATEGORIES} selected={cf.categorias} onChange={(v) => setCf((p) => ({ ...p, categorias: v }))} />
         </div>
         <div className="g-field">
           <label>Período — de</label>
@@ -2677,7 +2749,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
         </div>
         <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categoria: "Todas", dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end })}
+          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end })}
             disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
