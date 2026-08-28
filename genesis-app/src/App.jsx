@@ -265,9 +265,9 @@ const Theme = () => (
     .g-gantt { min-width: 1100px; }
     .g-gantt-header { display: flex; margin-left: 400px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 4px; }
     .g-gantt-day { flex: 1; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
-    .g-gantt-row { display: flex; align-items: center; min-height: 56px; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border-soft); transition: border-color .12s, background .12s; }
+    .g-gantt-row { display: flex; align-items: center; min-height: 68px; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border-soft); transition: border-color .12s, background .12s; }
     .g-gantt-row:hover { border-color: var(--border); background: var(--panel-alt); }
-    .g-gantt-taskinfo { width: 860px; flex-shrink: 0; padding-right: 14px; }
+    .g-gantt-taskinfo { width: 620px; flex-shrink: 0; padding-right: 14px; }
     .g-gantt-mini-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-family: var(--mono); margin-bottom: 2px; }
     .g-gantt-mini-dt {
       background: var(--panel-raised); border: 1px solid var(--border); color: var(--text);
@@ -455,6 +455,39 @@ const pdfSave = (doc, filenamePrefix) => {
   doc.save(`${filenamePrefix}-${todayISO()}.pdf`);
 };
 
+/* mini-Gantt visual no PDF: uma barra colorida por tarefa, posicionada por hora dentro do
+   intervalo do Port Call — dá o efeito de cronograma tipo MS Project no relatório */
+const pdfMiniGantt = (doc, y, span, activities) => {
+  const chartX = 14, chartW = 130;
+  const totalHours = Math.max(1, span.hours);
+  const rowH = 5.2;
+  if (y + activities.length * rowH + 10 > 280) { doc.addPage(); y = 15; }
+  doc.setFontSize(7);
+  doc.setTextColor(...PDF_MUTED);
+  doc.text(fmtPeriodDate(span.start), chartX, y);
+  doc.text(fmtPeriodDate(span.end), chartX + chartW, y, { align: "right" });
+  y += 3;
+  doc.setDrawColor(225, 225, 225);
+  doc.rect(chartX, y, chartW, activities.length * rowH, "S");
+  activities.forEach((w, idx) => {
+    const rowY = y + idx * rowH;
+    const startH = Math.max(0, (new Date(w.start) - span.start) / 3600000);
+    const endH = Math.min(totalHours, (new Date(w.end) - span.start) / 3600000);
+    const durH = Math.max(0, endH - startH);
+    const barX = chartX + (startH / totalHours) * chartW;
+    const barW = Math.max(1.2, (durH / totalHours) * chartW);
+    const hex = WP_STATUS_COLOR[w.status] || "#F2C94C";
+    const rgb = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+    doc.setFillColor(...rgb);
+    doc.roundedRect(barX, rowY + 0.6, barW, rowH - 1.4, 0.6, 0.6, "F");
+    doc.setFontSize(6);
+    doc.setTextColor(60, 60, 60);
+    const label = w.name.length > 26 ? w.name.slice(0, 24) + "…" : w.name;
+    doc.text(label, chartX + chartW + 2, rowY + rowH - 1.6);
+  });
+  return y + activities.length * rowH + 8;
+};
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -465,9 +498,8 @@ const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação rece
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica"];
 /* categories + Orçado (USD) exactly as in the uploaded drill-down report */
-const CATEGORIES = ["Drilling", "Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica"];
+const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica"];
 const CATEGORY_BUDGET_USD = {
-  "Drilling": 0,
   "Elétrica": 27900,
   "Hse": 6200,
   "Hull & Structure": 12772,
@@ -1646,21 +1678,76 @@ function Genesis({ currentUser, onLogout, users, setUsers,
    ============================================================ */
 function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn }) {
   const fmtUsd = (n) => "US$ " + Number(n || 0).toLocaleString("en-US");
+
+  /* filtro de período do Dashboard — por padrão, o mês vigente */
+  const defaultDashPeriod = useMemo(() => {
+    const now = new Date();
+    const start = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const end = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(lastDay)}`;
+    return { start, end };
+  }, []);
+  const [dp, setDp] = useState({ dataInicio: defaultDashPeriod.start, dataFim: defaultDashPeriod.end });
+  const isDefaultDashPeriod = dp.dataInicio === defaultDashPeriod.start && dp.dataFim === defaultDashPeriod.end;
+
+  /* próximas manutenções — só o que ainda está em aberto de fato (não concluído nem cancelado) */
   const upcomingMaintenance = workPackages
-    .filter((w) => w.status !== "Concluído")
+    .filter((w) => ["Em andamento", "Não iniciado", "Planejamento"].includes(w.status))
     .slice()
     .sort((a, b) => new Date(a.start) - new Date(b.start));
 
-  /* métricas de pagamento a partir dos dados reais de Status de Pagamento (planilha importada) */
-  const invPagos = serviceInvoices.filter((r) => r.statusPagamento === "Pago");
-  const invAbertos = serviceInvoices.filter((r) => r.statusPagamento !== "Pago" && r.statusPagamento !== "Cancelado");
-  const invSum = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
-  const invTotalDiasAberto = invAbertos.reduce((s, r) => s + Number(r.daysOpenTotal || 0), 0);
+  /* ---------- Serviços: espelha exatamente os mesmos números da aba Serviços ---------- */
+  const totalServicos = workPackages.length;
+  const concluidosServicos = workPackages.filter((w) => w.status === "Concluído").length;
+  const emAndamentoServicos = workPackages.filter((w) => w.status === "Em andamento").length;
+  const naoIniciadosServicos = workPackages.filter((w) => w.status === "Não iniciado").length;
+  const canceladosServicos = workPackages.filter((w) => w.status === "Cancelado").length;
+  const naoCanceladosServicos = totalServicos - canceladosServicos;
+  const taxaConclusaoServicos = naoCanceladosServicos ? Math.round((concluidosServicos / naoCanceladosServicos) * 100) : 0;
+
+  /* ---------- Pagamentos: espelha exatamente a mesma classificação Pago/Pendente/Atrasado da aba Pagamentos ---------- */
+  const pagosDash = serviceInvoices.filter((r) => invoiceSituation(r) === "Pago");
+  const pendentesDash = serviceInvoices.filter((r) => invoiceSituation(r) === "Pendente");
+  const atrasadosDash = serviceInvoices.filter((r) => invoiceSituation(r) === "Atrasado");
+  const sumVal = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+  const invTotalDiasAberto = [...pendentesDash, ...atrasadosDash].reduce((s, r) => s + Number(r.daysOpenTotal || 0), 0);
   const topOpenInvoices = serviceInvoices
     .filter((r) => r.statusPagamento === "Aprovação Pendente")
     .slice()
     .sort((a, b) => Number(b.daysOpenTotal || 0) - Number(a.daysOpenTotal || 0))
     .slice(0, 8);
+
+  /* ---------- Financeiro: espelha exatamente a mesma lógica de Orçado/Realizado/Disponível da aba Custos
+     (categoria × alocação de rateio, serviços ainda não pagos), escopado ao período do Dashboard ---------- */
+  const categoryCostsDash = useMemo(() => {
+    const inPeriod = serviceInvoices.filter((r) =>
+      r.statusPagamento !== "Pago" &&
+      (!r.date || (!dp.dataInicio || r.date >= dp.dataInicio) && (!dp.dataFim || r.date <= dp.dataFim))
+    );
+    return CATEGORIES.map((cat) => {
+      const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
+      const orcadoBrl = orcadoUsd * exchangeRate;
+      const realizado = inPeriod.reduce((s, r) => s + (r.allocations || []).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+      return { category: cat, orcadoUsd, orcadoBrl, realizado, disponivel: orcadoBrl - realizado };
+    });
+  }, [serviceInvoices, dp, exchangeRate]);
+  const totalOrcadoDash = categoryCostsDash.reduce((s, c) => s + c.orcadoBrl, 0);
+  const totalRealizadoDash = categoryCostsDash.reduce((s, c) => s + c.realizado, 0);
+  const totalDisponivelDash = totalOrcadoDash - totalRealizadoDash;
+
+  /* ---------- Gastos por mês: soma do Valor Total de todos os serviços, agrupado por mês da Data ---------- */
+  const gastosPorMes = useMemo(() => {
+    const map = {};
+    serviceInvoices.forEach((r) => {
+      if (!r.date) return;
+      const key = r.date.slice(0, 7); // YYYY-MM
+      map[key] = (map[key] || 0) + Number(r.valorTotal || 0);
+    });
+    return Object.keys(map).sort().map((key) => {
+      const [y, m] = key.split("-");
+      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, valor: map[key] };
+    });
+  }, [serviceInvoices]);
 
   /* último Port Call já concluído — derivado direto dos serviços reais cadastrados (aba Serviços) */
   const dateKeyOf = (dt) => (dt ? dt.slice(0, 10) : null);
@@ -1676,51 +1763,76 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
     : "—";
 
   const financeiro = [
-    { label: "Budget disponível no período", value: fmt(kpis.budgetMes), color: "var(--teal)" },
-    { label: "Utilizado (comprometido)", value: fmt(kpis.utilizadoMes), color: "var(--warn)" },
-    { label: "Realizado", value: fmt(kpis.realizadoMes), color: "var(--ok)" },
+    { label: "Total Orçado (mês)", value: fmt(totalOrcadoDash), color: "var(--text-dim)" },
+    { label: "Total Realizado (mês)", value: fmt(totalRealizadoDash), color: "var(--teal)" },
+    { label: "Saldo Disponível (mês)", value: fmt(totalDisponivelDash), color: totalDisponivelDash < 0 ? "var(--crit)" : "var(--ok)" },
   ];
   const servicos = [
-    { label: "Serviços concluídos (total)", value: kpis.concluidosTotal, color: "var(--ok)" },
-    { label: "Serviços concluídos no período", value: kpis.concluidosMes, color: "var(--ok)" },
-    { label: "Serviços concluídos no Port Call", value: kpis.concluidosPortCall, color: "var(--ok)" },
-    { label: "Em andamento", value: kpis.emAndamento, color: "var(--teal)" },
-    { label: "Serviços planejados", value: kpis.planejados, color: "var(--text-dim)" },
-    { label: "Requisições abertas", value: kpis.requisicoesAbertas, color: "var(--warn)" },
+    { label: "Total de Serviços", value: totalServicos, color: "var(--teal)" },
+    { label: "Concluídos", value: concluidosServicos, color: "var(--ok)" },
+    { label: "Em Andamento", value: emAndamentoServicos, color: "var(--teal)" },
+    { label: "Não Iniciados", value: naoIniciadosServicos, color: "var(--text-dim)" },
+    { label: "Cancelados", value: canceladosServicos, color: "var(--text-dim)" },
+    { label: "Taxa de Conclusão", value: `${taxaConclusaoServicos}%`, color: "var(--warn)" },
   ];
   const pagamentos = [
-    { label: "Pagos", value: `${invPagos.length} · ${fmt(invSum(invPagos))}`, color: "var(--ok)" },
-    { label: "Em aberto", value: `${invAbertos.length} · ${fmt(invSum(invAbertos))}`, color: "var(--warn)" },
-    { label: "Total de dias em aberto (soma)", value: `${invTotalDiasAberto} dias`, color: "var(--crit)" },
+    { label: "Pago", value: `${pagosDash.length} · ${fmt(sumVal(pagosDash))}`, color: "var(--ok)" },
+    { label: "Pendente", value: `${pendentesDash.length} · ${fmt(sumVal(pendentesDash))}`, color: "var(--warn)" },
+    { label: "Atrasado", value: `${atrasadosDash.length} · ${fmt(sumVal(atrasadosDash))}`, color: "var(--crit)" },
   ];
 
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
       const doc = new jsPDF();
-      let y = pdfHeader(doc, "Relatório do Dashboard", `Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      let y = pdfHeader(doc, "Relatório do Dashboard",
+        `Período: ${fmtPeriodDate(dp.dataInicio)} — ${fmtPeriodDate(dp.dataFim)} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       y = pdfKpis(doc, y, [
         ...financeiro.map((k) => ({ label: k.label, value: k.value })),
         ...servicos.map((k) => ({ label: k.label, value: k.value })),
         ...pagamentos.map((k) => ({ label: k.label, value: k.value })),
       ]);
-      y = pdfSectionTitle(doc, y, "Custo por categoria");
+      y = pdfSectionTitle(doc, y, "Custo por categoria (mês selecionado)");
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)"],
-        disciplineCosts.map((d) => [d.discipline, fmtUsd(d.orcadoUsd), fmt(d.orcadoBrl), fmt(d.actual)])
+        categoryCostsDash.map((d) => [d.category, fmtUsd(d.orcadoUsd), fmt(d.orcadoBrl), fmt(d.realizado)]),
+        { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } }
       );
-      y = pdfSectionTitle(doc, y, `Pagamentos com Aprovação Pendente há mais tempo`);
+      y = pdfSectionTitle(doc, y, "Gastos por mês");
+      y = pdfTable(doc, y, ["Mês", "Valor"], gastosPorMes.map((g) => [g.mes, fmt(g.valor)]), { columnStyles: { 1: { halign: "right" } } });
+      if (y > 220) { doc.addPage(); y = 15; }
+      y = pdfSectionTitle(doc, y, "Pagamentos com Aprovação Pendente há mais tempo");
       pdfTable(doc, y,
         ["Data", "Serviço", "Empresa", "Valor", "Dias em Aberto"],
-        topOpenInvoices.map((r) => [fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.daysOpenTotal])
+        topOpenInvoices.map((r) => [fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.daysOpenTotal]),
+        { columnStyles: { 3: { halign: "right" } } }
       );
       pdfSave(doc, "relatorio-dashboard");
     });
-  }, [financeiro, servicos, pagamentos, disciplineCosts, topOpenInvoices, setReportFn]);
+  }, [financeiro, servicos, pagamentos, categoryCostsDash, gastosPorMes, topOpenInvoices, dp, setReportFn]);
 
   return (
     <>
-      <div className="g-section-label">Financeiro do período</div>
+      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+        <div className="g-field">
+          <label>Período — de</label>
+          <input type="date" value={dp.dataInicio} onChange={(e) => setDp((p) => ({ ...p, dataInicio: e.target.value }))} />
+        </div>
+        <div className="g-field">
+          <label>Período — até</label>
+          <input type="date" value={dp.dataFim} onChange={(e) => setDp((p) => ({ ...p, dataFim: e.target.value }))} />
+        </div>
+        <div className="g-field">
+          <label>&nbsp;</label>
+          <button className="g-btn" onClick={() => setDp(defaultDashPeriod)} disabled={isDefaultDashPeriod} style={{ opacity: isDefaultDashPeriod ? 0.5 : 1 }}>
+            <X size={13} />Voltar ao mês vigente
+          </button>
+        </div>
+        <div className="g-filter-spacer" />
+        <div className="g-filter-summary">Financeiro e gráfico de categoria calculados sobre este período</div>
+      </div>
+
+      <div className="g-section-label">Financeiro (de acordo com a aba Custos)</div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {financeiro.map((k) => (
           <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
@@ -1730,8 +1842,8 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
         ))}
       </div>
 
-      <div className="g-section-label">Serviços</div>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+      <div className="g-section-label">Serviços (de acordo com a aba Serviços)</div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
         {servicos.map((k) => (
           <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
             <div className="g-kpi-label">{k.label}</div>
@@ -1740,7 +1852,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
         ))}
       </div>
 
-      <div className="g-section-label">Pagamentos</div>
+      <div className="g-section-label">Pagamentos (de acordo com a aba Pagamentos)</div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {pagamentos.map((k) => (
           <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
@@ -1805,7 +1917,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
       <div className="g-grid-2">
         <div className="g-panel">
           <div className="g-panel-head">
-            <span className="g-panel-title">Custo por categoria (Orçado × Realizado)</span>
+            <span className="g-panel-title">Custo por categoria — mês selecionado (Orçado × Realizado)</span>
             <span className="g-flex" style={{ fontSize: 11 }}>
               <span className="g-muted" style={{ fontFamily: "var(--mono)" }}>Câmbio US$→R$</span>
               <input type="number" step="0.01" value={exchangeRate} onChange={(e) => setExchangeRate(Number(e.target.value))}
@@ -1814,29 +1926,44 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
           </div>
           <div style={{ width: "100%", height: 220 }}>
             <ResponsiveContainer>
-              <BarChart data={disciplineCosts} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+              <BarChart data={categoryCostsDash} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                <XAxis dataKey="discipline" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={60} />
+                <XAxis dataKey="category" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={60} />
                 <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                 <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
                 <Bar dataKey="orcadoBrl" name="Orçado (R$)" radius={[3, 3, 0, 0]} fill="var(--border)" />
-                <Bar dataKey="actual" name="Realizado (R$)" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                <Bar dataKey="realizado" name="Realizado (R$)" radius={[3, 3, 0, 0]} fill="var(--accent)" />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <table className="g-table" style={{ marginTop: 10 }}>
             <thead><tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th></tr></thead>
             <tbody>
-              {disciplineCosts.map((d) => (
-                <tr key={d.discipline}>
-                  <td>{d.discipline}</td>
+              {categoryCostsDash.map((d) => (
+                <tr key={d.category}>
+                  <td>{d.category}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{fmtUsd(d.orcadoUsd)}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.orcadoBrl)}</td>
-                  <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.actual)}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.realizado)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="g-panel">
+          <div className="g-panel-head"><span className="g-panel-title">Gastos por mês</span></div>
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <BarChart data={gastosPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
+                <Bar dataKey="valor" name="Gasto" radius={[3, 3, 0, 0]} fill="var(--teal)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         <div className="g-panel">
@@ -1895,23 +2022,46 @@ function GanttView({ workPackages, filterRange, portCallName,
     if (v === "Concluído") updWp(i, "progress", 100);
   };
 
+  /* essas categorias são operações do próprio navio — não precisam de campo Empresa */
+  const NO_EMPRESA_CATEGORIES = ["Manobras", "Troca de Turma", "Base Açu", "Load", "Backload"];
+
+  /* mudar a Duração (horas) recalcula o Término automaticamente a partir do Início —
+     e mudar o Término, como já acontece, recalcula a Duração exibida. As duas direções funcionam. */
+  const setTaskDuration = (i, w, hours) => {
+    if (!w.start) return;
+    const start = new Date(w.start);
+    const end = new Date(start.getTime() + Math.max(0, Number(hours) || 0) * 3600000);
+    const endStr = `${end.getFullYear()}-${pad2(end.getMonth() + 1)}-${pad2(end.getDate())}T${pad2(end.getHours())}:${pad2(end.getMinutes())}`;
+    updWp(i, "end", endStr);
+  };
+
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
       const doc = new jsPDF();
-      let y = pdfHeader(doc, "Relatório de Port Call",
+      let y = pdfHeader(doc, "Relatório de Port Call — Cronograma",
         `${portCallName} · ${spans.length} Port Call(s) no período · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       spans.forEach((span) => {
         const activities = workPackages.filter((w) => {
           const d = new Date(w.start);
           return d >= span.start && d < span.end;
-        });
-        if (y > 260) { doc.addPage(); y = 15; }
-        y = pdfSectionTitle(doc, y, `${portCallLabel(span.startKey)} — ${activities.length} atividade(s)`);
+        }).sort((a, b) => new Date(a.start) - new Date(b.start));
+        if (y > 250) { doc.addPage(); y = 15; }
+        y = pdfSectionTitle(doc, y, `${portCallLabel(span.startKey)} — ${activities.length} atividade(s) · ${Math.round(span.hours)}h`);
+        /* colunas no padrão de um cronograma tipo MS Project: Tarefa / Início / Término / Duração / % Completo / Status / Recurso */
         y = pdfTable(doc, y,
-          ["Manutenção", "Empresa", "Início", "Término", "Status", "Progresso"],
-          activities.map((w) => [w.name, w.empresa || "—", fmtDateTime(w.start), fmtDateTime(w.end), w.status, `${w.progress}%`])
+          ["Nome da Tarefa", "Início", "Término", "Duração", "% Completo", "Status", "Recurso (Empresa)"],
+          activities.map((w) => [
+            w.name, fmtDateTime(w.start), fmtDateTime(w.end),
+            `${Math.max(0, Math.round((new Date(w.end) - new Date(w.start)) / 3600000))}h`,
+            `${w.progress}%`, w.status, w.empresa || "—",
+          ]),
+          { columnStyles: { 4: { halign: "right" } } }
         );
+        if (activities.length > 0) {
+          y = pdfSectionTitle(doc, y, "Cronograma visual");
+          y = pdfMiniGantt(doc, y, span, activities);
+        }
       });
       pdfSave(doc, "relatorio-portcall");
     });
@@ -2036,15 +2186,17 @@ function GanttView({ workPackages, filterRange, portCallName,
                         const isOpen = expandedRow === w.id;
                         return (
                           <div key={w.id} style={{ "--gantt-days": days }}>
-                            <div className="g-gantt-row" style={{ borderLeft: `3px solid ${WP_STATUS_COLOR[w.status] || "#F2C94C"}` }}>
+                            <div className="g-gantt-row" style={{ borderLeft: `3px solid ${WP_STATUS_COLOR[w.status] || "#F2C94C"}`, alignItems: "flex-start" }}>
                               <div className="g-gantt-taskinfo">
-                                <div className="g-flex" style={{ gap: 10, alignItems: "center", flexWrap: "nowrap" }}>
+                                <div className="g-flex" style={{ gap: 8, alignItems: "center", marginBottom: 6 }}>
                                   <span className="g-btn ghost" style={{ padding: 2, flexShrink: 0 }} onClick={() => setExpandedRow(isOpen ? null : w.id)}>
                                     {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                   </span>
                                   <textarea className="g-edit-wrap g-gantt-name-edit" rows={1} value={w.name}
                                     onChange={(e) => updWp(i, "name", e.target.value)}
-                                    style={{ flex: "1 1 170px", minWidth: 150, fontWeight: 600 }} />
+                                    style={{ flex: 1, minWidth: 150, fontWeight: 600 }} />
+                                </div>
+                                <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginLeft: 22 }}>
                                   <div style={{ flexShrink: 0 }}>
                                     <div className="g-gantt-mini-label">Início</div>
                                     <input type="datetime-local" className="g-gantt-mini-dt" value={w.start || ""}
@@ -2055,26 +2207,37 @@ function GanttView({ workPackages, filterRange, portCallName,
                                     <input type="datetime-local" className="g-gantt-mini-dt" value={w.end || ""}
                                       onChange={(e) => updWp(i, "end", e.target.value)} />
                                   </div>
-                                  <div style={{ flexShrink: 0, textAlign: "center", minWidth: 40 }}>
-                                    <div className="g-gantt-mini-label">Duração</div>
-                                    <div style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
-                                      {w.start && w.end ? `${Math.max(0, Math.round((new Date(w.end) - new Date(w.start)) / 3600000))}h` : "—"}
-                                    </div>
+                                  <div style={{ flexShrink: 0 }}>
+                                    <div className="g-gantt-mini-label">Duração (h)</div>
+                                    <input type="number" min="0" className="g-gantt-mini-dt" style={{ width: 56, textAlign: "center" }}
+                                      value={w.start && w.end ? Math.max(0, Math.round((new Date(w.end) - new Date(w.start)) / 3600000)) : ""}
+                                      onChange={(e) => setTaskDuration(i, w, e.target.value)} />
                                   </div>
-                                  <input type="text" className="g-edit" placeholder="Empresa" value={w.empresa || ""}
-                                    onChange={(e) => updWp(i, "empresa", e.target.value)}
-                                    style={{ width: 90, flexShrink: 0, fontSize: 10.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "5px 6px" }} />
-                                  <div style={{ flexShrink: 0 }}><StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} /></div>
-                                  <div className="g-flex" style={{ gap: 4, flexShrink: 0 }}>
-                                    <div className="g-bar-bg" style={{ width: 36 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
-                                    <input type="number" min="0" max="100" className="g-edit num" style={{ width: 36, fontSize: 10.5, padding: "2px 3px" }}
-                                      value={w.progress} onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
-                                    <span style={{ fontSize: 9, color: "var(--text-faint)" }}>%</span>
+                                  {!NO_EMPRESA_CATEGORIES.includes(cat) && (
+                                    <div style={{ flexShrink: 0 }}>
+                                      <div className="g-gantt-mini-label">Empresa</div>
+                                      <input type="text" className="g-edit" placeholder="Empresa" value={w.empresa || ""}
+                                        onChange={(e) => updWp(i, "empresa", e.target.value)}
+                                        style={{ width: 90, fontSize: 10.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "5px 6px" }} />
+                                    </div>
+                                  )}
+                                  <div style={{ flexShrink: 0 }}>
+                                    <div className="g-gantt-mini-label">Status</div>
+                                    <StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} />
+                                  </div>
+                                  <div style={{ flexShrink: 0 }}>
+                                    <div className="g-gantt-mini-label">Progresso</div>
+                                    <div className="g-flex" style={{ gap: 4 }}>
+                                      <div className="g-bar-bg" style={{ width: 36 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
+                                      <input type="number" min="0" max="100" className="g-edit num" style={{ width: 36, fontSize: 10.5, padding: "2px 3px" }}
+                                        value={w.progress} onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
+                                      <span style={{ fontSize: 9, color: "var(--text-faint)" }}>%</span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ flex: 1, alignSelf: "center" }}>{renderBar(w)}</div>
-                              <span className="g-btn ghost danger" style={{ marginLeft: 6, alignSelf: "center" }} onClick={() => remWp(i)}><Trash2 size={12} /></span>
+                              <div style={{ flex: 1, alignSelf: "center", marginTop: 4 }}>{renderBar(w)}</div>
+                              <span className="g-btn ghost danger" style={{ marginLeft: 6, alignSelf: "flex-start", marginTop: 4 }} onClick={() => remWp(i)}><Trash2 size={12} /></span>
                             </div>
                             {isOpen && (
                               <div className="g-gantt-editrow">
@@ -3161,6 +3324,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
    COSTS
    ============================================================ */
 function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
+  const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard"
   const [expandedRow, setExpandedRow] = useState(null);
   const defaultPeriod = useMemo(() => ({ start: "2026-01-01", end: todayISO() }), []);
   const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
@@ -3209,6 +3373,22 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const totalDisponivel = totalOrcadoBrl - totalRealizado;
   const pctConsumido = totalOrcadoBrl ? Math.round((totalRealizado / totalOrcadoBrl) * 100) : 0;
   const semRateioCompleto = filtered.filter((r) => Math.round(allocatedSum(r)) !== Math.round(Number(r.valorTotal || 0))).length;
+
+  /* análise combinada de custo + pagamento (sub-aba Dashboard) — mesmo período/serviço/empresa do
+     filtro acima, mas sem excluir os já pagos, pra dar a visão completa da situação de pagamento */
+  const allInPeriod = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return serviceInvoices.filter((r) => {
+      const inRange = !r.date || (!cf.dataInicio || r.date >= cf.dataInicio) && (!cf.dataFim || r.date <= cf.dataFim);
+      const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
+      const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
+      return inRange && inServico && inEmpresa;
+    });
+  }, [serviceInvoices, cf]);
+  const pagosPeriodo = allInPeriod.filter((r) => invoiceSituation(r) === "Pago");
+  const pendentesPeriodo = allInPeriod.filter((r) => invoiceSituation(r) === "Pendente");
+  const atrasadosPeriodo = allInPeriod.filter((r) => invoiceSituation(r) === "Atrasado");
+  const sumVal = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -3275,15 +3455,29 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
 
   return (
     <>
+      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+        <button className={costSubTab === "rateio" ? "active" : ""} onClick={() => setCostSubTab("rateio")}>Rateio por Categoria</button>
+        <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard (Custos + Pagamentos)</button>
+      </div>
+
       <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
-        Esta aba mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos.
-        Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.
+        {costSubTab === "rateio"
+          ? <>Esta página mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos. Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.</>
+          : <>Visão combinada: custo por categoria (Orçado × Realizado) e situação dos pagamentos (Pago/Pendente/Atrasado), para o mesmo período e filtros abaixo.</>}
       </div>
       <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
-        <div className="g-field">
-          <label>Status de pagamento (múltipla escolha)</label>
-          <MultiSelectStatus options={statusOptions} selected={cf.statuses} onChange={(v) => setCf((p) => ({ ...p, statuses: v }))} />
-        </div>
+        {costSubTab === "rateio" && (
+          <>
+            <div className="g-field">
+              <label>Status de pagamento (múltipla escolha)</label>
+              <MultiSelectStatus options={statusOptions} selected={cf.statuses} onChange={(v) => setCf((p) => ({ ...p, statuses: v }))} />
+            </div>
+            <div className="g-field">
+              <label>Categoria (múltipla escolha)</label>
+              <MultiSelectStatus options={CATEGORIES} selected={cf.categorias} onChange={(v) => setCf((p) => ({ ...p, categorias: v }))} />
+            </div>
+          </>
+        )}
         <div className="g-field">
           <label>Serviço</label>
           <input type="text" value={cf.servico} onChange={(e) => setCf((p) => ({ ...p, servico: e.target.value }))} placeholder="digitar..." style={{ minWidth: 150 }} />
@@ -3291,10 +3485,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         <div className="g-field">
           <label>Empresa</label>
           <input type="text" value={cf.empresa} onChange={(e) => setCf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
-        </div>
-        <div className="g-field">
-          <label>Categoria (múltipla escolha)</label>
-          <MultiSelectStatus options={CATEGORIES} selected={cf.categorias} onChange={(v) => setCf((p) => ({ ...p, categorias: v }))} />
         </div>
         <div className="g-field">
           <label>Período — de</label>
@@ -3313,6 +3503,61 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         </div>
       </div>
 
+      {costSubTab === "dashboard" ? (
+        <>
+          <div className="g-section-label">Custos</div>
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Total Realizado (rateado)", fmt(totalRealizado), "var(--teal)", Wallet)}
+            {bigKpi("Total Orçado", fmt(totalOrcadoBrl), "var(--text-dim)", Calculator)}
+            {bigKpi("Saldo Disponível", fmt(totalDisponivel), totalDisponivel < 0 ? "var(--crit)" : "var(--ok)", Wallet)}
+            {bigKpi("% Orçamento Consumido", `${pctConsumido}%`, pctConsumido > 100 ? "var(--crit)" : "var(--warn)", AlertTriangle)}
+          </div>
+          <div className="g-section-label">Pagamentos</div>
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+            {bigKpi("Pago", `${pagosPeriodo.length} · ${fmt(sumVal(pagosPeriodo))}`, "var(--ok)", Wallet)}
+            {bigKpi("Pendente", `${pendentesPeriodo.length} · ${fmt(sumVal(pendentesPeriodo))}`, "var(--warn)", AlertTriangle)}
+            {bigKpi("Atrasado", `${atrasadosPeriodo.length} · ${fmt(sumVal(atrasadosPeriodo))}`, "var(--crit)", AlertTriangle)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Custo por categoria — Orçado × Realizado</span></div>
+            <div style={{ width: "100%", height: 220 }}>
+              <ResponsiveContainer>
+                <BarChart data={categoryCosts} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="category" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-25} textAnchor="end" height={55} />
+                  <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
+                  <Bar dataKey="orcadoBrl" name="Orçado" radius={[3, 3, 0, 0]} fill="var(--border)" />
+                  <Bar dataKey="realizado" name="Realizado" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Situação dos pagamentos no período</span></div>
+            <div style={{ width: "100%", height: 200 }}>
+              <ResponsiveContainer>
+                <BarChart data={[
+                  { situacao: "Pago", valor: sumVal(pagosPeriodo) },
+                  { situacao: "Pendente", valor: sumVal(pendentesPeriodo) },
+                  { situacao: "Atrasado", valor: sumVal(atrasadosPeriodo) },
+                ]} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="situacao" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
+                  <Bar dataKey="valor" radius={[3, 3, 0, 0]}>
+                    <Cell fill="var(--ok)" /><Cell fill="var(--warn)" /><Cell fill="var(--crit)" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </>
+      ) : (
+      <>
       {/* KPIs de análise */}
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {bigKpi("Total Realizado (rateado)", fmt(totalRealizado), "var(--teal)", Wallet)}
@@ -3419,6 +3664,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         </div>
         {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum serviço encontrado com esses filtros.</div>}
       </div>
+      </>
+      )}
     </>
   );
 }
