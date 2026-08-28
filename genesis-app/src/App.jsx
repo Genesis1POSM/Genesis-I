@@ -263,11 +263,19 @@ const Theme = () => (
     .g-gantt { min-width: 1100px; }
     .g-gantt-header { display: flex; margin-left: 400px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 4px; }
     .g-gantt-day { flex: 1; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
-    .g-gantt-row { display: flex; align-items: flex-start; min-height: 52px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); }
-    .g-gantt-taskinfo { width: 400px; flex-shrink: 0; padding-right: 10px; }
+    .g-gantt-row { display: flex; align-items: center; min-height: 56px; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border-soft); transition: border-color .12s, background .12s; }
+    .g-gantt-row:hover { border-color: var(--border); background: var(--panel-alt); }
+    .g-gantt-taskinfo { width: 860px; flex-shrink: 0; padding-right: 14px; }
+    .g-gantt-mini-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-family: var(--mono); margin-bottom: 2px; }
+    .g-gantt-mini-dt {
+      background: var(--panel-raised); border: 1px solid var(--border); color: var(--text);
+      font-family: var(--mono); font-size: 10px; padding: 4px 5px; border-radius: 3px; width: 128px;
+    }
+    .g-gantt-mini-dt:focus { outline: none; border-color: var(--accent); }
     .g-gantt-track { flex: 1; position: relative; height: 20px; background:
       repeating-linear-gradient(90deg, var(--border-soft) 0, var(--border-soft) 1px, transparent 1px, transparent calc(100% / var(--gantt-days, 10))); }
-    .g-gantt-bar { position: absolute; top: 2px; height: 16px; border-radius: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 9.5px; font-weight: 600; font-family: var(--mono); color: #0A1220; overflow: hidden; white-space: nowrap; cursor: pointer; }
+    .g-gantt-bar { position: absolute; top: 3px; height: 20px; border-radius: 5px; display: flex; align-items: center; padding: 0 7px; font-size: 9.5px; font-weight: 700; font-family: var(--mono); color: #0A1220; overflow: hidden; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+    .g-gantt-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,0.35); }
 
     .g-gantt-group-row {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -333,7 +341,8 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-const WP_STATUS = ["Planejamento", "Em andamento", "Crítico", "Atrasado", "Concluído"];
+const WP_STATUS = ["Planejamento", "Não iniciado", "Em andamento", "Concluído", "Cancelado"];
+const WP_STATUS_DEFAULT_PROGRESS = { "Planejamento": 0, "Não iniciado": 0, "Em andamento": 50, "Concluído": 100, "Cancelado": 0 };
 const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo"];
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica"];
@@ -371,6 +380,7 @@ const WP_COLS = [
   ["discipline", "Disciplina (custo)"],
   ["budget", "Budget"], ["committed", "Comprometido"], ["actual", "Realizado"], ["forecast", "Forecast"],
   ["start", "Início"], ["end", "Fim"], ["status", "Status"], ["progress", "Progresso (%)"],
+  ["dataRealInicio", "Data Real de Início"], ["dataRealFim", "Data Real de Conclusão"], ["repeatOf", "Repetição de (ID)"],
 ];
 const MAT_COLS = [
   ["tmMaster", "TM Master"], ["departamento", "Departamento"], ["sap", "SAP"], ["descricao", "Descrição"],
@@ -405,7 +415,7 @@ const INV_COLS = [
   ["statusPagamento", "Status Pagamento"], ["dataPagamento", "Data de Pagamento"],
 ];
 const NUMERIC_KEYS = new Set(["budget", "committed", "actual", "forecast", "progress", "quantidade", "valor", "poValue", "nfValue", "diffDays", "daysOpenTotal", "valorTotal", "saldoPo"]);
-const DATE_KEYS = new Set(["dataSolicitacao", "dataNecessidade", "eta", "dataRecebimento", "issue", "due", "date", "mdSentDate", "dataPagamento"]);
+const DATE_KEYS = new Set(["dataSolicitacao", "dataNecessidade", "eta", "dataRecebimento", "issue", "due", "date", "mdSentDate", "dataPagamento", "dataRealInicio", "dataRealFim"]);
 const DATETIME_KEYS = new Set(["start", "end"]);
 
 const cellToDateStr = (v) => {
@@ -439,7 +449,8 @@ const statusColor = (status) => {
     "Concluído": "var(--ok)", "Pago": "var(--ok)", "Recebido": "var(--ok)", "Entregue a bordo": "var(--ok)",
     "Em andamento": "var(--teal)", "Em trânsito": "var(--teal)", "Em fabricação": "var(--teal)",
     "Crítico": "var(--crit)", "Atrasado": "var(--crit)",
-    "Planejamento": "var(--text-faint)", "Solicitado": "var(--text-faint)", "Orçamento": "var(--text-faint)",
+    "Planejamento": "var(--text-faint)", "Não iniciado": "var(--text-faint)", "Solicitado": "var(--text-faint)", "Orçamento": "var(--text-faint)",
+    "Cancelado": "var(--text-faint)",
   };
   return map[status] || "var(--warn)";
 };
@@ -657,7 +668,7 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-011", name: "Elaboração do PGR", discipline: "Integridade", group: "Documental", portCall: "Port Call 23/01", empresa: "Traume", md: "Sim", rc: "10300888", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-01-23T08:00", end: "2026-01-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-012", name: "Manutenção no Radar Banda X", discipline: "Marine", group: "Bridge", portCall: "Port Call 03/02", empresa: "Radiomar", md: "Sim", rc: "4600003659", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-03T08:00", end: "2026-02-03T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-013", name: "Manutenção do Motor do Bote", discipline: "Mecânica", group: "Engine", portCall: "Port Call 03/02", empresa: "Sea Services", md: "Sim", rc: "10303580", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-03T08:00", end: "2026-02-03T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-014", name: "Certificação Equipamentos da Enfermaria", discipline: "Hse", group: "Segurança", portCall: "Port Call 03/02", empresa: "Measure", md: "Sim", rc: "Contrato", obs: "A empresa não compareceu", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-03T08:00", end: "2026-02-03T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-014", name: "Certificação Equipamentos da Enfermaria", discipline: "Hse", group: "Segurança", portCall: "Port Call 03/02", empresa: "Measure", md: "Sim", rc: "Contrato", obs: "A empresa não compareceu", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-03T08:00", end: "2026-02-03T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-015", name: "Programação Serviços MI Electric - Testes Proteção Maior Confiabilidade dos Sistemas - SWTBs HV & LV - Protection Relay - Transformers HV & LV", discipline: "Elétrica", group: "Electrical", portCall: "Port Call 03/02", empresa: "M&I", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-03T08:00", end: "2026-02-03T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-016", name: "Manutenção de Antena de TV", discipline: "Marine", group: "Bridge", portCall: "Port Call 16/02", empresa: "Salestech", md: "Sim", rc: "10311549", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-16T08:00", end: "2026-02-16T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-017", name: "Retorno dos Extintores", discipline: "Hse", group: "Segurança", portCall: "Port Call 16/02", empresa: "Sollax", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-02-16T08:00", end: "2026-02-16T17:00", status: "Concluído", progress: 100 },
@@ -666,7 +677,7 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-020", name: "Programação Serviços MI Electric - Testes Proteção Maior Confiabilidade dos Sistemas - SWTBs HV & LV - Protection Relay - Transformers HV & LV", discipline: "Elétrica", group: "Electrical", portCall: "Port Call 03/03", empresa: "M&I", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-021", name: "Certificação de Luvas de Borracha", discipline: "Hse", group: "Segurança", portCall: "Port Call 03/03", empresa: "Measure", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-022", name: "Calibração Equipamentos Enfermaria", discipline: "Hse", group: "Segurança", portCall: "Port Call 03/03", empresa: "Ih Care", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-023", name: "Certificação Anual dos Guindastes e Teste de Carga", discipline: "Marine", group: "Bridge", portCall: "Port Call 03/03", empresa: "Oil States", md: "Sim", rc: "N/A", obs: "A empresa cancelou 1 dia antes do portcall", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-023", name: "Certificação Anual dos Guindastes e Teste de Carga", discipline: "Marine", group: "Bridge", portCall: "Port Call 03/03", empresa: "Oil States", md: "Sim", rc: "N/A", obs: "A empresa cancelou 1 dia antes do portcall", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-024", name: "Montagem de Andaime para Manutenção do Tugger Winch do Guindaste Offshore", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 03/03", empresa: "Priner", md: "Sim", rc: "10324367", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-025", name: "Resgatista para Radar Banda X", discipline: "Marine", group: "Bridge", portCall: "Port Call 03/03", empresa: "Setec", md: "Sim", rc: "10309582", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-026", name: "Reparo Radar Banda X", discipline: "Marine", group: "Bridge", portCall: "Port Call 03/03", empresa: "Radiomar", md: "Sim", rc: "4600003659", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-03-03T08:00", end: "2026-03-03T17:00", status: "Concluído", progress: 100 },
@@ -698,30 +709,30 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-052", name: "Retirada de folga (backlash) do guindaste TTS", discipline: "Mecânica", group: "Engine", portCall: "Port Call 07/04", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-07T08:00", end: "2026-04-07T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-053", name: "Limpeza de dutos anual", discipline: "Mecânica", group: "Engine", portCall: "Port Call 29/04", empresa: "Cimartec", md: "Sim", rc: "10327287", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-054", name: "Limpeza tanques de água", discipline: "Mecânica", group: "Engine", portCall: "Port Call 29/04", empresa: "Tankclean", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-055", name: "Estudo trocador de calor", discipline: "Mecânica", group: "Engine", portCall: "Port Call 29/04", empresa: "Prismar", md: "Sim", rc: "N/A", obs: "Empresa não compareceu", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-055", name: "Estudo trocador de calor", discipline: "Mecânica", group: "Engine", portCall: "Port Call 29/04", empresa: "Prismar", md: "Sim", rc: "N/A", obs: "Empresa não compareceu", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-056", name: "Pintura das Marcações do Calado", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 29/04", empresa: "Evetec", md: "Sim", rc: "10313395", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-057", name: "Troca de olhais", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 29/04", empresa: "Evetec", md: "Sim", rc: "N/A", obs: "Empresa não fabricou o olhal devido a pagamento", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-058", name: "NRs12/13 e 35", discipline: "Integridade", group: "Documental", portCall: "Port Call 29/04", empresa: "Tekee", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-057", name: "Troca de olhais", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 29/04", empresa: "Evetec", md: "Sim", rc: "N/A", obs: "Empresa não fabricou o olhal devido a pagamento", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-058", name: "NRs12/13 e 35", discipline: "Integridade", group: "Documental", portCall: "Port Call 29/04", empresa: "Tekee", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-059", name: "Teste de carga / Recertificação", discipline: "Marine", group: "Bridge", portCall: "Port Call 29/04", empresa: "Highbras", md: "Sim", rc: "10309413", obs: "Sem janela para realizar devido a manutenção no guindaste", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-060", name: "Inspeção Compressor do Chiller", discipline: "Mecânica", group: "Engine", portCall: "Port Call 29/04", empresa: "Macnor", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-04-29T08:00", end: "2026-04-29T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-061", name: "Troca do Acoplamento Guindaste BE", discipline: "Marine", group: "Bridge", portCall: "Port Call 13/05", empresa: "Highbras", md: "Sim", rc: "10309413", obs: "Acomplamento não chegou a tempo", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-061", name: "Troca do Acoplamento Guindaste BE", discipline: "Marine", group: "Bridge", portCall: "Port Call 13/05", empresa: "Highbras", md: "Sim", rc: "10309413", obs: "Acomplamento não chegou a tempo", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-062", name: "Limpeza tanques 62S / 13P / 14S", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "Tankclean", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-063", name: "DP Annual Trial", discipline: "Marine", group: "Bridge", portCall: "Port Call 13/05", empresa: "All marine", md: "Sim", rc: "10338906", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-064", name: "Teste operacional do guindaste", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-065", name: "Preventiva em limit switch do guincho princ", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-066", name: "Instalar cabo de aço proteção célula de carga", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-067", name: "Reparo da chapa de desgaste do cabo AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-068", name: "Troca de cabo piloto Servo válvula", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-069", name: "Reparo em olhais da trava do trolley do AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-067", name: "Reparo da chapa de desgaste do cabo AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-068", name: "Troca de cabo piloto Servo válvula", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-069", name: "Reparo em olhais da trava do trolley do AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-070", name: "Instalação do Motor - Trocador calor boreste", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-071", name: "Troca de rede - Trocador de calor", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "Attech", md: "Sim", rc: "10378377", obs: "Rede não chegou a tempo para troca definitiva", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-071", name: "Troca de rede - Trocador de calor", discipline: "Mecânica", group: "Engine", portCall: "Port Call 13/05", empresa: "Attech", md: "Sim", rc: "10378377", obs: "Rede não chegou a tempo para troca definitiva", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-072", name: "Teste de carga / Recertificação", discipline: "Marine", group: "Bridge", portCall: "Port Call 13/05", empresa: "Highbras", md: "Sim", rc: "10309413", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-13T08:00", end: "2026-05-13T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-073", name: "Troca do Acoplamento Guindaste BE", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-074", name: "Calibração da Célula de 15 ppm", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "Engeprime", md: "Sim", rc: "10352768", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-075", name: "Adequação de Desenhos", discipline: "Integridade", group: "Documental", portCall: "Port Call 21/05", empresa: "Gran", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-076", name: "Instalação DGPS / Network", discipline: "Marine", group: "Bridge", portCall: "Port Call 21/05", empresa: "KM", md: "Não", rc: "Contrato", obs: "A KM não tinha disponibilidade", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-076", name: "Instalação DGPS / Network", discipline: "Marine", group: "Bridge", portCall: "Port Call 21/05", empresa: "KM", md: "Não", rc: "Contrato", obs: "A KM não tinha disponibilidade", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-077", name: "Reaperto do tubo do guincho auxiliar", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-078", name: "Inspeção do sistema hidráulico", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-078", name: "Inspeção do sistema hidráulico", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-079", name: "Purga no sistema hidráulico do AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-080", name: "Drenagem de óleo do PTO 2", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-081", name: "Engraxamento da cremalheira de giro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
@@ -732,13 +743,13 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-086", name: "Overhaul dos Compressores de Ar de Partida", discipline: "Mecânica", group: "Engine", portCall: "Port Call 21/05", empresa: "Autocomp", md: "Sim", rc: "10349772", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-087", name: "NRs 12 / 13 e 35", discipline: "Integridade", group: "Documental", portCall: "Port Call 21/05", empresa: "Tekee", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-088", name: "Teste de carga SB provision crane", discipline: "Marine", group: "Bridge", portCall: "Port Call 21/05", empresa: "Highbras", md: "Sim", rc: "10309413", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-05-21T08:00", end: "2026-05-21T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-089", name: "Tratamento e Pintura de corrosão do Guindaste TTS", discipline: "Marine", group: "Bridge", portCall: "Port Call 23/06", empresa: "Attech", md: "Sim", rc: "10368494", obs: "Devido a indisponibilidade do guindaste", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-089", name: "Tratamento e Pintura de corrosão do Guindaste TTS", discipline: "Marine", group: "Bridge", portCall: "Port Call 23/06", empresa: "Attech", md: "Sim", rc: "10368494", obs: "Devido a indisponibilidade do guindaste", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-090", name: "Reparo no DG#3", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "Wartsila", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-091", name: "Troca/Reparo das Válvulas Reguladores do Sistema de Ar", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "Autocomp", md: "Sim", rc: "10386081", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-092", name: "Calibração e Certificação dos Manômetros", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "Autocomp", md: "Sim", rc: "10395954", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-093", name: "Reaperto em Parafusos da Estrutura do AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-094", name: "Reaperto em Parafusos do Sistema de Giro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-095", name: "Medição de Folga em Rolamento de Giro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-093", name: "Reaperto em Parafusos da Estrutura do AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-094", name: "Reaperto em Parafusos do Sistema de Giro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-095", name: "Medição de Folga em Rolamento de Giro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-096", name: "Certificação de PFOS nos LGS e Inspeção semestral do CO2", discipline: "Hse", group: "Segurança", portCall: "Port Call 23/06", empresa: "Sollax", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-097", name: "Verificação do Sistema Chiller", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "Macnor", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-098", name: "Redundância da bomba do ROV", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "Attech", md: "Sim", rc: "10368489", obs: "Aguardando a chegada da rede", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Em andamento", progress: 50 },
@@ -746,7 +757,7 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-100", name: "Instalação DGPS", discipline: "Marine", group: "Bridge", portCall: "Port Call 23/06", empresa: "KM", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-101", name: "NRs 12/13 e 35 - Realizado NR-12", discipline: "Integridade", group: "Documental", portCall: "Port Call 23/06", empresa: "Tekee", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Em andamento", progress: 50 },
     { id: "MAN-2026-102", name: "Adequações de drops", discipline: "Marine", group: "Bridge", portCall: "Port Call 23/06", empresa: "Attech", md: "Sim", rc: "10406914", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Em andamento", progress: 50 },
-    { id: "MAN-2026-103", name: "Teste Geral", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-103", name: "Teste Geral", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-104", name: "Preparar Base do data Logger", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-105", name: "Substituir Filtros de Retorno de Tanque", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-106", name: "Verificação em Painel Elétrico da Cabine do Operador", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
@@ -754,7 +765,7 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-108", name: "Aperto de Parafusos dos Cilindros do AHC e Fechamento do Carro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-109", name: "Instalação de Mangueiras dos Latches e Reparo em Olhal", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-110", name: "Implementação de Suporte e Proteções AHC", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-111", name: "Delineamento de Mangueiras", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-111", name: "Delineamento de Mangueiras", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-112", name: "Substituição do Radiador do Trocador de Calor Boreste", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "FAC", md: "Não", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-113", name: "Instalação do Compressor de Provisões", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/06", empresa: "Macnor", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-06-23T08:00", end: "2026-06-23T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-114", name: "Fire Fighting Equipment Annual", discipline: "Hse", group: "Segurança", portCall: "Port Call 06/07", empresa: "Sollax", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Em andamento", progress: 50 },
@@ -763,11 +774,11 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-117", name: "Pintura e Tratamento do Guindaste TTS", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 06/07", empresa: "Attech", md: "Sim", rc: "10368494", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Em andamento", progress: 50 },
     { id: "MAN-2026-118", name: "Reparo das Defensas", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 06/07", empresa: "Attech", md: "Sim", rc: "10406912", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Em andamento", progress: 50 },
     { id: "MAN-2026-119", name: "Balanço de Carga", discipline: "Elétrica", group: "Electrical", portCall: "Port Call 06/07", empresa: "M&I", md: "Sim", rc: "10313396", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Concluído", progress: 100 },
-    { id: "MAN-2026-120", name: "Calibração e Certificação dos Flowmeters", discipline: "Mecânica", group: "Engine", portCall: "Port Call 06/07", empresa: "Autocomp", md: "Sim", rc: "10369462", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Atrasado", progress: 0 },
+    { id: "MAN-2026-120", name: "Calibração e Certificação dos Flowmeters", discipline: "Mecânica", group: "Engine", portCall: "Port Call 06/07", empresa: "Autocomp", md: "Sim", rc: "10369462", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-121", name: "Redundância da Bomba do ROV", discipline: "Mecânica", group: "Engine", portCall: "Port Call 06/07", empresa: "Attech", md: "Sim", rc: "10368489", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-122", name: "NRs 12/13 e 35", discipline: "Integridade", group: "Documental", portCall: "Port Call 06/07", empresa: "Tekee", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Em andamento", progress: 50 },
     { id: "MAN-2026-123", name: "Adequação de Drops", discipline: "Marine", group: "Bridge", portCall: "Port Call 06/07", empresa: "Attech", md: "Sim", rc: "10406914", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Em andamento", progress: 50 },
-    { id: "MAN-2026-124", name: "Inspeção na Propulsão", discipline: "Mecânica", group: "Engine", portCall: "Port Call 06/07", empresa: "Wartsila", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-124", name: "Inspeção na Propulsão", discipline: "Mecânica", group: "Engine", portCall: "Port Call 06/07", empresa: "Wartsila", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-07-06T08:00", end: "2026-07-06T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-125", name: "NRs 12/13 e 35", discipline: "Integridade", group: "Documental", portCall: "Port Call 04/08", empresa: "Tekee", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-04T08:00", end: "2026-08-04T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-126", name: "Fire Fighting Equipment Annual", discipline: "Hse", group: "Segurança", portCall: "Port Call 04/08", empresa: "Sollax", md: "Sim", rc: "Contrato", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-04T08:00", end: "2026-08-04T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-127", name: "Troca e Calibração das Válvulas Reguladoras", discipline: "Mecânica", group: "Engine", portCall: "Port Call 04/08", empresa: "Autocomp", md: "Sim", rc: "10386081", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-04T08:00", end: "2026-08-04T17:00", status: "Concluído", progress: 100 },
@@ -786,31 +797,31 @@ const INITIAL_WORK_PACKAGES = [
     { id: "MAN-2026-140", name: "Limpeza e Pintura das Marcas de Calado", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 04/08", empresa: "Attech", md: "Sim", rc: "10432142", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-04T08:00", end: "2026-08-04T17:00", status: "Concluído", progress: 100 },
     { id: "MAN-2026-141", name: "Adequação de Drops", discipline: "Marine", group: "Bridge", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10406914", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Em andamento", progress: 50 },
     { id: "MAN-2026-142", name: "Pintura e Tratamento do Guindaste TTS", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10368494", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Em andamento", progress: 50 },
-    { id: "MAN-2026-143", name: "Tratamento e Reforma da Tampa Superior do Moonpool", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10432115", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-144", name: "Fabricação e Instalação do Guarda-Corpo na lança do Guindaste", discipline: "Mecânica", group: "Guindaste", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10432145", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-145", name: "Instalação do CJC nos Thrusters 2 e 5", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-146", name: "Mergulho para inspeção dos Thrusters", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "Northsub", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-147", name: "Inspeção dos Olhais da Lança do Guindaste", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 23/08", empresa: "Highbras", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-143", name: "Tratamento e Reforma da Tampa Superior do Moonpool", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10432115", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-144", name: "Fabricação e Instalação do Guarda-Corpo na lança do Guindaste", discipline: "Mecânica", group: "Guindaste", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10432145", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-145", name: "Instalação do CJC nos Thrusters 2 e 5", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-146", name: "Mergulho para inspeção dos Thrusters", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "Northsub", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-147", name: "Inspeção dos Olhais da Lança do Guindaste", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 23/08", empresa: "Highbras", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
     { id: "MAN-2026-148", name: "Solda do olhal do Convés", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call 23/08", empresa: "Attech", md: "Sim", rc: "10386083", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Em andamento", progress: 50 },
-    { id: "MAN-2026-149", name: "Instalação da Bomba de Lastro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "Attech", md: "Não", rc: "4324509", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-150", name: "Overhaul dos motores elétricos da bomba FO Feed pump 1 e 2", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-151", name: "Diagrama Unifilares", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-152", name: "Balanço de Potência", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-153", name: "Estudo de Seletividade", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-154", name: "Desnhos atualizados dos Quadros Elétricos", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-155", name: "Calibração e Certificação dos Multimetros", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "Measure", md: "Sim", rc: "10410632", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-156", name: "Instalação da escada do guindaste", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413186", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-157", name: "Estudo de Instalação de Refrigeração Quadros Eletricos", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10317742", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-158", name: "Projeto de Construção de Almoxarifado dentro de um silo", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413164", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-159", name: "Fabricação e instalação das Redes dos Resfriadores nº 1 e nº 2 CuNiFe", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413165", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-160", name: "Comissionamento e Teste Operacional do Sistema BULK", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413167", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-161", name: "Certificação dos Olhais da Praça de Máquinas e Ponte Rolante", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413179", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-162", name: "Substituição da Rede de Bilge da Sala do Azimutal", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413183", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-163", name: "Recuperação e Comissionamento das Bombas do Sistema MUD", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413185", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-164", name: "Delineamento de Mangueiras", discipline: "Mecânica", group: "Outros", portCall: "Port Call — sem data definida", empresa: "", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-165", name: "Certificação dos Olhais da Praça de Máquinas", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432162", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-166", name: "Substituição da Gate Valve do Sistema HiPAP", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432169", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
-    { id: "MAN-2026-167", name: "Reparo do Detector Multigás Modelo 4X", discipline: "Marine", group: "Bridge", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432170", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Planejamento", progress: 0 },
+    { id: "MAN-2026-149", name: "Instalação da Bomba de Lastro", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "Attech", md: "Não", rc: "4324509", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-150", name: "Overhaul dos motores elétricos da bomba FO Feed pump 1 e 2", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-151", name: "Diagrama Unifilares", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-152", name: "Balanço de Potência", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-153", name: "Estudo de Seletividade", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-154", name: "Desnhos atualizados dos Quadros Elétricos", discipline: "Mecânica", group: "Engine", portCall: "Port Call 23/08", empresa: "United Power", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-23T08:00", end: "2026-08-23T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-155", name: "Calibração e Certificação dos Multimetros", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "Measure", md: "Sim", rc: "10410632", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-156", name: "Instalação da escada do guindaste", discipline: "Hull & Structure", group: "Deck", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413186", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-157", name: "Estudo de Instalação de Refrigeração Quadros Eletricos", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10317742", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-158", name: "Projeto de Construção de Almoxarifado dentro de um silo", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413164", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-159", name: "Fabricação e instalação das Redes dos Resfriadores nº 1 e nº 2 CuNiFe", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413165", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-160", name: "Comissionamento e Teste Operacional do Sistema BULK", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413167", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-161", name: "Certificação dos Olhais da Praça de Máquinas e Ponte Rolante", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413179", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-162", name: "Substituição da Rede de Bilge da Sala do Azimutal", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413183", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-163", name: "Recuperação e Comissionamento das Bombas do Sistema MUD", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10413185", obs: "Sem retorno da equipe de Suprimentos. Cotação encerrada", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-164", name: "Delineamento de Mangueiras", discipline: "Mecânica", group: "Outros", portCall: "Port Call — sem data definida", empresa: "", md: "Não", rc: "", obs: "", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-165", name: "Certificação dos Olhais da Praça de Máquinas", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432162", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-166", name: "Substituição da Gate Valve do Sistema HiPAP", discipline: "Mecânica", group: "Engine", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432169", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
+    { id: "MAN-2026-167", name: "Reparo do Detector Multigás Modelo 4X", discipline: "Marine", group: "Bridge", portCall: "Port Call — sem data definida", empresa: "", md: "Sim", rc: "10432170", obs: "Aguardando Suprimentos", budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-30T08:00", end: "2026-08-30T17:00", status: "Não iniciado", progress: 0 },
 ];
 const INITIAL_MATERIALS = [
     { id: "MAT-0084", wp: "", tmMaster: "TM-04521", departamento: "Manutenção", sap: "10098231", descricao: "Seal Kit - Bow Thruster", quantidade: 2, priority: "Crítica", dataSolicitacao: "2026-08-18", dataNecessidade: "2026-09-05", reserva: "RES-3321", rc: "10410632", po: "4600012345", linhaPo: "10", valor: 18500, eta: "2026-09-03", obs: "", dataRecebimento: "", status: "Em trânsito" },
@@ -1033,6 +1044,19 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-25T08:00", end: "2026-08-26T17:00",
     status: "Planejamento", progress: 0,
   }]);
+
+  /* serviço não concluído na data planejada → gera uma NOVA linha com data em branco para reagendar,
+     mantendo o registro antigo intacto (com seu desvio/histórico) e um vínculo entre as duas */
+  const repeatWp = (original) => {
+    const newId = uid("PC-2026-08");
+    setWorkPackages((r) => [...r, {
+      id: newId, name: original.name, discipline: original.discipline, group: original.group,
+      ganttCategory: original.ganttCategory, empresa: original.empresa, md: original.md, rc: original.rc, obs: "",
+      budget: 0, committed: 0, actual: 0, forecast: 0, start: "", end: "",
+      status: "Não iniciado", progress: 0, repeatOf: original.id,
+    }]);
+    return newId;
+  };
 
   /* ---------- effective period range from the global filter ---------- */
   const filterRange = useMemo(() => {
@@ -1335,7 +1359,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
   const handleExportReport = () => {
     const today = new Date().toLocaleDateString("pt-BR");
-    const critical = workPackages.filter((w) => w.status === "Crítico" || w.status === "Atrasado");
+    const critical = workPackages.filter((w) => w.status === "Não iniciado");
     const row = (cells) => `<tr>${cells.map((c) => `<td style="padding:6px 10px;border-bottom:1px solid #e3e3e3;font-size:12px;">${c}</td>`).join("")}</tr>`;
     const head = (cells) => `<tr>${cells.map((c) => `<th style="text-align:left;padding:6px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#666;border-bottom:2px solid #222;">${c}</th>`).join("")}</tr>`;
 
@@ -1367,8 +1391,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     <div class="kpi"><div class="kpi-label">Pendentes</div><div class="kpi-value">${fmt(kpis.pendentesSum)}</div></div>
     <div class="kpi"><div class="kpi-label">Dias em atraso (soma)</div><div class="kpi-value">${kpis.totalDiasAtraso}</div></div>
   </div>
-  <h2>Serviços em risco</h2>
-  ${critical.length === 0 ? "<p>Nenhum serviço crítico no momento.</p>" : critical.map((w) => `<div class="alert"><strong>${w.id}</strong> — ${w.name}: ${w.status}, ${w.progress}% concluído, término previsto ${fmtDateTime(w.end)}.</div>`).join("")}
+  <h2>Serviços não iniciados</h2>
+  ${critical.length === 0 ? "<p>Nenhum serviço pendente de início no momento.</p>" : critical.map((w) => `<div class="alert"><strong>${w.id}</strong> — ${w.name}: ${w.status}, ${w.progress}% concluído, início previsto ${fmtDateTime(w.start)}.</div>`).join("")}
   <h2>Todos os serviços</h2>
   <table>${head(["ID", "Serviço", "Disciplina", "Budget", "Realizado", "Status", "Progresso"])}
   ${workPackages.map((w) => row([w.id, w.name, w.discipline, fmt(w.budget), fmt(w.actual), w.status, w.progress + "%"])).join("")}</table>
@@ -1521,7 +1545,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         )}
 
         {tab === "services" && (
-          <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp}
+          <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} />
         )}
 
@@ -1798,7 +1822,8 @@ function GanttView({ workPackages, filterRange, portCallName,
         <div className="g-gantt-track">
           <div className="g-gantt-bar" style={{ left: `${left}%`, width: `${width}%`, background: statusColor(w.status) }}
             title={`${w.name} · ${fmtDateTime(w.start)} → ${fmtDateTime(w.end)} · ${Math.round(durationH)}h · ${w.progress}%`}>
-            {Math.round(durationH)}h
+            <div className="g-gantt-bar-fill" style={{ width: `${w.progress}%` }} />
+            <span style={{ position: "relative" }}>{Math.round(durationH)}h · {w.progress}%</span>
           </div>
         </div>
       );
@@ -1895,23 +1920,38 @@ function GanttView({ workPackages, filterRange, portCallName,
                         const isOpen = expandedRow === w.id;
                         return (
                           <div key={w.id} style={{ "--gantt-days": days }}>
-                            <div className="g-gantt-row">
+                            <div className="g-gantt-row" style={{ borderLeft: `3px solid ${WP_STATUS_COLOR[w.status] || "#F2C94C"}` }}>
                               <div className="g-gantt-taskinfo">
-                                <div className="g-flex" style={{ gap: 4, alignItems: "flex-start" }}>
-                                  <span className="g-btn ghost" style={{ padding: 2, marginTop: 2 }} onClick={() => setExpandedRow(isOpen ? null : w.id)}>
+                                <div className="g-flex" style={{ gap: 10, alignItems: "center", flexWrap: "nowrap" }}>
+                                  <span className="g-btn ghost" style={{ padding: 2, flexShrink: 0 }} onClick={() => setExpandedRow(isOpen ? null : w.id)}>
                                     {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                   </span>
-                                  <textarea className="g-edit-wrap g-gantt-name-edit" rows={2} value={w.name}
-                                    onChange={(e) => updWp(i, "name", e.target.value)} />
-                                </div>
-                                <div className="g-flex" style={{ gap: 5, marginTop: 4, marginLeft: 20, flexWrap: "wrap" }}>
+                                  <textarea className="g-edit-wrap g-gantt-name-edit" rows={1} value={w.name}
+                                    onChange={(e) => updWp(i, "name", e.target.value)}
+                                    style={{ flex: "1 1 170px", minWidth: 150, fontWeight: 600 }} />
+                                  <div style={{ flexShrink: 0 }}>
+                                    <div className="g-gantt-mini-label">Início</div>
+                                    <input type="datetime-local" className="g-gantt-mini-dt" value={w.start || ""}
+                                      onChange={(e) => updWp(i, "start", e.target.value)} />
+                                  </div>
+                                  <div style={{ flexShrink: 0 }}>
+                                    <div className="g-gantt-mini-label">Término</div>
+                                    <input type="datetime-local" className="g-gantt-mini-dt" value={w.end || ""}
+                                      onChange={(e) => updWp(i, "end", e.target.value)} />
+                                  </div>
+                                  <div style={{ flexShrink: 0, textAlign: "center", minWidth: 40 }}>
+                                    <div className="g-gantt-mini-label">Duração</div>
+                                    <div style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
+                                      {w.start && w.end ? `${Math.max(0, Math.round((new Date(w.end) - new Date(w.start)) / 3600000))}h` : "—"}
+                                    </div>
+                                  </div>
                                   <input type="text" className="g-edit" placeholder="Empresa" value={w.empresa || ""}
                                     onChange={(e) => updWp(i, "empresa", e.target.value)}
-                                    style={{ width: 100, fontSize: 10.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "3px 5px" }} />
-                                  <StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} />
-                                  <div className="g-flex" style={{ gap: 3 }}>
-                                    <div className="g-bar-bg" style={{ width: 30 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
-                                    <input type="number" min="0" max="100" className="g-edit num" style={{ width: 34, fontSize: 10.5, padding: "2px 3px" }}
+                                    style={{ width: 90, flexShrink: 0, fontSize: 10.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "5px 6px" }} />
+                                  <div style={{ flexShrink: 0 }}><StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} /></div>
+                                  <div className="g-flex" style={{ gap: 4, flexShrink: 0 }}>
+                                    <div className="g-bar-bg" style={{ width: 36 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
+                                    <input type="number" min="0" max="100" className="g-edit num" style={{ width: 36, fontSize: 10.5, padding: "2px 3px" }}
                                       value={w.progress} onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
                                     <span style={{ fontSize: 9, color: "var(--text-faint)" }}>%</span>
                                   </div>
@@ -1922,8 +1962,6 @@ function GanttView({ workPackages, filterRange, portCallName,
                             </div>
                             {isOpen && (
                               <div className="g-gantt-editrow">
-                                <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
-                                <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
                                 <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
                               </div>
                             )}
@@ -1939,7 +1977,7 @@ function GanttView({ workPackages, filterRange, portCallName,
         </div>
       </div>
       <div className="g-flex" style={{ marginTop: 14, gap: 16, flexWrap: "wrap" }}>
-        {["Planejamento", "Em andamento", "Crítico", "Atrasado", "Concluído"].map((s) => (
+        {WP_STATUS.map((s) => (
           <span key={s} className="g-flex" style={{ fontSize: 11 }}>
             <span className="g-dot" style={{ background: statusColor(s), marginRight: 5 }} />{s}
           </span>
@@ -1955,10 +1993,10 @@ function GanttView({ workPackages, filterRange, portCallName,
 /* dropdown de Status de Serviço com destaque de cor forte, no mesmo padrão usado em Pagamentos */
 const WP_STATUS_COLOR = {
   "Planejamento": "#5D6E8C",
+  "Não iniciado": "#8D9BB5",
   "Em andamento": "#3FC1C9",
-  "Crítico": "#F2685B",
-  "Atrasado": "#F2685B",
   "Concluído": "#35D399",
+  "Cancelado": "#6B7280",
 };
 const StatusServicoSelect = ({ value, onChange }) => {
   const color = WP_STATUS_COLOR[value] || "#F2C94C";
@@ -1977,7 +2015,7 @@ const StatusServicoSelect = ({ value, onChange }) => {
   );
 };
 
-function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp }) {
+function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const [sf, setSf] = useState({ empresa: "", rc: "", manutencao: "", status: "Todos", portCall: "", dataInicio: "", dataFim: "" });
   const hasActiveFilter = sf.empresa || sf.rc || sf.manutencao || sf.status !== "Todos" || sf.portCall || sf.dataInicio || sf.dataFim;
@@ -1996,10 +2034,20 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
     updWp(i, "end", `${newDate}T${endTime}`);
   };
 
-  /* mudar o status para Concluído já ajusta o progresso para 100% automaticamente */
+  /* trocar o status sempre reajusta o progresso automaticamente para o padrão daquele status —
+     mesmo indo "para trás" (ex: Concluído -> Não iniciado volta de 100% para 0%). O progresso
+     continua podendo ser ajustado manualmente depois, até a próxima troca de status. */
   const handleStatusChange = (i, v) => {
     updWp(i, "status", v);
-    if (v === "Concluído") updWp(i, "progress", 100);
+    updWp(i, "progress", WP_STATUS_DEFAULT_PROGRESS[v] ?? 0);
+  };
+
+  /* rastreabilidade: nem toda manutenção planejada para uma data é de fato executada nela —
+     dataRealInicio/dataRealFim registram quando ela realmente aconteceu, e o desvio mostra
+     a diferença em dias em relação à data planejada (w.start), pra não perder o histórico. */
+  const desvioDias = (w) => {
+    if (!w.dataRealInicio) return null;
+    return Math.round((new Date(w.dataRealInicio) - new Date(dateKeyOf(w.start))) / 86400000);
   };
 
   const filtered = useMemo(() => {
@@ -2021,9 +2069,12 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
 
   const concluidos = filtered.filter((w) => w.status === "Concluído").length;
   const emAndamento = filtered.filter((w) => w.status === "Em andamento").length;
-  const planejados = filtered.filter((w) => w.status === "Planejamento").length;
-  const criticos = filtered.filter((w) => w.status === "Crítico" || w.status === "Atrasado").length;
-  const taxaConclusao = filtered.length ? Math.round((concluidos / filtered.length) * 100) : 0;
+  const naoIniciados = filtered.filter((w) => w.status === "Não iniciado").length;
+  const cancelados = filtered.filter((w) => w.status === "Cancelado").length;
+  const naoCancelados = filtered.length - cancelados;
+  const taxaConclusao = naoCancelados ? Math.round((concluidos / naoCancelados) * 100) : 0;
+  const comDesvio = filtered.filter((w) => { const d = desvioDias(w); return d !== null && d !== 0; });
+  const desvioMedio = comDesvio.length ? Math.round(comDesvio.reduce((s, w) => s + Math.abs(desvioDias(w)), 0) / comDesvio.length) : 0;
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2087,8 +2138,13 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
         {bigKpi("Total de Serviços", filtered.length, "var(--teal)", Wrench)}
         {bigKpi("Concluídos", concluidos, "var(--ok)", Wrench)}
         {bigKpi("Em Andamento", emAndamento, "var(--teal)", Wrench)}
-        {bigKpi("Críticos / Atrasados", criticos, "var(--crit)", AlertTriangle)}
+        {bigKpi("Não Iniciados", naoIniciados, "var(--text-dim)", Wrench)}
         {bigKpi("Taxa de Conclusão", `${taxaConclusao}%`, "var(--warn)", LayoutGrid)}
+      </div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+        {bigKpi("Cancelados", cancelados, "var(--text-dim)", X)}
+        {bigKpi("Serviços com Desvio de Execução", comDesvio.length, "var(--crit)", AlertTriangle)}
+        {bigKpi("Desvio Médio (dias)", desvioMedio, "var(--crit)", AlertTriangle)}
       </div>
 
       {filtered.length === 0 ? (
@@ -2110,6 +2166,7 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
               <SortTh sortKey="rc" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>RC</SortTh>
               <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 170 }}>Status</SortTh>
               <SortTh sortKey="progress" sort={sort} setSort={setSort} style={{ minWidth: 150 }}>Progresso</SortTh>
+              <th style={{ minWidth: 80 }}>Desvio</th>
               <th style={{ minWidth: 200 }}>Observação</th><th></th>
             </tr>
           </thead>
@@ -2119,7 +2176,7 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
               const isOpen = expandedWp === w.id;
               return (
                 <React.Fragment key={w.id}>
-                  <tr className="g-row">
+                  <tr className="g-row" style={w.status === "Cancelado" ? { opacity: 0.5 } : undefined}>
                     <td>
                       <span className="g-btn ghost" onClick={() => setExpandedWp(isOpen ? null : w.id)}>
                         {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -2127,7 +2184,13 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
                     </td>
                     <td><EDate value={(w.start || "").slice(0, 10)} onChange={(v) => setDateKeepTime(i, w, v)} /></td>
                     <td style={{ minWidth: 130 }}><EText value={w.group || ""} onChange={(v) => updWp(i, "group", v)} /></td>
-                    <td style={{ minWidth: 220 }}><EText value={w.name} onChange={(v) => updWp(i, "name", v)} /></td>
+                    <td style={{ minWidth: 220 }}>
+                      <div className="g-flex" style={{ gap: 4 }}>
+                        {w.repeatOf && <span title="Esta linha é uma repetição de um serviço não concluído anteriormente" style={{ fontSize: 13, flexShrink: 0 }}>🔁</span>}
+                        {w.status === "Cancelado" && <span title="Cancelado — não é mais necessário" style={{ fontSize: 13, flexShrink: 0 }}>🚫</span>}
+                        <EText value={w.name} onChange={(v) => updWp(i, "name", v)} />
+                      </div>
+                    </td>
                     <td style={{ minWidth: 130 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
                     <td><ESelect value={w.md || "Não"} onChange={(v) => updWp(i, "md", v)} options={["Sim", "Não"]} /></td>
                     <td style={{ minWidth: 100 }}><EText value={w.rc || ""} onChange={(v) => updWp(i, "rc", v)} mono /></td>
@@ -2141,19 +2204,84 @@ function ServicesView({ workPackages, updWp, remWp, expandedWp, setExpandedWp })
                         <span style={{ fontSize: 10, color: "var(--text-faint)" }}>%</span>
                       </div>
                     </td>
+                    {(() => {
+                      const d = desvioDias(w);
+                      return (
+                        <td style={{ minWidth: 80, textAlign: "center" }}>
+                          {d === null ? (
+                            <span className="g-muted" style={{ fontSize: 11 }}>—</span>
+                          ) : (
+                            <span style={{
+                              fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
+                              color: d === 0 ? "var(--ok)" : "var(--crit)",
+                              background: d === 0 ? "rgba(53,211,153,0.12)" : "rgba(242,104,91,0.12)",
+                            }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
+                              {d > 0 ? `+${d}d` : `${d}d`}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })()}
                     <td style={{ minWidth: 200 }}><EText value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></td>
                     <td><span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span></td>
                   </tr>
                   {isOpen && (
                     <tr className="g-expand-row">
                       <td></td>
-                      <td colSpan={10} style={{ padding: "10px 8px 16px 8px" }}>
+                      <td colSpan={11} style={{ padding: "10px 8px 16px 8px" }}>
                         <div className="g-panel-title" style={{ marginBottom: 8 }}>Planejamento</div>
-                        <div className="g-flex" style={{ flexWrap: "wrap", gap: 14 }}>
+                        <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
                           <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
                           <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
                           <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
                         </div>
+                        <div className="g-panel-title" style={{ marginBottom: 8 }}>
+                          Execução real <span className="g-muted" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— preencha quando a manutenção acontecer numa data diferente da planejada, para manter o histórico</span>
+                        </div>
+                        <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
+                          <div className="g-field"><label>Data real de início</label><EDate value={w.dataRealInicio} onChange={(v) => updWp(i, "dataRealInicio", v)} /></div>
+                          <div className="g-field"><label>Data real de conclusão</label><EDate value={w.dataRealFim} onChange={(v) => updWp(i, "dataRealFim", v)} /></div>
+                          {desvioDias(w) !== null && (
+                            <div className="g-field">
+                              <label>Desvio calculado</label>
+                              <div style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, padding: "6px 0", color: desvioDias(w) === 0 ? "var(--ok)" : "var(--crit)" }}>
+                                {desvioDias(w) > 0 ? `+${desvioDias(w)}` : desvioDias(w)} dia(s) {desvioDias(w) === 0 ? "(dentro do planejado)" : desvioDias(w) > 0 ? "depois do planejado" : "antes do planejado"}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="g-panel-title" style={{ marginBottom: 8 }}>Rastreabilidade</div>
+                        {w.repeatOf && (() => {
+                          const orig = workPackages.find((o) => o.id === w.repeatOf);
+                          return (
+                            <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)", marginBottom: 10 }}>
+                              🔁 Esta linha é uma repetição de <strong>{orig ? orig.name : "um serviço anterior"}</strong>
+                              {orig && ` — planejado originalmente para ${fmtDate(orig.start?.slice(0, 10))}, ficou como "${orig.status}"`}.
+                            </div>
+                          );
+                        })()}
+                        {(() => {
+                          const repeats = workPackages.filter((o) => o.repeatOf === w.id);
+                          return repeats.length > 0 && (
+                            <div className="g-alert" style={{ background: "rgba(242,169,59,0.08)", borderColor: "rgba(242,169,59,0.35)", color: "var(--accent)", marginBottom: 10 }}>
+                              Este serviço foi reagendado em {repeats.length} nova(s) linha(s): {repeats.map((r) => r.name).join(", ")}.
+                            </div>
+                          );
+                        })()}
+                        {w.status !== "Concluído" && w.status !== "Cancelado" && (
+                          <div className="g-flex" style={{ gap: 8 }}>
+                            <button className="g-btn" onClick={() => repeatWp(w)}>
+                              🔁 Não concluído — repetir como nova linha (data em branco)
+                            </button>
+                            <button className="g-btn" onClick={() => updWp(i, "status", "Cancelado")}>
+                              🚫 Não é mais necessário — cancelar
+                            </button>
+                          </div>
+                        )}
+                        {w.status === "Cancelado" && (
+                          <div className="g-muted" style={{ fontSize: 12 }}>🚫 Este serviço foi marcado como não sendo mais necessário.</div>
+                        )}
                       </td>
                     </tr>
                   )}
