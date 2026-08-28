@@ -345,71 +345,113 @@ const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 7).toUp
    relatório (via setReportFn), refletindo exatamente o que está
    sendo mostrado/filtrado naquela página no momento do clique.
    ============================================================ */
+const PDF_NAVY = [10, 18, 32];
+const PDF_AMBER = [242, 169, 59];
+const PDF_TEXT = [30, 34, 42];
+const PDF_MUTED = [120, 128, 140];
+
 const pdfHeader = (doc, pageTitle, subtitle) => {
+  // faixa de marca no topo
+  doc.setFillColor(...PDF_NAVY);
+  doc.rect(0, 0, 210, 26, "F");
+  doc.setFillColor(...PDF_AMBER);
+  doc.rect(0, 26, 210, 1.1, "F");
+
   doc.setFontSize(16);
   doc.setFont(undefined, "bold");
-  doc.setTextColor(20, 20, 20);
-  doc.text("GENESIS I", 14, 16);
-  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text("GENESIS I", 14, 12);
+
+  doc.setFontSize(8.5);
   doc.setFont(undefined, "normal");
-  doc.setTextColor(60, 60, 60);
-  doc.text(pageTitle, 14, 23);
-  doc.setFontSize(9);
-  doc.setTextColor(120, 120, 120);
-  doc.text(subtitle, 14, 29);
-  doc.setDrawColor(210, 210, 210);
-  doc.line(14, 33, 196, 33);
-  doc.setTextColor(0, 0, 0);
-  return 41;
+  doc.setTextColor(200, 205, 215);
+  doc.text("Maintenance & Port Call", 14, 17.5);
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(...PDF_AMBER);
+  doc.text(pageTitle, 196, 12, { align: "right" });
+
+  doc.setFontSize(8);
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(210, 210, 210);
+  doc.text(subtitle, 196, 18, { align: "right", maxWidth: 140 });
+
+  doc.setTextColor(...PDF_TEXT);
+  return 36;
 };
 
-/* grade compacta de KPIs: [{label, value}], 4 por linha */
+/* grade de KPIs com destaque visual: número grande, faixa colorida à esquerda, rótulo abaixo */
 const pdfKpis = (doc, y, kpis) => {
   const perRow = 4;
-  const colWidth = 45.5;
+  const gap = 4;
+  const cardW = (196 - 14 - gap * (perRow - 1)) / perRow;
+  const cardH = 20;
   kpis.forEach((k, idx) => {
     const col = idx % perRow;
     const row = Math.floor(idx / perRow);
-    const x = 14 + col * colWidth;
-    const rowY = y + row * 16;
-    doc.setFontSize(12);
+    const x = 14 + col * (cardW + gap);
+    const cardY = y + row * (cardH + 4);
+
+    doc.setFillColor(248, 249, 251);
+    doc.roundedRect(x, cardY, cardW, cardH, 1.2, 1.2, "F");
+    doc.setFillColor(...PDF_AMBER);
+    doc.rect(x, cardY, 1.2, cardH, "F");
+
+    doc.setFontSize(12.5);
     doc.setFont(undefined, "bold");
-    doc.setTextColor(30, 30, 30);
-    doc.text(String(k.value), x, rowY);
-    doc.setFontSize(7);
+    doc.setTextColor(...PDF_TEXT);
+    doc.text(String(k.value), x + 4, cardY + 9, { maxWidth: cardW - 6 });
+
+    doc.setFontSize(6.5);
     doc.setFont(undefined, "normal");
-    doc.setTextColor(130, 130, 130);
-    doc.text(k.label, x, rowY + 4.5, { maxWidth: colWidth - 3 });
+    doc.setTextColor(...PDF_MUTED);
+    doc.text(k.label.toUpperCase(), x + 4, cardY + 15.5, { maxWidth: cardW - 6 });
   });
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(...PDF_TEXT);
   const rows = Math.ceil(kpis.length / perRow);
-  return y + rows * 16 + 8;
+  return y + rows * (cardH + 4) + 8;
 };
 
 const pdfSectionTitle = (doc, y, title) => {
+  doc.setFillColor(...PDF_AMBER);
+  doc.rect(14, y - 3.2, 2.2, 4.2, "F");
   doc.setFontSize(10.5);
   doc.setFont(undefined, "bold");
-  doc.setTextColor(20, 20, 20);
-  doc.text(title, 14, y);
+  doc.setTextColor(...PDF_TEXT);
+  doc.text(title, 19, y);
   doc.setFont(undefined, "normal");
   doc.setTextColor(0, 0, 0);
   return y + 5;
 };
 
-const pdfTable = (doc, y, columns, rows) => {
+const pdfTable = (doc, y, columns, rows, opts = {}) => {
   autoTable(doc, {
     startY: y,
     head: [columns],
     body: rows,
-    styles: { fontSize: 7.5, cellPadding: 2.2, textColor: [30, 30, 30] },
-    headStyles: { fillColor: [30, 40, 60], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [245, 246, 248] },
+    styles: { fontSize: 7.5, cellPadding: 2.2, textColor: PDF_TEXT },
+    headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold", fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [246, 247, 249] },
     margin: { left: 14, right: 14 },
+    columnStyles: opts.columnStyles || {},
   });
   return doc.lastAutoTable.finalY + 10;
 };
 
+/* rodapé com numeração de página e marca d'água discreta em todas as páginas */
 const pdfSave = (doc, filenamePrefix) => {
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(225, 225, 225);
+    doc.line(14, 285, 196, 285);
+    doc.setFontSize(7);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(...PDF_MUTED);
+    doc.text(`GENESIS I — Maintenance & Port Call · Gerado em ${new Date().toLocaleString("pt-BR")}`, 14, 290);
+    doc.text(`Página ${i} de ${pageCount}`, 196, 290, { align: "right" });
+  }
   doc.save(`${filenamePrefix}-${todayISO()}.pdf`);
 };
 
@@ -3196,15 +3238,36 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       y = pdfSectionTitle(doc, y, "Custo por categoria — Orçado × Realizado × Disponível");
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)"],
-        categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel)])
+        categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel)]),
+        { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
       );
+
+      /* detalhamento do rateio: uma linha por categoria alocada em cada serviço, com o valor exato */
+      const allocationRows = [];
+      filtered.forEach((r) => {
+        allocationsOf(r).forEach((a) => {
+          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, fmt(a.valor)]);
+        });
+      });
+      if (allocationRows.length > 0) {
+        if (y > 240) { doc.addPage(); y = 15; }
+        y = pdfSectionTitle(doc, y, "Detalhamento do rateio por categoria");
+        y = pdfTable(doc, y,
+          ["Data", "Serviço", "Empresa", "Categoria", "Valor Alocado"],
+          allocationRows,
+          { columnStyles: { 4: { halign: "right" } } }
+        );
+      }
+
+      if (y > 230) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "Serviços (não pagos) — Data · Serviço · Empresa · Valor · PO · Status");
       pdfTable(doc, y,
         ["Data", "Serviço", "Empresa", "Valor", "PO", "Status de Pagamento", "Rateado"],
         filtered.map((r) => [
           fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.poContrato, r.statusPagamento,
           `${fmt(allocatedSum(r))} / ${fmt(r.valorTotal)}`,
-        ])
+        ]),
+        { columnStyles: { 3: { halign: "right" } } }
       );
       pdfSave(doc, "relatorio-custos");
     });
