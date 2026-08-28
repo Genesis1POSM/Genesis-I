@@ -8,6 +8,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from "recharts";
 import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 /* ============================================================
    THEME — offshore ops console: deep marine dark, amber beacon
@@ -337,6 +339,80 @@ const fmtPeriodDate = (d) => {
 };
 
 const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+
+/* ============================================================
+   PDF REPORT HELPERS — cada aba registra seu próprio gerador de
+   relatório (via setReportFn), refletindo exatamente o que está
+   sendo mostrado/filtrado naquela página no momento do clique.
+   ============================================================ */
+const pdfHeader = (doc, pageTitle, subtitle) => {
+  doc.setFontSize(16);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(20, 20, 20);
+  doc.text("GENESIS I", 14, 16);
+  doc.setFontSize(11);
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(60, 60, 60);
+  doc.text(pageTitle, 14, 23);
+  doc.setFontSize(9);
+  doc.setTextColor(120, 120, 120);
+  doc.text(subtitle, 14, 29);
+  doc.setDrawColor(210, 210, 210);
+  doc.line(14, 33, 196, 33);
+  doc.setTextColor(0, 0, 0);
+  return 41;
+};
+
+/* grade compacta de KPIs: [{label, value}], 4 por linha */
+const pdfKpis = (doc, y, kpis) => {
+  const perRow = 4;
+  const colWidth = 45.5;
+  kpis.forEach((k, idx) => {
+    const col = idx % perRow;
+    const row = Math.floor(idx / perRow);
+    const x = 14 + col * colWidth;
+    const rowY = y + row * 16;
+    doc.setFontSize(12);
+    doc.setFont(undefined, "bold");
+    doc.setTextColor(30, 30, 30);
+    doc.text(String(k.value), x, rowY);
+    doc.setFontSize(7);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(130, 130, 130);
+    doc.text(k.label, x, rowY + 4.5, { maxWidth: colWidth - 3 });
+  });
+  doc.setTextColor(0, 0, 0);
+  const rows = Math.ceil(kpis.length / perRow);
+  return y + rows * 16 + 8;
+};
+
+const pdfSectionTitle = (doc, y, title) => {
+  doc.setFontSize(10.5);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(20, 20, 20);
+  doc.text(title, 14, y);
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(0, 0, 0);
+  return y + 5;
+};
+
+const pdfTable = (doc, y, columns, rows) => {
+  autoTable(doc, {
+    startY: y,
+    head: [columns],
+    body: rows,
+    styles: { fontSize: 7.5, cellPadding: 2.2, textColor: [30, 30, 30] },
+    headStyles: { fillColor: [30, 40, 60], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [245, 246, 248] },
+    margin: { left: 14, right: 14 },
+  });
+  return doc.lastAutoTable.finalY + 10;
+};
+
+const pdfSave = (doc, filenamePrefix) => {
+  doc.save(`${filenamePrefix}-${todayISO()}.pdf`);
+};
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -1008,6 +1084,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const [expandedWp, setExpandedWp] = useState(null);
   const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
   const [importMsg, setImportMsg] = useState(null);
+  const [reportFn, setReportFn] = useState(null);
   const fileInputRef = useRef(null);
 
   /* global period filter — present on every page */
@@ -1357,59 +1434,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     e.target.value = "";
   };
 
-  const handleExportReport = () => {
-    const today = new Date().toLocaleDateString("pt-BR");
-    const critical = workPackages.filter((w) => w.status === "Não iniciado");
-    const row = (cells) => `<tr>${cells.map((c) => `<td style="padding:6px 10px;border-bottom:1px solid #e3e3e3;font-size:12px;">${c}</td>`).join("")}</tr>`;
-    const head = (cells) => `<tr>${cells.map((c) => `<th style="text-align:left;padding:6px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#666;border-bottom:2px solid #222;">${c}</th>`).join("")}</tr>`;
-
-    const html = `<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório — ${selectedPortCallLabel}</title>
-<style>
-  body { font-family: 'IBM Plex Sans', Arial, sans-serif; color:#1a1a1a; margin:40px; }
-  h1 { font-size:20px; margin-bottom:2px; }
-  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #222; padding-bottom:6px; margin-top:34px; }
-  .sub { color:#666; font-size:12px; margin-bottom:24px; }
-  table { width:100%; border-collapse:collapse; margin-top:10px; }
-  .kpis { display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; }
-  .kpi { border:1px solid #ddd; border-radius:4px; padding:10px 14px; min-width:150px; }
-  .kpi-label { font-size:10px; text-transform:uppercase; color:#777; letter-spacing:.5px; }
-  .kpi-value { font-size:18px; font-weight:700; margin-top:4px; }
-  .alert { background:#fdecea; border:1px solid #f3b4ac; color:#8a2e22; padding:8px 12px; border-radius:4px; margin-bottom:8px; font-size:12.5px; }
-  @media print { body { margin: 15mm; } }
-</style></head><body>
-  <h1>GENESIS I — Relatório de Manutenção &amp; Port Call</h1>
-  <div class="sub">${selectedPortCallLabel} · Período: ${fmtPeriodDate(filterRange.start)} — ${fmtPeriodDate(filterRange.end)} · Gerado em ${today}</div>
-  <h2>Indicadores do período</h2>
-  <div class="kpis">
-    <div class="kpi"><div class="kpi-label">Budget no período</div><div class="kpi-value">${fmt(kpis.budgetMes)}</div></div>
-    <div class="kpi"><div class="kpi-label">Utilizado</div><div class="kpi-value">${fmt(kpis.utilizadoMes)}</div></div>
-    <div class="kpi"><div class="kpi-label">Realizado</div><div class="kpi-value">${fmt(kpis.realizadoMes)}</div></div>
-    <div class="kpi"><div class="kpi-label">Concluídos (total)</div><div class="kpi-value">${kpis.concluidosTotal}</div></div>
-    <div class="kpi"><div class="kpi-label">Concluídos (período)</div><div class="kpi-value">${kpis.concluidosMes}</div></div>
-    <div class="kpi"><div class="kpi-label">Pagos</div><div class="kpi-value">${fmt(kpis.pagosSum)}</div></div>
-    <div class="kpi"><div class="kpi-label">Pendentes</div><div class="kpi-value">${fmt(kpis.pendentesSum)}</div></div>
-    <div class="kpi"><div class="kpi-label">Dias em atraso (soma)</div><div class="kpi-value">${kpis.totalDiasAtraso}</div></div>
-  </div>
-  <h2>Serviços não iniciados</h2>
-  ${critical.length === 0 ? "<p>Nenhum serviço pendente de início no momento.</p>" : critical.map((w) => `<div class="alert"><strong>${w.id}</strong> — ${w.name}: ${w.status}, ${w.progress}% concluído, início previsto ${fmtDateTime(w.start)}.</div>`).join("")}
-  <h2>Todos os serviços</h2>
-  <table>${head(["ID", "Serviço", "Disciplina", "Budget", "Realizado", "Status", "Progresso"])}
-  ${workPackages.map((w) => row([w.id, w.name, w.discipline, fmt(w.budget), fmt(w.actual), w.status, w.progress + "%"])).join("")}</table>
-  <h2>Pagamentos em atraso</h2>
-  ${kpis.atrasados.length === 0 ? "<p>Nenhum pagamento em atraso.</p>" : `<table>${head(["ID", "Serviço", "Valor", "Vencimento", "Dias em atraso"])}
-  ${kpis.atrasados.map((p) => row([p.id, p.service, fmt(p.nfValue || p.poValue), fmtDate(p.due), daysLate(p)])).join("")}</table>`}
-  <p style="margin-top:40px;color:#999;font-size:11px;">Para salvar como PDF: abra este arquivo no navegador e use Imprimir → Salvar como PDF.</p>
-</body></html>`;
-
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio-${selectedPortCallLabel.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  /* "Exportar relatório" agora dispara o gerador de PDF registrado pela página atualmente aberta
+     (cada aba registra o seu via setReportFn, refletindo exatamente o que está sendo mostrado nela) */
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
@@ -1513,7 +1539,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
           <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx)"><Upload size={14} />Importar</button>
           <button className="g-btn" onClick={handleExportXlsx} title="Exportar todos os dados como planilha (.xlsx)"><Download size={14} />Exportar planilha</button>
-          <button className="g-btn" onClick={handleExportReport} title="Exportar relatório (HTML, imprimível como PDF)"><FileText size={14} />Exportar relatório</button>
+          <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
+            title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
           {tab === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
           {tab === "materials" && <button className="g-btn primary" onClick={addMat}><Plus size={14} />Nova requisição</button>}
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
@@ -1531,13 +1558,13 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       <div className="g-body">
         {tab === "dashboard" && (
           <DashboardView kpis={kpis} workPackages={workPackages} disciplineCosts={disciplineCosts}
-            serviceInvoices={serviceInvoices}
+            serviceInvoices={serviceInvoices} setReportFn={setReportFn}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
         {tab === "gantt" && (
           <GanttView workPackages={workPackages} portCallName={selectedPortCallLabel}
-            spans={effectivePortCallSpans} portCallLabel={portCallLabel}
+            spans={effectivePortCallSpans} portCallLabel={portCallLabel} setReportFn={setReportFn}
             updWp={updWp} remWp={remWp} removePortCall={removePortCall} addWpOnDate={addWpOnDate}
             addPortCallRecord={addPortCallRecord} filterRange={effectiveRange}
             opCategories={opCategories} catOf={catOf} addOpCategory={addOpCategory}
@@ -1546,20 +1573,21 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
         {tab === "services" && (
           <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
-            expandedWp={expandedWp} setExpandedWp={setExpandedWp} />
+            expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} />
         )}
 
-        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} />}
+        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} />}
 
         {tab === "payments" && (
           <PaymentsSection
             paySubTab={paySubTab} setPaySubTab={setPaySubTab}
             serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} addInv={addInv}
+            setReportFn={setReportFn}
           />
         )}
 
         {tab === "costs" && (
-          <CostsView serviceInvoices={serviceInvoices} updInv={updInv}
+          <CostsView serviceInvoices={serviceInvoices} updInv={updInv} setReportFn={setReportFn}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
@@ -1574,7 +1602,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 /* ============================================================
    DASHBOARD — exact KPI set requested
    ============================================================ */
-function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate }) {
+function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn }) {
   const fmtUsd = (n) => "US$ " + Number(n || 0).toLocaleString("en-US");
   const upcomingMaintenance = workPackages
     .filter((w) => w.status !== "Concluído")
@@ -1623,6 +1651,30 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
     { label: "Em aberto", value: `${invAbertos.length} · ${fmt(invSum(invAbertos))}`, color: "var(--warn)" },
     { label: "Total de dias em aberto (soma)", value: `${invTotalDiasAberto} dias`, color: "var(--crit)" },
   ];
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório do Dashboard", `Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        ...financeiro.map((k) => ({ label: k.label, value: k.value })),
+        ...servicos.map((k) => ({ label: k.label, value: k.value })),
+        ...pagamentos.map((k) => ({ label: k.label, value: k.value })),
+      ]);
+      y = pdfSectionTitle(doc, y, "Custo por categoria");
+      y = pdfTable(doc, y,
+        ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)"],
+        disciplineCosts.map((d) => [d.discipline, fmtUsd(d.orcadoUsd), fmt(d.orcadoBrl), fmt(d.actual)])
+      );
+      y = pdfSectionTitle(doc, y, `Pagamentos com Aprovação Pendente há mais tempo`);
+      pdfTable(doc, y,
+        ["Data", "Serviço", "Empresa", "Valor", "Dias em Aberto"],
+        topOpenInvoices.map((r) => [fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.daysOpenTotal])
+      );
+      pdfSave(doc, "relatorio-dashboard");
+    });
+  }, [financeiro, servicos, pagamentos, disciplineCosts, topOpenInvoices, setReportFn]);
 
   return (
     <>
@@ -1771,7 +1823,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
    ============================================================ */
 function GanttView({ workPackages, filterRange, portCallName,
   spans, portCallLabel, updWp, remWp, removePortCall, addWpOnDate, addPortCallRecord,
-  opCategories, catOf, addOpCategory, renameOpCategory, removeOpCategory }) {
+  opCategories, catOf, addOpCategory, renameOpCategory, removeOpCategory, setReportFn }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const isoMin = filterRange.start.toISOString().slice(0, 10);
   const isoMax = filterRange.end.toISOString().slice(0, 10);
@@ -1800,6 +1852,28 @@ function GanttView({ workPackages, filterRange, portCallName,
     updWp(i, "status", v);
     if (v === "Concluído") updWp(i, "progress", 100);
   };
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório de Port Call",
+        `${portCallName} · ${spans.length} Port Call(s) no período · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      spans.forEach((span) => {
+        const activities = workPackages.filter((w) => {
+          const d = new Date(w.start);
+          return d >= span.start && d < span.end;
+        });
+        if (y > 260) { doc.addPage(); y = 15; }
+        y = pdfSectionTitle(doc, y, `${portCallLabel(span.startKey)} — ${activities.length} atividade(s)`);
+        y = pdfTable(doc, y,
+          ["Manutenção", "Empresa", "Início", "Término", "Status", "Progresso"],
+          activities.map((w) => [w.name, w.empresa || "—", fmtDateTime(w.start), fmtDateTime(w.end), w.status, `${w.progress}%`])
+        );
+      });
+      pdfSave(doc, "relatorio-portcall");
+    });
+  }, [spans, workPackages, portCallName, setReportFn]);
 
   /* uma linha de dias + barras posicionadas em horas, calculada a partir do próprio intervalo do Port Call */
   const renderSpanTimeline = (span, activities) => {
@@ -2015,7 +2089,7 @@ const StatusServicoSelect = ({ value, onChange }) => {
   );
 };
 
-function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp }) {
+function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp, setReportFn }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const [sf, setSf] = useState({ empresa: "", rc: "", manutencao: "", status: "Todos", portCall: "", dataInicio: "", dataFim: "" });
   const hasActiveFilter = sf.empresa || sf.rc || sf.manutencao || sf.status !== "Todos" || sf.portCall || sf.dataInicio || sf.dataFim;
@@ -2075,6 +2149,33 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
   const taxaConclusao = naoCancelados ? Math.round((concluidos / naoCancelados) * 100) : 0;
   const comDesvio = filtered.filter((w) => { const d = desvioDias(w); return d !== null && d !== 0; });
   const desvioMedio = comDesvio.length ? Math.round(comDesvio.reduce((s, w) => s + Math.abs(desvioDias(w)), 0) / comDesvio.length) : 0;
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório de Serviços", `${filtered.length} serviço(s) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        { label: "Total de Serviços", value: filtered.length },
+        { label: "Concluídos", value: concluidos },
+        { label: "Em Andamento", value: emAndamento },
+        { label: "Não Iniciados", value: naoIniciados },
+        { label: "Cancelados", value: cancelados },
+        { label: "Taxa de Conclusão", value: `${taxaConclusao}%` },
+        { label: "Serviços com Desvio de Execução", value: comDesvio.length },
+        { label: "Desvio Médio (dias)", value: desvioMedio },
+      ]);
+      y = pdfSectionTitle(doc, y, "Serviços");
+      pdfTable(doc, y,
+        ["Data", "Categoria", "Manutenção", "Empresa", "RC", "Status", "Progresso", "Desvio"],
+        filtered.map((w) => {
+          const d = desvioDias(w);
+          return [fmtDate((w.start || "").slice(0, 10)), w.group || "—", w.name, w.empresa || "—", w.rc || "—", w.status, `${w.progress}%`, d === null ? "—" : (d > 0 ? `+${d}d` : `${d}d`)];
+        })
+      );
+      pdfSave(doc, "relatorio-servicos");
+    });
+  }, [filtered, concluidos, emAndamento, naoIniciados, cancelados, taxaConclusao, comDesvio, desvioMedio, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2300,7 +2401,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
-function MaterialsView({ materials, updMat, remMat, workPackages }) {
+function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const [mf, setMf] = useState({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos" });
@@ -2325,6 +2426,26 @@ function MaterialsView({ materials, updMat, remMat, workPackages }) {
   const urgentes = filtered.filter((m) => ["Alta", "Crítica"].includes(m.priority) && naoRecebido(m));
   const abertas = filtered.filter(naoRecebido);
   const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório de Materiais", `${filtered.length} material(is) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        { label: "Total de Materiais", value: filtered.length },
+        { label: "Materiais Urgentes", value: urgentes.length },
+        { label: "Requisições Abertas", value: abertas.length },
+        { label: "Sem ETA", value: semEta.length },
+      ]);
+      y = pdfSectionTitle(doc, y, "Materiais");
+      pdfTable(doc, y,
+        ["TM Master", "Descrição", "Qtd", "Prioridade", "Necessidade", "PO", "ETA", "Status"],
+        filtered.map((m) => [m.tmMaster || "—", m.descricao, m.quantidade, m.priority, fmtDate(m.dataNecessidade), m.po || "—", m.eta ? fmtDate(m.eta) : "sem ETA", m.status])
+      );
+      pdfSave(doc, "relatorio-materiais");
+    });
+  }, [filtered, urgentes, abertas, semEta, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2529,7 +2650,7 @@ function MultiSelectStatus({ options, selected, onChange }) {
 
 const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
-function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv }) {
+function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn }) {
   const [f, setF] = useState(emptyPayFilter);
   const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
@@ -2596,15 +2717,15 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
         </div>
       )}
 
-      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} />}
-      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} />}
-      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} />}
+      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} />}
+      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} />}
+      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} />}
     </>
   );
 }
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
-function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect }) {
+function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
   const execToPayDays = (r) => {
@@ -2641,6 +2762,29 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
   const totalDiasAberto = activeRows.reduce((s, r) => s + Number(r.daysOpenTotal || 0), 0);
   const valorTotalSum = activeRows.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
   const emAtraso = activeRows.filter((r) => Number(r.daysOpenTotal || 0) > 60).length;
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório de Pagamentos — Dashboard Total",
+        `${activeRows.length} registro(s)${selectedIds.size > 0 ? " (seleção aplicada)" : ""} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        { label: "Registros", value: activeRows.length },
+        { label: "Valor Total", value: fmt(valorTotalSum) },
+        { label: "Serviços em Atraso (+60d)", value: emAtraso },
+        { label: "Média Execução → Pagamento", value: `${avg(execPayVals).toFixed(1)} dias` },
+        { label: "Média MD → Execução", value: `${avg(mdExecVals).toFixed(1)} dias` },
+        { label: "Total de Dias em Aberto", value: `${totalDiasAberto} dias` },
+      ]);
+      y = pdfSectionTitle(doc, y, "Registros");
+      pdfTable(doc, y,
+        ["Data", "Manutenção", "Empresa", "RC", "PO/Contrato", "Valor Total", "Status Pagamento", "Data Pagamento"],
+        activeRows.map((r) => [fmtDate(r.date), r.assunto, r.empresa, r.rc || "—", r.poContrato || "—", fmt(r.valorTotal), r.statusPagamento, r.dataPagamento ? fmtDate(r.dataPagamento) : "—"])
+      );
+      pdfSave(doc, "relatorio-pagamentos-total");
+    });
+  }, [activeRows, valorTotalSum, emAtraso, execPayVals, mdExecVals, totalDiasAberto, selectedIds, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2729,7 +2873,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
 }
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
-function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect }) {
+function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
   const statusColorMap = STATUS_PAGAMENTO_COLOR;
@@ -2754,6 +2898,25 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
   /* KPIs refletem a seleção de linhas quando houver alguma */
   const activeRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
   const countOf = (s) => activeRows.filter((r) => r.statusPagamento === s).length;
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório de Status dos Pagamentos",
+        `${activeRows.length} registro(s)${selectedIds.size > 0 ? " (seleção aplicada)" : ""} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        { label: "Todos", value: activeRows.length },
+        ...kpiStatuses.map((s) => ({ label: s, value: countOf(s) })),
+      ]);
+      y = pdfSectionTitle(doc, y, "Registros");
+      pdfTable(doc, y,
+        ["Data", "Manutenção", "Empresa", "PO/Contrato", "Medição", "Dias em Aberto", "Status Pagamento"],
+        activeRows.map((r) => [fmtDate(r.date), r.assunto, r.empresa, r.poContrato || "—", r.medicao || "—", r.daysOpenTotal, r.statusPagamento])
+      );
+      pdfSave(doc, "relatorio-status-pagamentos");
+    });
+  }, [activeRows, kpiStatuses, selectedIds, setReportFn]);
 
   return (
     <>
@@ -2843,7 +3006,7 @@ const InvoiceSituationPill = ({ situation }) => (
 );
 
 /* ---------- Página 3: Dashboard de Valores — visão enxuta puxando os mesmos dados do Dashboard Total ---------- */
-function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect }) {
+function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
   const [situationFilter, setSituationFilter] = useState("Todos");
   const [sort, setSort] = useState({ key: null, dir: 1 });
 
@@ -2876,6 +3039,22 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
     { key: "Pendente", label: "Pendente", value: `${pendentes.length} · ${fmt(sum(pendentes))}`, color: "var(--warn)", icon: AlertTriangle },
     { key: "Atrasado", label: "Atrasado", value: `${atrasados.length} · ${fmt(sum(atrasados))}`, color: "var(--crit)", icon: AlertTriangle },
   ];
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório — Dashboard de Valores",
+        `${activeRows.length} registro(s)${selectedIds.size > 0 ? " (seleção aplicada)" : ""} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, cards.map((c) => ({ label: c.label, value: c.value })));
+      y = pdfSectionTitle(doc, y, "Registros");
+      pdfTable(doc, y,
+        ["Data", "Serviço", "Empresa", "PO", "Valor", "Dias em Atraso", "Status", "Situação"],
+        activeRows.map((r) => [fmtDate(r.date), r.assunto, r.empresa, r.poContrato || "—", fmt(r.valorTotal), r.daysOpenTotal, r.statusPagamento, r._situation])
+      );
+      pdfSave(doc, "relatorio-dashboard-valores");
+    });
+  }, [activeRows, cards, selectedIds, setReportFn]);
 
   return (
     <>
@@ -2939,15 +3118,9 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
 /* ============================================================
    COSTS
    ============================================================ */
-function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
+function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
   const [expandedRow, setExpandedRow] = useState(null);
-  const defaultPeriod = useMemo(() => {
-    const now = new Date();
-    const start = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const end = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(lastDay)}`;
-    return { start, end };
-  }, []);
+  const defaultPeriod = useMemo(() => ({ start: "2026-01-01", end: todayISO() }), []);
   const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
   const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end;
 
@@ -3004,6 +3177,38 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate }) {
       <div className="g-kpi-value" style={{ fontSize: 22, color }}>{value}</div>
     </div>
   );
+
+  /* registra o gerador de PDF desta página — reflete exatamente o filtro/dados atuais da aba Custos */
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório de Custos",
+        `Período: ${fmtPeriodDate(cf.dataInicio)} — ${fmtPeriodDate(cf.dataFim)} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        { label: "Total Realizado (rateado)", value: fmt(totalRealizado) },
+        { label: "Total Orçado", value: fmt(totalOrcadoBrl) },
+        { label: "Saldo Disponível", value: fmt(totalDisponivel) },
+        { label: "% Orçamento Consumido", value: `${pctConsumido}%` },
+        { label: "Serviços sem Rateio Completo", value: semRateioCompleto },
+        { label: "Registros no período", value: filtered.length },
+      ]);
+      y = pdfSectionTitle(doc, y, "Custo por categoria — Orçado × Realizado × Disponível");
+      y = pdfTable(doc, y,
+        ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)"],
+        categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel)])
+      );
+      y = pdfSectionTitle(doc, y, "Serviços (não pagos) — Data · Serviço · Empresa · Valor · PO · Status");
+      pdfTable(doc, y,
+        ["Data", "Serviço", "Empresa", "Valor", "PO", "Status de Pagamento", "Rateado"],
+        filtered.map((r) => [
+          fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.poContrato, r.statusPagamento,
+          `${fmt(allocatedSum(r))} / ${fmt(r.valorTotal)}`,
+        ])
+      );
+      pdfSave(doc, "relatorio-custos");
+    });
+  }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto, exchangeRate, cf, setReportFn]);
 
   return (
     <>
