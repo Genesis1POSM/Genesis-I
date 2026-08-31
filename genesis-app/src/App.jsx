@@ -268,6 +268,35 @@ const Theme = () => (
     .g-gantt-row { display: flex; align-items: center; min-height: 68px; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border-soft); transition: border-color .12s, background .12s; }
     .g-gantt-row:hover { border-color: var(--border); background: var(--panel-alt); }
     .g-gantt-taskinfo { width: 620px; flex-shrink: 0; padding-right: 14px; }
+
+    /* ---------- grade de dados estilo MS Project (coluna fixa) + linha do tempo (coluna scrollável) ---------- */
+    .g-gantt-datagrid-wrap {
+      display: flex; align-items: flex-start; border: 1px solid var(--border);
+      border-radius: 6px; overflow: hidden; margin-top: 4px; background: var(--panel);
+    }
+    .g-gantt-grid-col { flex-shrink: 0; border-right: 1px solid var(--border); }
+    .g-gantt-timeline-col { flex: 1; overflow-x: auto; min-width: 260px; }
+    .g-gantt-grid-headrow {
+      display: flex; align-items: center; height: 30px; background: var(--panel-raised);
+      border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 8.5px;
+      text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); padding: 0 6px;
+    }
+    .g-gantt-gridrow {
+      display: flex; align-items: center; height: 34px; padding: 0 6px 0 8px;
+      border-bottom: 1px solid var(--border-soft); transition: background .12s;
+    }
+    .g-gantt-gridrow:nth-child(even) { background: rgba(255,255,255,0.012); }
+    .g-gantt-gridrow:hover { background: var(--panel-alt); }
+    .g-gantt-timeline-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--border-soft); padding: 0 6px; position: relative; }
+    .g-gantt-timeline-row:nth-child(even) { background: rgba(255,255,255,0.012); }
+    .g-gantt-col-num { width: 20px; flex-shrink: 0; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
+    .g-gantt-col-task { width: 190px; flex-shrink: 0; padding: 0 6px; overflow: hidden; }
+    .g-gantt-col-empresa { width: 84px; flex-shrink: 0; padding: 0 4px; overflow: hidden; }
+    .g-gantt-col-dur { width: 50px; flex-shrink: 0; padding: 0 4px; }
+    .g-gantt-col-date { width: 122px; flex-shrink: 0; padding: 0 4px; }
+    .g-gantt-col-status { width: 148px; flex-shrink: 0; padding: 0 4px; }
+    .g-gantt-col-progress { width: 82px; flex-shrink: 0; padding: 0 4px; }
+    .g-gantt-col-action { width: 24px; flex-shrink: 0; text-align: center; }
     .g-gantt-mini-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-family: var(--mono); margin-bottom: 2px; }
     .g-gantt-mini-dt {
       background: var(--panel-raised); border: 1px solid var(--border); color: var(--text);
@@ -1993,7 +2022,12 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
 function GanttView({ workPackages, filterRange, portCallName,
   spans, portCallLabel, updWp, remWp, removePortCall, addWpOnDate, addPortCallRecord,
   opCategories, catOf, addOpCategory, renameOpCategory, removeOpCategory, setReportFn }) {
-  const [expandedRow, setExpandedRow] = useState(null);
+  const [collapsedCats, setCollapsedCats] = useState(new Set());
+  const toggleCollapse = (key) => setCollapsedCats((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
   const isoMin = filterRange.start.toISOString().slice(0, 10);
   const isoMax = filterRange.end.toISOString().slice(0, 10);
   const [newPc, setNewPc] = useState({ date: isoMin, endDate: isoMin, duration: 24, local: "" });
@@ -2151,9 +2185,6 @@ function GanttView({ workPackages, filterRange, portCallName,
                     <span className="g-btn ghost" title="Remover este Port Call" onClick={() => removePortCall(span.startKey)}><Trash2 size={13} /></span>
                   </span>
                 </div>
-                <div className="g-gantt-header" style={{ "--gantt-days": days }}>
-                  {dayLabels.map((d, i) => <div className="g-gantt-day" key={i}>{d}</div>)}
-                </div>
 
                 {pcActivities.length === 0 && (
                   <div className="g-gantt-empty">Nenhuma atividade neste Port Call ainda.</div>
@@ -2162,91 +2193,105 @@ function GanttView({ workPackages, filterRange, portCallName,
                 {/* ---- categorias operacionais dentro do Port Call ---- */}
                 {opCategories.map((cat) => {
                   const rows = pcActivities.filter((w) => catOf(w) === cat);
+                  const collapseKey = `${span.startKey}__${cat}`;
+                  const isCollapsed = collapsedCats.has(collapseKey);
                   return (
                     <div key={cat} style={{ marginLeft: 14, marginTop: 4 }}>
                       <div className="g-gantt-group-row" style={{ padding: "5px 10px", background: "transparent", border: "1px solid var(--border-soft)" }}>
-                        <input
-                          className="g-gantt-group-title"
-                          style={{ fontSize: 10.5, color: "var(--text-dim)" }}
-                          value={cat}
-                          onChange={(e) => renameOpCategory(cat, e.target.value)}
-                        />
+                        <span className="g-flex" style={{ gap: 6, flex: 1 }}>
+                          <span className="g-btn ghost" style={{ padding: 2 }} onClick={() => toggleCollapse(collapseKey)} title={isCollapsed ? "Expandir" : "Recolher"}>
+                            {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                          </span>
+                          <input
+                            className="g-gantt-group-title"
+                            style={{ fontSize: 10.5, color: "var(--text-dim)" }}
+                            value={cat}
+                            onChange={(e) => renameOpCategory(cat, e.target.value)}
+                          />
+                        </span>
                         <span className="g-flex" style={{ gap: 4 }}>
+                          <span className="g-muted" style={{ fontFamily: "var(--mono)", fontSize: 9.5 }}>{rows.length}</span>
                           <span className="g-btn ghost" title="Adicionar atividade nesta categoria" onClick={() => addWpOnDate(span.startKey, cat)}><Plus size={13} /></span>
                           <span className="g-btn ghost danger" title="Remover categoria (global)" onClick={() => removeOpCategory(cat)}><Trash2 size={13} /></span>
                         </span>
                       </div>
 
-                      {rows.length === 0 && (
+                      {!isCollapsed && rows.length === 0 && (
                         <div className="g-gantt-empty" style={{ fontSize: 10.5 }}>Nenhuma linha aqui ainda — use o + acima.</div>
                       )}
 
-                      {rows.map((w) => {
-                        const i = workPackages.indexOf(w);
-                        const isOpen = expandedRow === w.id;
-                        return (
-                          <div key={w.id} style={{ "--gantt-days": days }}>
-                            <div className="g-gantt-row" style={{ borderLeft: `3px solid ${WP_STATUS_COLOR[w.status] || "#F2C94C"}`, alignItems: "flex-start" }}>
-                              <div className="g-gantt-taskinfo">
-                                <div className="g-flex" style={{ gap: 8, alignItems: "center", marginBottom: 6 }}>
-                                  <span className="g-btn ghost" style={{ padding: 2, flexShrink: 0 }} onClick={() => setExpandedRow(isOpen ? null : w.id)}>
-                                    {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                  </span>
-                                  <textarea className="g-edit-wrap g-gantt-name-edit" rows={1} value={w.name}
-                                    onChange={(e) => updWp(i, "name", e.target.value)}
-                                    style={{ flex: 1, minWidth: 150, fontWeight: 600 }} />
-                                </div>
-                                <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginLeft: 22 }}>
-                                  <div style={{ flexShrink: 0 }}>
-                                    <div className="g-gantt-mini-label">Início</div>
-                                    <input type="datetime-local" className="g-gantt-mini-dt" value={w.start || ""}
-                                      onChange={(e) => updWp(i, "start", e.target.value)} />
+                      {!isCollapsed && rows.length > 0 && (
+                        <div className="g-gantt-datagrid-wrap">
+                          {/* ---- coluna fixa: grade de dados, estilo planilha de projeto ---- */}
+                          <div className="g-gantt-grid-col">
+                            <div className="g-gantt-grid-headrow">
+                              <div className="g-gantt-col-num">#</div>
+                              <div className="g-gantt-col-task">Tarefa</div>
+                              {!NO_EMPRESA_CATEGORIES.includes(cat) && <div className="g-gantt-col-empresa">Empresa</div>}
+                              <div className="g-gantt-col-dur">Dur. (h)</div>
+                              <div className="g-gantt-col-date">Início</div>
+                              <div className="g-gantt-col-date">Término</div>
+                              <div className="g-gantt-col-status">Status</div>
+                              <div className="g-gantt-col-progress">% Compl.</div>
+                              <div className="g-gantt-col-action"></div>
+                            </div>
+                            {rows.map((w, idx) => {
+                              const i = workPackages.indexOf(w);
+                              return (
+                                <div className="g-gantt-gridrow" key={w.id} style={{ borderLeft: `3px solid ${WP_STATUS_COLOR[w.status] || "#F2C94C"}` }}>
+                                  <div className="g-gantt-col-num">{idx + 1}</div>
+                                  <div className="g-gantt-col-task">
+                                    <textarea className="g-edit-wrap g-gantt-name-edit" rows={1} value={w.name}
+                                      onChange={(e) => updWp(i, "name", e.target.value)} />
                                   </div>
-                                  <div style={{ flexShrink: 0 }}>
-                                    <div className="g-gantt-mini-label">Término</div>
-                                    <input type="datetime-local" className="g-gantt-mini-dt" value={w.end || ""}
-                                      onChange={(e) => updWp(i, "end", e.target.value)} />
-                                  </div>
-                                  <div style={{ flexShrink: 0 }}>
-                                    <div className="g-gantt-mini-label">Duração (h)</div>
-                                    <input type="number" min="0" className="g-gantt-mini-dt" style={{ width: 56, textAlign: "center" }}
+                                  {!NO_EMPRESA_CATEGORIES.includes(cat) && (
+                                    <div className="g-gantt-col-empresa">
+                                      <input type="text" className="g-edit" placeholder="—" value={w.empresa || ""}
+                                        onChange={(e) => updWp(i, "empresa", e.target.value)} style={{ fontSize: 10.5 }} />
+                                    </div>
+                                  )}
+                                  <div className="g-gantt-col-dur">
+                                    <input type="number" min="0" className="g-gantt-mini-dt" style={{ width: "100%", textAlign: "center" }}
                                       value={w.start && w.end ? Math.max(0, Math.round((new Date(w.end) - new Date(w.start)) / 3600000)) : ""}
                                       onChange={(e) => setTaskDuration(i, w, e.target.value)} />
                                   </div>
-                                  {!NO_EMPRESA_CATEGORIES.includes(cat) && (
-                                    <div style={{ flexShrink: 0 }}>
-                                      <div className="g-gantt-mini-label">Empresa</div>
-                                      <input type="text" className="g-edit" placeholder="Empresa" value={w.empresa || ""}
-                                        onChange={(e) => updWp(i, "empresa", e.target.value)}
-                                        style={{ width: 90, fontSize: 10.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "5px 6px" }} />
-                                    </div>
-                                  )}
-                                  <div style={{ flexShrink: 0 }}>
-                                    <div className="g-gantt-mini-label">Status</div>
+                                  <div className="g-gantt-col-date">
+                                    <input type="datetime-local" className="g-gantt-mini-dt" style={{ width: "100%" }} value={w.start || ""}
+                                      onChange={(e) => updWp(i, "start", e.target.value)} />
+                                  </div>
+                                  <div className="g-gantt-col-date">
+                                    <input type="datetime-local" className="g-gantt-mini-dt" style={{ width: "100%" }} value={w.end || ""}
+                                      onChange={(e) => updWp(i, "end", e.target.value)} />
+                                  </div>
+                                  <div className="g-gantt-col-status">
                                     <StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} />
                                   </div>
-                                  <div style={{ flexShrink: 0 }}>
-                                    <div className="g-gantt-mini-label">Progresso</div>
+                                  <div className="g-gantt-col-progress">
                                     <div className="g-flex" style={{ gap: 4 }}>
-                                      <div className="g-bar-bg" style={{ width: 36 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
-                                      <input type="number" min="0" max="100" className="g-edit num" style={{ width: 36, fontSize: 10.5, padding: "2px 3px" }}
+                                      <div className="g-bar-bg" style={{ width: 30 }}><div className="g-bar-fg" style={{ width: `${w.progress}%`, background: statusColor(w.status) }} /></div>
+                                      <input type="number" min="0" max="100" className="g-edit num" style={{ width: 32, fontSize: 10, padding: "2px 3px" }}
                                         value={w.progress} onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
-                                      <span style={{ fontSize: 9, color: "var(--text-faint)" }}>%</span>
                                     </div>
                                   </div>
+                                  <div className="g-gantt-col-action">
+                                    <span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={12} /></span>
+                                  </div>
                                 </div>
-                              </div>
-                              <div style={{ flex: 1, alignSelf: "center", marginTop: 4 }}>{renderBar(w)}</div>
-                              <span className="g-btn ghost danger" style={{ marginLeft: 6, alignSelf: "flex-start", marginTop: 4 }} onClick={() => remWp(i)}><Trash2 size={12} /></span>
-                            </div>
-                            {isOpen && (
-                              <div className="g-gantt-editrow">
-                                <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
-                              </div>
-                            )}
+                              );
+                            })}
                           </div>
-                        );
-                      })}
+
+                          {/* ---- coluna scrollável: linha do tempo visual (só as barras) ---- */}
+                          <div className="g-gantt-timeline-col">
+                            <div className="g-gantt-grid-headrow" style={{ borderLeft: "none" }}>
+                              {dayLabels.map((d, di) => <div className="g-gantt-day" key={di} style={{ flex: 1, textAlign: "center" }}>{d}</div>)}
+                            </div>
+                            {rows.map((w) => (
+                              <div className="g-gantt-timeline-row" key={w.id}>{renderBar(w)}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
