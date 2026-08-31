@@ -2759,8 +2759,8 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
   const emergFileRef = useRef(null);
   const [expandedRow, setExpandedRow] = useState(null);
   const [sort, setSort] = useState({ key: null, dir: 1 });
-  const [mf, setMf] = useState({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos" });
-  const hasActiveFilter = mf.tmMaster || mf.sap || mf.descricao || mf.rc || mf.reserva || mf.po || mf.status !== "Todos" || mf.priority !== "Todos";
+  const [mf, setMf] = useState({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos", dataInicio: "", dataFim: "" });
+  const hasActiveFilter = mf.tmMaster || mf.sap || mf.descricao || mf.rc || mf.reserva || mf.po || mf.status !== "Todos" || mf.priority !== "Todos" || mf.dataInicio || mf.dataFim;
 
   const filtered = useMemo(() => {
     const norm = (s) => String(s ?? "").toLowerCase().trim();
@@ -2772,7 +2772,9 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
       (!mf.reserva || norm(m.reserva).includes(norm(mf.reserva))) &&
       (!mf.po || norm(m.po).includes(norm(mf.po))) &&
       (mf.status === "Todos" || norm(m.status) === norm(mf.status)) &&
-      (mf.priority === "Todos" || norm(m.priority) === norm(mf.priority))
+      (mf.priority === "Todos" || norm(m.priority) === norm(mf.priority)) &&
+      (!mf.dataInicio || !m.dataSolicitacao || m.dataSolicitacao >= mf.dataInicio) &&
+      (!mf.dataFim || !m.dataSolicitacao || m.dataSolicitacao <= mf.dataFim)
     );
   }, [materials, mf]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
@@ -2781,6 +2783,28 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
   const urgentes = filtered.filter((m) => ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && naoRecebido(m));
   const abertas = filtered.filter(naoRecebido);
   const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
+  const semPo = filtered.filter((m) => !m.po && naoRecebido(m));
+
+  /* dados para os gráficos — sempre em cima do conjunto já filtrado na página */
+  const PRIORITY_COLOR = {
+    "Baixa": "#8D9BB5", "Média": "#F2C94C", "Alta": "#F2A93B",
+    "Crítica": "#F2685B", "Importante": "#F2A93B", "Emergencial": "#F2685B", "Sobressalente crítico": "#C0392B",
+  };
+  const porStatus = useMemo(() => {
+    const map = {};
+    filtered.forEach((m) => { const k = m.status || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+  }, [filtered]);
+  const porPrioridade = useMemo(() => {
+    const map = {};
+    filtered.forEach((m) => { const k = m.priority || "—"; map[k] = (map[k] || 0) + 1; });
+    return PRIORITY.filter((p) => map[p]).map((p) => ({ priority: p, count: map[p] }));
+  }, [filtered]);
+  const porDepartamento = useMemo(() => {
+    const map = {};
+    filtered.forEach((m) => { const k = m.departamento || "Sem departamento"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
+  }, [filtered]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -2792,7 +2816,15 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
         { label: "Materiais Urgentes", value: urgentes.length },
         { label: "Requisições Abertas", value: abertas.length },
         { label: "Sem ETA", value: semEta.length },
+        { label: "Sem PO", value: semPo.length },
       ]);
+      y = pdfSectionTitle(doc, y, "Por Status");
+      y = pdfTable(doc, y, ["Status", "Quantidade"], porStatus.map((d) => [d.status, d.count]), { columnStyles: { 1: { halign: "right" } } });
+      y = pdfSectionTitle(doc, y, "Por Prioridade");
+      y = pdfTable(doc, y, ["Prioridade", "Quantidade"], porPrioridade.map((d) => [d.priority, d.count]), { columnStyles: { 1: { halign: "right" } } });
+      y = pdfSectionTitle(doc, y, "Por Departamento");
+      y = pdfTable(doc, y, ["Departamento", "Quantidade"], porDepartamento.map((d) => [d.departamento, d.count]), { columnStyles: { 1: { halign: "right" } } });
+      if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "Materiais");
       pdfTable(doc, y,
         ["TM Master", "Descrição", "Qtd", "Prioridade", "Necessidade", "PO", "ETA", "Status"],
@@ -2800,7 +2832,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
       );
       pdfSave(doc, "relatorio-materiais");
     });
-  }, [filtered, urgentes, abertas, semEta, setReportFn]);
+  }, [filtered, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
     <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
@@ -2870,8 +2902,16 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
           </select>
         </div>
         <div className="g-field">
+          <label>Período (Data da Solicitação) — de</label>
+          <input type="date" value={mf.dataInicio} onChange={(e) => setMf((p) => ({ ...p, dataInicio: e.target.value }))} />
+        </div>
+        <div className="g-field">
+          <label>Período — até</label>
+          <input type="date" value={mf.dataFim} onChange={(e) => setMf((p) => ({ ...p, dataFim: e.target.value }))} />
+        </div>
+        <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setMf({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos" })}
+          <button className="g-btn" onClick={() => setMf({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos", dataInicio: "", dataFim: "" })}
             disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
@@ -2879,11 +2919,63 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
       </div>
 
       {/* KPIs de análise de materiais */}
-      <div className="g-kpi-row">
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {bigKpi("Total de Materiais", filtered.length, "var(--teal)", Package)}
         {bigKpi("Materiais Urgentes", urgentes.length, "var(--crit)", AlertTriangle)}
         {bigKpi("Requisições Abertas", abertas.length, "var(--warn)", AlertTriangle)}
         {bigKpi("Sem ETA", semEta.length, "var(--crit)", AlertTriangle)}
+        {bigKpi("Sem PO", semPo.length, "var(--warn)", AlertTriangle)}
+      </div>
+
+      <div className="g-grid-2">
+        <div className="g-panel">
+          <div className="g-panel-head"><span className="g-panel-title">Materiais por Status</span></div>
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <BarChart data={porStatus} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
+                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
+                  {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="g-panel">
+          <div className="g-panel-head"><span className="g-panel-title">Materiais por Prioridade</span></div>
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <BarChart data={porPrioridade} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
+                <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
+                  {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Materiais por Departamento</span></div>
+        <div style={{ width: "100%", height: 220 }}>
+          <ResponsiveContainer>
+            <BarChart data={porDepartamento} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+              <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
+              <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+              <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+              <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="g-panel">
