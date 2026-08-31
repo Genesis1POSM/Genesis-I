@@ -1744,7 +1744,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         </div>
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
-          <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx)"><Upload size={14} />Importar</button>
+          {tab !== "materials" && <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx)"><Upload size={14} />Importar</button>}
           <button className="g-btn" onClick={handleExportXlsx} title="Exportar todos os dados como planilha (.xlsx)"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
@@ -2763,7 +2763,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
   const hasActiveFilter = mf.tmMaster || mf.sap || mf.descricao || mf.rc || mf.reserva || mf.po || mf.status !== "Todos" || mf.priority !== "Todos";
 
   const filtered = useMemo(() => {
-    const norm = (s) => (s || "").toString().toLowerCase();
+    const norm = (s) => String(s ?? "").toLowerCase().trim();
     return materials.filter((m) =>
       (!mf.tmMaster || norm(m.tmMaster).includes(norm(mf.tmMaster))) &&
       (!mf.sap || norm(m.sap).includes(norm(mf.sap))) &&
@@ -2771,8 +2771,8 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
       (!mf.rc || norm(m.rc).includes(norm(mf.rc))) &&
       (!mf.reserva || norm(m.reserva).includes(norm(mf.reserva))) &&
       (!mf.po || norm(m.po).includes(norm(mf.po))) &&
-      (mf.status === "Todos" || m.status === mf.status) &&
-      (mf.priority === "Todos" || m.priority === mf.priority)
+      (mf.status === "Todos" || norm(m.status) === norm(mf.status)) &&
+      (mf.priority === "Todos" || norm(m.priority) === norm(mf.priority))
     );
   }, [materials, mf]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
