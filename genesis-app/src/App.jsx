@@ -523,9 +523,9 @@ const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 
 const WP_STATUS = ["Planejamento", "Não iniciado", "Em andamento", "Concluído", "Cancelado"];
 const WP_STATUS_DEFAULT_PROGRESS = { "Planejamento": 0, "Não iniciado": 0, "Em andamento": 50, "Concluído": 100, "Cancelado": 0 };
-const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo"];
+const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo", "Dentro do Prazo", "Fora do Prazo"];
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
-const PRIORITY = ["Baixa", "Média", "Alta", "Crítica"];
+const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 /* categories + Orçado (USD) exactly as in the uploaded drill-down report */
 const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica"];
 const CATEGORY_BUDGET_USD = {
@@ -1439,7 +1439,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
     const requisicoesAbertas = materials.filter((m) => !["Recebido", "Entregue a bordo"].includes(m.status)).length;
     const materiaisUrgentes = materials.filter((m) =>
-      ["Alta", "Crítica"].includes(m.priority) && !["Recebido", "Entregue a bordo"].includes(m.status)
+      ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && !["Recebido", "Entregue a bordo"].includes(m.status)
     );
 
     const pagos = payments.filter((p) => paymentSituation(p) === "Pago");
@@ -1499,6 +1499,110 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   };
 
   const handleImportClick = () => fileInputRef.current?.click();
+  /* ---------- Importação semanal: "Pedidos Emergenciais" (planilha externa, mesmas colunas de
+     Materiais, mas com pequenas diferenças de formato: quantidade vem como texto "N Unidade",
+     valor às vezes vem em branco, e prioridade/status usam termos próprios). Mescla por SAP, então
+     rodar essa importação toda semana atualiza os itens já existentes em vez de duplicar. ---------- */
+  const handleImportEmergenciais = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+        const normHeader = (h) => h.toString().trim().toLowerCase().replace(/\s+/g, " ").replace(/\bde\b/g, "da");
+        const HEADER_MAP = {
+          "tm master": "tmMaster", "departamento": "departamento", "sap": "sap", "descrição": "descricao",
+          "quantidade": "quantidade", "prioridade": "priority", "data da solicitação": "dataSolicitacao",
+          "data da necessidade": "dataNecessidade", "reserva": "reserva", "rc": "rc", "po": "po",
+          "linha da po": "linhaPo", "valor": "valor", "eta": "eta", "observação": "obs",
+          "data da recebimento": "dataRecebimento", "status": "status",
+        };
+        const rowKeyMap = {};
+        if (json.length > 0) {
+          Object.keys(json[0]).forEach((h) => {
+            const key = HEADER_MAP[normHeader(h)];
+            if (key) rowKeyMap[h] = key;
+          });
+        }
+
+        const parseQty = (v) => {
+          const m = String(v).match(/\d+([.,]\d+)?/);
+          return m ? Number(m[0].replace(",", ".")) : 0;
+        };
+        const parseValor = (v) => {
+          const n = Number(v);
+          return isNaN(n) ? 0 : n;
+        };
+        const parseDate = (v) => {
+          if (!v) return "";
+          if (v instanceof Date) return `${v.getFullYear()}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}`;
+          return String(v);
+        };
+        const normPriority = (v) => {
+          const s = (v || "").toString().trim();
+          return PRIORITY.includes(s) ? s : (s || "Média");
+        };
+        const normStatus = (v) => {
+          const s = (v || "").toString().trim();
+          return MAT_STATUS.includes(s) ? s : (s || "Solicitado");
+        };
+
+        const parsedRows = json.map((row) => {
+          const r = {};
+          Object.keys(row).forEach((h) => { if (rowKeyMap[h]) r[rowKeyMap[h]] = row[h]; });
+          return {
+            tmMaster: (r.tmMaster || "").toString(),
+            departamento: (r.departamento || "").toString(),
+            sap: (r.sap || "").toString(),
+            descricao: (r.descricao || "").toString(),
+            quantidade: parseQty(r.quantidade),
+            priority: normPriority(r.priority),
+            dataSolicitacao: parseDate(r.dataSolicitacao),
+            dataNecessidade: parseDate(r.dataNecessidade),
+            reserva: (r.reserva || "").toString(),
+            rc: (r.rc || "").toString(),
+            po: (r.po || "").toString(),
+            linhaPo: (r.linhaPo || "").toString(),
+            valor: parseValor(r.valor),
+            eta: parseDate(r.eta),
+            obs: (r.obs || "").toString().trim(),
+            dataRecebimento: parseDate(r.dataRecebimento),
+            status: normStatus(r.status),
+          };
+        }).filter((r) => r.descricao);
+
+        setMaterials((prev) => {
+          const bySap = new Map();
+          prev.forEach((m, idx) => { if (m.sap) bySap.set(String(m.sap), idx); });
+          const next = [...prev];
+          let updated = 0, added = 0;
+          parsedRows.forEach((row) => {
+            const key = row.sap;
+            if (key && bySap.has(key)) {
+              const idx = bySap.get(key);
+              next[idx] = { ...next[idx], ...row, id: next[idx].id, wp: next[idx].wp };
+              updated++;
+            } else {
+              next.push({ id: uid("MAT"), wp: "", ...row });
+              added++;
+            }
+          });
+          setImportMsg(`Pedidos Emergenciais importado: ${added} novo(s), ${updated} atualizado(s).`);
+          return next;
+        });
+      } catch (err) {
+        setImportMsg("Erro ao ler a planilha de Pedidos Emergenciais. Confira se o formato de colunas não mudou.");
+      }
+      setTimeout(() => setImportMsg(null), 6000);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
   const handleImportFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1679,7 +1783,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} />
         )}
 
-        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} />}
+        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} />}
 
         {tab === "payments" && (
           <PaymentsSection
@@ -2651,7 +2755,8 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
-function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn }) {
+function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais }) {
+  const emergFileRef = useRef(null);
   const [expandedRow, setExpandedRow] = useState(null);
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const [mf, setMf] = useState({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos" });
@@ -2673,7 +2778,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn })
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   const naoRecebido = (m) => !["Recebido", "Entregue a bordo"].includes(m.status);
-  const urgentes = filtered.filter((m) => ["Alta", "Crítica"].includes(m.priority) && naoRecebido(m));
+  const urgentes = filtered.filter((m) => ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && naoRecebido(m));
   const abertas = filtered.filter(naoRecebido);
   const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
 
@@ -2709,6 +2814,21 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn })
 
   return (
     <>
+      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div className="g-panel-title" style={{ marginBottom: 4 }}>Importação semanal — Pedidos Emergenciais</div>
+          <div className="g-muted" style={{ fontSize: 11.5 }}>
+            Suba a planilha toda semana neste mesmo padrão de colunas. Itens já existentes (mesmo SAP) são atualizados; itens novos são adicionados — nada é duplicado.
+          </div>
+        </div>
+        <div>
+          <input ref={emergFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportEmergenciais} />
+          <button className="g-btn primary" onClick={() => emergFileRef.current?.click()}>
+            <Upload size={14} />Importar Pedidos Emergenciais
+          </button>
+        </div>
+      </div>
+
       {/* filtros da aba Materiais — digitáveis + selecionáveis */}
       <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
         <div className="g-field">
