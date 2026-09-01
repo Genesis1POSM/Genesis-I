@@ -1562,6 +1562,23 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       { Indicador: "Total de dias em atraso (soma)", Valor: kpis.totalDiasAtraso },
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumo), "Resumo");
+    /* Custo por categoria — mês vigente, com a coluna de referência "Ordem" ao lado de cada categoria */
+    const mesAtual = `${new Date().getFullYear()}-${pad2(new Date().getMonth() + 1)}`;
+    const inPeriodCusto = serviceInvoices.filter((r) => r.statusPagamento !== "Pago" && r.previsaoMes === mesAtual);
+    const custoPorCategoria = CATEGORIES.map((cat) => {
+      const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
+      const orcadoBrl = orcadoUsd * exchangeRate;
+      const realizado = inPeriodCusto.reduce((s, r) => s + (r.allocations || []).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+      return {
+        Categoria: cat,
+        "Ordem (Compra de Serviços)": adpServicosLabel(cat),
+        "Orçado (US$)": orcadoUsd,
+        "Orçado (R$)": orcadoBrl,
+        "Realizado (R$)": realizado,
+        "Disponível (R$)": orcadoBrl - realizado,
+      };
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(custoPorCategoria), "CustoPorCategoria");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(workPackages, WP_COLS)), "Servicos");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(materials, MAT_COLS)), "Materiais");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(payments, PAY_COLS)), "Pagamentos");
@@ -3664,9 +3681,9 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
 function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
   const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
-  const defaultPeriod = useMemo(() => ({ start: "2026-01-01", end: todayISO() }), []);
-  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end, provisionadoMes: "" });
-  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end || cf.provisionadoMes;
+  const currentMonth = useMemo(() => `${new Date().getFullYear()}-${pad2(new Date().getMonth() + 1)}`, []);
+  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMes: currentMonth });
+  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.provisionadoMes !== currentMonth;
 
   /* esta aba só considera serviços que ainda não estão como "Pago" na aba Pagamentos */
   const naoPagos = useMemo(() => serviceInvoices.filter((r) => r.statusPagamento !== "Pago"), [serviceInvoices]);
@@ -3675,39 +3692,19 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const allocationsOf = (r) => r.allocations || [];
   const allocatedSum = (r) => allocationsOf(r).reduce((s, a) => s + Number(a.valor || 0), 0);
 
+  /* Único filtro de tempo desta aba: o MÊS PROVISIONADO de cada serviço (não a data de execução).
+     Isso evita que pagamentos de backlog (executados num mês anterior, mas provisionados para o mês
+     corrente) fiquem de fora quando o mês selecionado é o atual. Sem nenhum mês selecionado, mostra
+     tudo (todos os meses somados). */
   const filtered = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return naoPagos.filter((r) => {
-      const inRange = !r.date || (!cf.dataInicio || r.date >= cf.dataInicio) && (!cf.dataFim || r.date <= cf.dataFim);
+      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
       const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
       const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
       const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
       const inCategoria = cf.categorias.length === 0 || allocationsOf(r).some((a) => cf.categorias.includes(a.category));
-      /* Provisionado é independente do Período: o serviço pode ter sido executado num mês, mas o
-         pagamento ficou provisionado para outro (ex: executado em agosto, provisionado pra setembro) */
-      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
-      return inRange && inStatus && inServico && inEmpresa && inCategoria && inProvisionado;
-    });
-  }, [naoPagos, cf]);
-
-  /* filtro específico para o cálculo financeiro (Orçado/Realizado/Disponível): usa o MÊS PROVISIONADO
-     do serviço, não a data de execução. Isso evita que pagamentos de backlog (executados num mês
-     anterior, mas provisionados para o mês corrente) fiquem de fora do cálculo quando o período
-     selecionado é o mês atual — o que acontecia antes usando a data de execução. Serviços sem
-     previsão de mês definida não entram nesse cálculo (não dá pra saber a qual mês atribuir). */
-  const filteredParaFinanceiro = useMemo(() => {
-    const norm = (s) => (s || "").toString().toLowerCase();
-    const inicioMes = cf.dataInicio ? cf.dataInicio.slice(0, 7) : null;
-    const fimMes = cf.dataFim ? cf.dataFim.slice(0, 7) : null;
-    return naoPagos.filter((r) => {
-      if (!r.previsaoMes) return false;
-      const inRange = (!inicioMes || r.previsaoMes >= inicioMes) && (!fimMes || r.previsaoMes <= fimMes);
-      const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
-      const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
-      const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
-      const inCategoria = cf.categorias.length === 0 || allocationsOf(r).some((a) => cf.categorias.includes(a.category));
-      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
-      return inRange && inStatus && inServico && inEmpresa && inCategoria && inProvisionado;
+      return inProvisionado && inStatus && inServico && inEmpresa && inCategoria;
     });
   }, [naoPagos, cf]);
 
@@ -3725,10 +3722,10 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     return CATEGORIES.map((cat) => {
       const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
       const orcadoBrl = orcadoUsd * exchangeRate;
-      const realizado = filteredParaFinanceiro.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+      const realizado = filtered.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
       return { category: cat, orcadoUsd, orcadoBrl, realizado, disponivel: orcadoBrl - realizado };
     });
-  }, [filteredParaFinanceiro, exchangeRate]);
+  }, [filtered, exchangeRate]);
 
   const totalOrcadoBrl = categoryCosts.reduce((s, c) => s + c.orcadoBrl, 0);
   const totalRealizado = categoryCosts.reduce((s, c) => s + c.realizado, 0);
@@ -3742,7 +3739,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     const [y, m] = ym.split("-");
     return `${MONTH_NAMES[Number(m) - 1]}/${y}`;
   };
-  const comPrevisao = filteredParaFinanceiro;
+  const comPrevisao = filtered.filter((r) => r.previsaoMes);
   const semPrevisao = filtered.filter((r) => !r.previsaoMes);
   const totalProvisionado = comPrevisao.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
   const provisionadoPorMes = useMemo(() => {
@@ -3753,15 +3750,15 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     return Object.keys(map).sort().map((ym) => ({ mes: monthLabel(ym), valor: map[ym] }));
   }, [comPrevisao]);
 
-  /* análise combinada de custo + pagamento (sub-aba Dashboard) — mesmo período/serviço/empresa do
-     filtro acima, mas sem excluir os já pagos, pra dar a visão completa da situação de pagamento */
+  /* análise combinada de custo + pagamento (sub-aba Dashboard) — mesmo mês provisionado/serviço/empresa
+     do filtro acima, mas sem excluir os já pagos, pra dar a visão completa da situação de pagamento */
   const allInPeriod = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return serviceInvoices.filter((r) => {
-      const inRange = !r.date || (!cf.dataInicio || r.date >= cf.dataInicio) && (!cf.dataFim || r.date <= cf.dataFim);
+      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
       const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
       const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
-      return inRange && inServico && inEmpresa;
+      return inProvisionado && inServico && inEmpresa;
     });
   }, [serviceInvoices, cf]);
   const pagosPeriodo = allInPeriod.filter((r) => invoiceSituation(r) === "Pago");
@@ -3786,7 +3783,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     setReportFn(() => () => {
       const doc = new jsPDF();
       let y = pdfHeader(doc, "Relatório de Custos",
-        `Período: ${fmtPeriodDate(cf.dataInicio)} — ${fmtPeriodDate(cf.dataFim)} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        `${cf.provisionadoMes ? `Mês provisionado: ${monthLabel(cf.provisionadoMes)}` : "Todos os meses"} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       y = pdfKpis(doc, y, [
         { label: "Total Realizado (rateado)", value: fmt(totalRealizado) },
         { label: "Total Orçado", value: fmt(totalOrcadoBrl) },
@@ -3914,20 +3911,19 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           <input type="text" value={cf.empresa} onChange={(e) => setCf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
         </div>
         <div className="g-field">
-          <label>Período — de</label>
-          <input type="date" value={cf.dataInicio} onChange={(e) => setCf((p) => ({ ...p, dataInicio: e.target.value }))} />
-        </div>
-        <div className="g-field">
-          <label>Período — até</label>
-          <input type="date" value={cf.dataFim} onChange={(e) => setCf((p) => ({ ...p, dataFim: e.target.value }))} />
-        </div>
-        <div className="g-field">
           <label>Provisionado (mês)</label>
-          <input type="month" value={cf.provisionadoMes} onChange={(e) => setCf((p) => ({ ...p, provisionadoMes: e.target.value }))} title="Filtra pelo mês em que o serviço foi provisionado, independente da data de execução" />
+          <input type="month" value={cf.provisionadoMes} onChange={(e) => setCf((p) => ({ ...p, provisionadoMes: e.target.value }))}
+            title="Filtra pelo mês em que o serviço foi provisionado. Deixe em branco para ver todos os meses somados." />
         </div>
         <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end, provisionadoMes: "" })}
+          <button className="g-btn" onClick={() => setCf((p) => ({ ...p, provisionadoMes: "" }))} disabled={!cf.provisionadoMes} style={{ opacity: cf.provisionadoMes ? 1 : 0.5 }}>
+            <X size={13} />Ver todos os meses
+          </button>
+        </div>
+        <div className="g-field">
+          <label>&nbsp;</label>
+          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMes: currentMonth })}
             disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
