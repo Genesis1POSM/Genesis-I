@@ -234,6 +234,7 @@ const Theme = () => (
       letter-spacing: .6px; color: var(--text-faint); font-weight: 600;
       padding: 7px 8px; border-bottom: 1px solid var(--border);
       font-family: var(--mono); white-space: nowrap;
+      position: sticky; top: 0; background: var(--panel); z-index: 3;
     }
     .g-table td {
       padding: 6px 8px; border-bottom: 1px solid var(--border-soft);
@@ -600,16 +601,18 @@ const PAY_COLS = [
   ["nf", "NF"], ["nfValue", "Valor NF"], ["issue", "Emissão"], ["due", "Vencimento"], ["status", "Status"],
 ];
 const STATUS_PAGAMENTO_OPTIONS = [
-  "Aguardando Orçamento", "Aguardando Suprimentos", "Aguardando Medição", "Aprovação Pendente",
-  "Aguardando NF", "Pagamento Programado", "Pago", "Cancelado",
+  "Aguardando Orçamento", "Aguardando Suprimentos", "Aguardando Execução", "Aguardando Medição", "Aprovação Pendente",
+  "Aguardando NF", "Pagamento Programado", "On Hold", "Pago", "Cancelado",
 ];
 const STATUS_PAGAMENTO_COLOR = {
   "Aguardando Orçamento": "#8D9BB5",
   "Aguardando Suprimentos": "#F2C94C",
+  "Aguardando Execução": "#4FA8D8",
   "Aguardando Medição": "#3FC1C9",
   "Aprovação Pendente": "#F2685B",
   "Aguardando NF": "#F2A93B",
   "Pagamento Programado": "#9B8CF2",
+  "On Hold": "#6B7280",
   "Pago": "#35D399",
   "Cancelado": "#5D6E8C",
 };
@@ -750,11 +753,17 @@ const PayStatusSelect = ({ value, onChange }) => {
 /* ---------- ordenação de tabela ao clicar no cabeçalho ---------- */
 const compareRows = (a, b, key, dir) => {
   let av = a[key], bv = b[key];
+  const aEmpty = av === "" || av === null || av === undefined;
+  const bEmpty = bv === "" || bv === null || bv === undefined;
+  /* valores em branco sempre vão para o final, independente da direção da ordenação */
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;
+  if (bEmpty) return -1;
   const an = parseFloat(av), bn = parseFloat(bv);
-  const numeric = av !== "" && av !== null && av !== undefined && bv !== "" && bv !== null && bv !== undefined && !isNaN(an) && !isNaN(bn);
+  const numeric = !isNaN(an) && !isNaN(bn);
   if (numeric) return (an - bn) * dir;
-  av = (av ?? "").toString().toLowerCase();
-  bv = (bv ?? "").toString().toLowerCase();
+  av = av.toString().toLowerCase();
+  bv = bv.toString().toLowerCase();
   if (av < bv) return -dir;
   if (av > bv) return dir;
   return 0;
@@ -3286,7 +3295,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
 function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
-  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const [sort, setSort] = useState({ key: "date", dir: 1 });
   const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
   const execToPayDays = (r) => {
     if (!r.date) return null;
@@ -3434,7 +3443,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
 function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
-  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const [sort, setSort] = useState({ key: "date", dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
   const statusColorMap = STATUS_PAGAMENTO_COLOR;
   const toggleStatus = (s) => setF((p) => ({
@@ -3568,7 +3577,7 @@ const InvoiceSituationPill = ({ situation }) => (
 /* ---------- Página 3: Dashboard de Valores — visão enxuta puxando os mesmos dados do Dashboard Total ---------- */
 function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
   const [situationFilter, setSituationFilter] = useState("Todos");
-  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const [sort, setSort] = useState({ key: "date", dir: 1 });
 
   const withSituation = useMemo(() => serviceInvoices.map((r) => ({ ...r, _situation: invoiceSituation(r) })), [serviceInvoices]);
 
