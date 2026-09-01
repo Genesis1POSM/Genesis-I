@@ -3737,9 +3737,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       ]);
 
       /* ---- seção 1: custo por categoria ---- */
-      doc.addPage(); y = 15;
       y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
-      pdfTable(doc, y,
+      y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)"],
         categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
@@ -3753,9 +3752,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         });
       });
       if (allocationRows.length > 0) {
-        doc.addPage(); y = 15;
+        if (y > 230) { doc.addPage(); y = 15; }
         y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com critério técnico)");
-        pdfTable(doc, y,
+        y = pdfTable(doc, y,
           ["Data", "Serviço", "Empresa", "Categoria", "Valor Alocado", "Critério Técnico"],
           allocationRows,
           { columnStyles: { 4: { halign: "right" } } }
@@ -3763,7 +3762,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       }
 
       /* ---- seção 3: situação dos pagamentos no período ---- */
-      doc.addPage(); y = 15;
+      if (y > 230) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "3. Situação dos pagamentos no período");
       const sumValRep = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
       y = pdfKpis(doc, y, [
@@ -3773,12 +3772,13 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       ]);
 
       /* ---- seção 4: serviços agrupados por mês provisionado ---- */
-      doc.addPage(); y = 15;
+      if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "4. Serviços por mês provisionado");
       if (comPrevisao.length === 0) {
         doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
         doc.text("Nenhum serviço com previsão de mês definida no período selecionado.", 14, y);
         doc.setTextColor(0, 0, 0);
+        y += 10;
       } else {
         const byMonth = {};
         comPrevisao.forEach((r) => { (byMonth[r.previsaoMes] = byMonth[r.previsaoMes] || []).push(r); });
@@ -3795,7 +3795,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         });
       }
       if (semPrevisao.length > 0) {
-        if (y > 240) { doc.addPage(); y = 15; }
+        if (y > 230) { doc.addPage(); y = 15; }
         y = pdfSectionTitle(doc, y, `Sem previsão de mês definida — ${semPrevisao.length} serviço(s)`);
         y = pdfTable(doc, y,
           ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
@@ -3805,7 +3805,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       }
 
       /* ---- seção 5: lista completa de serviços (não pagos) ---- */
-      doc.addPage(); y = 15;
+      if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "5. Serviços (não pagos) — lista completa");
       pdfTable(doc, y,
         ["Data", "Serviço", "Empresa", "Valor", "PO", "Status de Pagamento", "Rateado"],
@@ -3824,8 +3824,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={costSubTab === "rateio" ? "active" : ""} onClick={() => setCostSubTab("rateio")}>Rateio por Categoria</button>
-        <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard (Custos + Pagamentos)</button>
-        <button className={costSubTab === "previsao" ? "active" : ""} onClick={() => setCostSubTab("previsao")}>Previsão de Provisionamento</button>
+        <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard Financeiro</button>
       </div>
 
       <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
@@ -3886,6 +3885,12 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
             {bigKpi("Pendente", `${pendentesPeriodo.length} · ${fmt(sumVal(pendentesPeriodo))}`, "var(--warn)", AlertTriangle)}
             {bigKpi("Atrasado", `${atrasadosPeriodo.length} · ${fmt(sumVal(atrasadosPeriodo))}`, "var(--crit)", AlertTriangle)}
           </div>
+          <div className="g-section-label">Provisionamento</div>
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+            {bigKpi("Total Provisionado", fmt(totalProvisionado), "var(--teal)", Wallet)}
+            {bigKpi("Serviços com Previsão", comPrevisao.length, "var(--ok)", Calculator)}
+            {bigKpi("Serviços sem Previsão", semPrevisao.length, "var(--crit)", AlertTriangle)}
+          </div>
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Custo por categoria — Orçado × Realizado</span></div>
@@ -3923,21 +3928,13 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
               </ResponsiveContainer>
             </div>
           </div>
-        </>
-      ) : costSubTab === "previsao" ? (
-        <>
-          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-            {bigKpi("Total Provisionado", fmt(totalProvisionado), "var(--teal)", Wallet)}
-            {bigKpi("Serviços com Previsão", comPrevisao.length, "var(--ok)", Calculator)}
-            {bigKpi("Serviços sem Previsão", semPrevisao.length, "var(--crit)", AlertTriangle)}
-          </div>
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês</span></div>
             {provisionadoPorMes.length === 0 ? (
               <div className="g-muted">Nenhum serviço com previsão de mês definida ainda — preencha a coluna "Previsão" na aba Rateio por Categoria.</div>
             ) : (
-              <div style={{ width: "100%", height: 240 }}>
+              <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <BarChart data={provisionadoPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
