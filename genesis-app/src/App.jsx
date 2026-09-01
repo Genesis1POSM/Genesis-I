@@ -3805,16 +3805,16 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       const allocationRows = [];
       filtered.forEach((r) => {
         allocationsOf(r).forEach((a) => {
-          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, fmt(a.valor), a.criterio || "—"]);
+          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), a.criterio || "—"]);
         });
       });
       if (allocationRows.length > 0) {
         if (y > 230) { doc.addPage(); y = 15; }
         y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com critério técnico)");
         y = pdfTable(doc, y,
-          ["Data", "Serviço", "Empresa", "Categoria", "Valor Alocado", "Critério Técnico"],
+          ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor Alocado", "Critério Técnico"],
           allocationRows,
-          { columnStyles: { 4: { halign: "right" } } }
+          { columnStyles: { 5: { halign: "right" } } }
         );
       }
 
@@ -3953,19 +3953,22 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           </div>
 
           <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Custo por categoria — Orçado × Realizado</span></div>
-            <div style={{ width: "100%", height: 220 }}>
-              <ResponsiveContainer>
-                <BarChart data={categoryCosts} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                  <XAxis dataKey="category" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-25} textAnchor="end" height={55} />
-                  <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
-                  <Bar dataKey="orcadoBrl" name="Orçado" radius={[3, 3, 0, 0]} fill="var(--border)" />
-                  <Bar dataKey="realizado" name="Realizado" radius={[3, 3, 0, 0]} fill="var(--accent)" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês</span></div>
+            {provisionadoPorMes.length === 0 ? (
+              <div className="g-muted">Nenhum serviço com previsão de mês definida ainda — preencha a coluna "Previsão" na aba Rateio por Categoria.</div>
+            ) : (
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={provisionadoPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
+                    <Bar dataKey="valor" name="Provisionado" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           <div className="g-panel">
@@ -3987,25 +3990,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
-
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês</span></div>
-            {provisionadoPorMes.length === 0 ? (
-              <div className="g-muted">Nenhum serviço com previsão de mês definida ainda — preencha a coluna "Previsão" na aba Rateio por Categoria.</div>
-            ) : (
-              <div style={{ width: "100%", height: 220 }}>
-                <ResponsiveContainer>
-                  <BarChart data={provisionadoPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                    <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                    <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
-                    <Bar dataKey="valor" name="Provisionado" radius={[3, 3, 0, 0]} fill="var(--accent)" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </div>
 
           <div className="g-panel">
@@ -4132,6 +4116,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                         </div>
                         <div className="g-flex" style={{ gap: 10, marginBottom: 4 }}>
                           <div style={{ minWidth: 180, flexShrink: 0 }} className="g-gantt-mini-label">Categoria</div>
+                          <div style={{ width: 80, flexShrink: 0 }} className="g-gantt-mini-label">Ordem</div>
                           <div style={{ width: 110, flexShrink: 0 }} className="g-gantt-mini-label">Valor</div>
                           <div style={{ flex: 1, minWidth: 220 }} className="g-gantt-mini-label">Critério técnico do rateio</div>
                         </div>
@@ -4141,6 +4126,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                               <select className="g-edit" value={a.category} onChange={(e) => updAllocation(i, r, ai, "category", e.target.value)}>
                                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                               </select>
+                            </div>
+                            <div style={{ width: 80, flexShrink: 0, fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--text-faint)" }}>
+                              {adpServicosLabel(a.category)}
                             </div>
                             <input type="number" className="g-edit num" style={{ width: 110, flexShrink: 0 }} value={a.valor}
                               onChange={(e) => updAllocation(i, r, ai, "valor", Number(e.target.value))} />
