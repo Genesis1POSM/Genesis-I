@@ -1222,7 +1222,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const addWp = () => setWorkPackages((r) => [...r, {
     id: uid("PC-2026-08"), name: "Novo serviço", discipline: "Marine", group: "Sem categoria", empresa: "", md: "Não", rc: "", obs: "",
     budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-25T08:00", end: "2026-08-26T17:00",
-    status: "Planejamento", progress: 0,
+    status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
   }]);
 
   /* serviço não concluído na data planejada → gera uma NOVA linha com data em branco para reagendar,
@@ -1233,7 +1233,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       id: newId, name: original.name, discipline: original.discipline, group: original.group,
       ganttCategory: original.ganttCategory, empresa: original.empresa, md: original.md, rc: original.rc, obs: "",
       budget: 0, committed: 0, actual: 0, forecast: 0, start: "", end: "",
-      status: "Não iniciado", progress: 0, repeatOf: original.id,
+      status: "Não iniciado", progress: 0, repeatOf: original.id, createdAt: new Date().toISOString(),
     }]);
     return newId;
   };
@@ -1338,8 +1338,52 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     ganttCategory: category || "Manutenção", empresa: "", md: "Não", rc: "", obs: "",
     budget: 0, committed: 0, actual: 0, forecast: 0,
     start: `${dateKey}T08:00`, end: `${dateKey}T17:00`,
-    status: "Planejamento", progress: 0,
+    status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
   }]);
+
+  /* SINCRONIZAÇÃO AUTOMÁTICA Serviços → Pagamentos: só para linhas criadas a partir de agora
+     (identificadas pela marca "createdAt", que os serviços importados/antigos não têm) e só quando
+     o status chega a "Concluído". Cada serviço só gera um lançamento em Pagamentos uma única vez
+     (marcado via linkedInvoiceId), mesmo que o status mude de novo depois. */
+  React.useEffect(() => {
+    const toSync = workPackages.filter((w) => w.createdAt && w.status === "Concluído" && !w.linkedInvoiceId);
+    if (toSync.length === 0) return;
+    const linkByWpId = {};
+    const newInvoices = toSync.map((w) => {
+      const invId = uid("INV");
+      linkByWpId[w.id] = invId;
+      return {
+        id: invId,
+        date: (w.start || "").slice(0, 10) || todayISO(),
+        assunto: w.name, empresa: w.empresa || "", md: w.md || "Não", mdSentDate: "",
+        diffDays: 0, daysOpenTotal: 0, rc: w.rc || "", serviceStatus: "Fechado",
+        poContrato: "", medicao: "", valorTotal: 0, saldoPo: 0,
+        obs: "Gerado automaticamente a partir de um serviço concluído na aba Serviços.",
+        statusPagamento: "Aguardando Orçamento", dataPagamento: "",
+      };
+    });
+    setServiceInvoices((prev) => [...prev, ...newInvoices]);
+    setWorkPackages((prev) => prev.map((w) => (linkByWpId[w.id] ? { ...w, linkedInvoiceId: linkByWpId[w.id] } : w)));
+  }, [workPackages]);
+
+  /* mantém o RC sincronizado continuamente: se o RC for editado em Serviços depois de já ter
+     gerado o lançamento em Pagamentos, o valor é atualizado lá também */
+  React.useEffect(() => {
+    const linked = workPackages.filter((w) => w.linkedInvoiceId);
+    if (linked.length === 0) return;
+    setServiceInvoices((prev) => {
+      let changed = false;
+      const next = prev.map((inv) => {
+        const wp = linked.find((w) => w.linkedInvoiceId === inv.id);
+        if (wp && inv.rc !== (wp.rc || "")) {
+          changed = true;
+          return { ...inv, rc: wp.rc || "" };
+        }
+        return inv;
+      });
+      return changed ? next : prev;
+    });
+  }, [workPackages]);
 
   /* categorias operacionais do cronograma — globais, editáveis (renomear/adicionar/remover) */
   /* opCategories vem de props (compartilhado via backend) */
@@ -2643,6 +2687,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                       <div className="g-flex" style={{ gap: 4 }}>
                         {w.repeatOf && <span title="Esta linha é uma repetição de um serviço não concluído anteriormente" style={{ fontSize: 13, flexShrink: 0 }}>🔁</span>}
                         {w.status === "Cancelado" && <span title="Cancelado — não é mais necessário" style={{ fontSize: 13, flexShrink: 0 }}>🚫</span>}
+                        {w.linkedInvoiceId && <span title="Lançamento gerado automaticamente na aba Pagamentos" style={{ fontSize: 13, flexShrink: 0 }}>💲</span>}
                         <EText value={w.name} onChange={(v) => updWp(i, "name", v)} />
                       </div>
                     </td>
