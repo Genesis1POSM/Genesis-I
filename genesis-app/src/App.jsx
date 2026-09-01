@@ -415,7 +415,16 @@ const pdfKpis = (doc, y, kpis) => {
   const perRow = 4;
   const gap = 4;
   const cardW = (196 - 14 - gap * (perRow - 1)) / perRow;
-  const cardH = 20;
+  const valueFontSize = 11;
+  const labelFontSize = 6.5;
+  const lineH = 4.4;
+
+  doc.setFontSize(valueFontSize);
+  doc.setFont(undefined, "bold");
+  const wrapped = kpis.map((k) => doc.splitTextToSize(String(k.value), cardW - 6));
+  const maxLines = Math.max(1, ...wrapped.map((w) => w.length));
+  const cardH = 6 + maxLines * lineH + 6;
+
   kpis.forEach((k, idx) => {
     const col = idx % perRow;
     const row = Math.floor(idx / perRow);
@@ -427,15 +436,18 @@ const pdfKpis = (doc, y, kpis) => {
     doc.setFillColor(...PDF_AMBER);
     doc.rect(x, cardY, 1.2, cardH, "F");
 
-    doc.setFontSize(12.5);
+    doc.setFontSize(valueFontSize);
     doc.setFont(undefined, "bold");
     doc.setTextColor(...PDF_TEXT);
-    doc.text(String(k.value), x + 4, cardY + 9, { maxWidth: cardW - 6 });
+    const lines = wrapped[idx];
+    lines.forEach((line, li) => {
+      doc.text(line, x + 4, cardY + 6 + li * lineH);
+    });
 
-    doc.setFontSize(6.5);
+    doc.setFontSize(labelFontSize);
     doc.setFont(undefined, "normal");
     doc.setTextColor(...PDF_MUTED);
-    doc.text(k.label.toUpperCase(), x + 4, cardY + 15.5, { maxWidth: cardW - 6 });
+    doc.text(k.label.toUpperCase(), x + 4, cardY + 6 + lines.length * lineH + 2, { maxWidth: cardW - 6 });
   });
   doc.setTextColor(...PDF_TEXT);
   const rows = Math.ceil(kpis.length / perRow);
@@ -540,6 +552,21 @@ const CATEGORY_BUDGET_USD = {
   "R&R Mecânica": 18600,
 };
 const DISCIPLINES = CATEGORIES;
+
+/* Código "Ordem" interno de referência para "Compra de Serviços" por categoria — vem direto da
+   planilha de referência da empresa. Associado automaticamente a cada categoria. */
+const CATEGORY_ADP_SERVICOS = {
+  "Hse": "302855",
+  "Hull & Structure": "305203",
+  "Marine": "307157",
+  "Mecânica": "307164",
+  "Elétrica": "307158",
+  "Integridade": "305207",
+  "Lubrificantes": "307161",
+  "R&R Mecânica": "307155",
+  "R&R Elétrica": "307165",
+};
+const adpServicosLabel = (categoria) => CATEGORY_ADP_SERVICOS[categoria] || "—";
 
 const paymentSituation = (p) => {
   if (p.status === "Pago") return "Pago";
@@ -1897,9 +1924,14 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
   /* ---------- Financeiro: espelha exatamente a mesma lógica de Orçado/Realizado/Disponível da aba Custos
      (categoria × alocação de rateio, serviços ainda não pagos), escopado ao período do Dashboard ---------- */
   const categoryCostsDash = useMemo(() => {
+    const inicioMes = dp.dataInicio ? dp.dataInicio.slice(0, 7) : null;
+    const fimMes = dp.dataFim ? dp.dataFim.slice(0, 7) : null;
+    /* usa o mês PROVISIONADO de cada serviço (não a data de execução), para que pagamentos de
+       backlog (executados num mês anterior, mas provisionados para o mês vigente) entrem certinho
+       no cálculo do mês selecionado */
     const inPeriod = serviceInvoices.filter((r) =>
-      r.statusPagamento !== "Pago" &&
-      (!r.date || (!dp.dataInicio || r.date >= dp.dataInicio) && (!dp.dataFim || r.date <= dp.dataFim))
+      r.statusPagamento !== "Pago" && r.previsaoMes &&
+      (!inicioMes || r.previsaoMes >= inicioMes) && (!fimMes || r.previsaoMes <= fimMes)
     );
     return CATEGORIES.map((cat) => {
       const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
@@ -1912,13 +1944,12 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
   const totalRealizadoDash = categoryCostsDash.reduce((s, c) => s + c.realizado, 0);
   const totalDisponivelDash = totalOrcadoDash - totalRealizadoDash;
 
-  /* ---------- Gastos por mês: soma do Valor Total de todos os serviços, agrupado por mês da Data ---------- */
+  /* ---------- Gastos por mês provisionado: soma do Valor Total, agrupado por r.previsaoMes (não pela data de execução) ---------- */
   const gastosPorMes = useMemo(() => {
     const map = {};
     serviceInvoices.forEach((r) => {
-      if (!r.date) return;
-      const key = r.date.slice(0, 7); // YYYY-MM
-      map[key] = (map[key] || 0) + Number(r.valorTotal || 0);
+      if (!r.previsaoMes) return;
+      map[r.previsaoMes] = (map[r.previsaoMes] || 0) + Number(r.valorTotal || 0);
     });
     return Object.keys(map).sort().map((key) => {
       const [y, m] = key.split("-");
@@ -1975,7 +2006,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
         categoryCostsDash.map((d) => [d.category, fmtUsd(d.orcadoUsd), fmt(d.orcadoBrl), fmt(d.realizado)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } }
       );
-      y = pdfSectionTitle(doc, y, "Gastos por mês");
+      y = pdfSectionTitle(doc, y, "Gastos por mês provisionado");
       y = pdfTable(doc, y, ["Mês", "Valor"], gastosPorMes.map((g) => [g.mes, fmt(g.valor)]), { columnStyles: { 1: { halign: "right" } } });
       if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "Pagamentos com Aprovação Pendente há mais tempo");
@@ -2006,10 +2037,14 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
           </button>
         </div>
         <div className="g-filter-spacer" />
-        <div className="g-filter-summary">Financeiro e gráfico de categoria calculados sobre este período</div>
+        <div className="g-filter-summary">Financeiro calculado pelo mês provisionado de cada serviço (não pela data de execução)</div>
       </div>
 
       <div className="g-section-label">Financeiro (de acordo com a aba Custos)</div>
+      <div className="g-muted" style={{ fontSize: 11, marginBottom: 8 }}>
+        O Realizado considera o mês em que cada serviço foi <strong>provisionado</strong>, não a data em que foi executado —
+        assim, backlogs de meses anteriores aparecem no mês certo em que o custo de fato vai pesar.
+      </div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {financeiro.map((k) => (
           <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
@@ -2114,7 +2149,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
             </ResponsiveContainer>
           </div>
           <table className="g-table" style={{ marginTop: 10 }}>
-            <thead><tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th></tr></thead>
+            <thead><tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th><th>Ordem (Compra de Serviços)</th></tr></thead>
             <tbody>
               {categoryCostsDash.map((d) => (
                 <tr key={d.category}>
@@ -2122,6 +2157,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
                   <td style={{ fontFamily: "var(--mono)" }}>{fmtUsd(d.orcadoUsd)}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.orcadoBrl)}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.realizado)}</td>
+                  <td style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{adpServicosLabel(d.category)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2129,7 +2165,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
         </div>
 
         <div className="g-panel">
-          <div className="g-panel-head"><span className="g-panel-title">Gastos por mês</span></div>
+          <div className="g-panel-head"><span className="g-panel-title">Gastos por mês provisionado</span></div>
           <div style={{ width: "100%", height: 220 }}>
             <ResponsiveContainer>
               <BarChart data={gastosPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
@@ -3629,8 +3665,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
   const defaultPeriod = useMemo(() => ({ start: "2026-01-01", end: todayISO() }), []);
-  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
-  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end;
+  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end, provisionadoMes: "" });
+  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.dataInicio !== defaultPeriod.start || cf.dataFim !== defaultPeriod.end || cf.provisionadoMes;
 
   /* esta aba só considera serviços que ainda não estão como "Pago" na aba Pagamentos */
   const naoPagos = useMemo(() => serviceInvoices.filter((r) => r.statusPagamento !== "Pago"), [serviceInvoices]);
@@ -3647,7 +3683,31 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
       const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
       const inCategoria = cf.categorias.length === 0 || allocationsOf(r).some((a) => cf.categorias.includes(a.category));
-      return inRange && inStatus && inServico && inEmpresa && inCategoria;
+      /* Provisionado é independente do Período: o serviço pode ter sido executado num mês, mas o
+         pagamento ficou provisionado para outro (ex: executado em agosto, provisionado pra setembro) */
+      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
+      return inRange && inStatus && inServico && inEmpresa && inCategoria && inProvisionado;
+    });
+  }, [naoPagos, cf]);
+
+  /* filtro específico para o cálculo financeiro (Orçado/Realizado/Disponível): usa o MÊS PROVISIONADO
+     do serviço, não a data de execução. Isso evita que pagamentos de backlog (executados num mês
+     anterior, mas provisionados para o mês corrente) fiquem de fora do cálculo quando o período
+     selecionado é o mês atual — o que acontecia antes usando a data de execução. Serviços sem
+     previsão de mês definida não entram nesse cálculo (não dá pra saber a qual mês atribuir). */
+  const filteredParaFinanceiro = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    const inicioMes = cf.dataInicio ? cf.dataInicio.slice(0, 7) : null;
+    const fimMes = cf.dataFim ? cf.dataFim.slice(0, 7) : null;
+    return naoPagos.filter((r) => {
+      if (!r.previsaoMes) return false;
+      const inRange = (!inicioMes || r.previsaoMes >= inicioMes) && (!fimMes || r.previsaoMes <= fimMes);
+      const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
+      const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
+      const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
+      const inCategoria = cf.categorias.length === 0 || allocationsOf(r).some((a) => cf.categorias.includes(a.category));
+      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
+      return inRange && inStatus && inServico && inEmpresa && inCategoria && inProvisionado;
     });
   }, [naoPagos, cf]);
 
@@ -3658,17 +3718,17 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   };
   const remAllocation = (i, r, ai) => updInv(i, "allocations", allocationsOf(r).filter((_, idx) => idx !== ai));
 
-  /* resumo por categoria: Orçado é um valor mensal fixo (não acumula entre meses); Realizado é sempre
-     recalculado apenas a partir do período selecionado — então ao trocar de mês, o "gasto" zera e o
-     Orçado volta a aparecer inteiro, disponível de novo */
+  /* resumo por categoria: Orçado é um valor mensal fixo (não acumula entre meses); Realizado é
+     calculado a partir do MÊS PROVISIONADO de cada serviço (não da data de execução), então backlogs
+     de meses anteriores aparecem certinho no mês em que o pagamento foi de fato provisionado */
   const categoryCosts = useMemo(() => {
     return CATEGORIES.map((cat) => {
       const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
       const orcadoBrl = orcadoUsd * exchangeRate;
-      const realizado = filtered.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+      const realizado = filteredParaFinanceiro.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
       return { category: cat, orcadoUsd, orcadoBrl, realizado, disponivel: orcadoBrl - realizado };
     });
-  }, [filtered, exchangeRate]);
+  }, [filteredParaFinanceiro, exchangeRate]);
 
   const totalOrcadoBrl = categoryCosts.reduce((s, c) => s + c.orcadoBrl, 0);
   const totalRealizado = categoryCosts.reduce((s, c) => s + c.realizado, 0);
@@ -3682,7 +3742,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     const [y, m] = ym.split("-");
     return `${MONTH_NAMES[Number(m) - 1]}/${y}`;
   };
-  const comPrevisao = filtered.filter((r) => r.previsaoMes);
+  const comPrevisao = filteredParaFinanceiro;
   const semPrevisao = filtered.filter((r) => !r.previsaoMes);
   const totalProvisionado = comPrevisao.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
   const provisionadoPorMes = useMemo(() => {
@@ -3739,8 +3799,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       /* ---- seção 1: custo por categoria ---- */
       y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
       y = pdfTable(doc, y,
-        ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)"],
-        categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel)]),
+        ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)", "Ordem (Compra de Serviços)"],
+        categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel), adpServicosLabel(c.category)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
       );
 
@@ -3862,8 +3922,12 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           <input type="date" value={cf.dataFim} onChange={(e) => setCf((p) => ({ ...p, dataFim: e.target.value }))} />
         </div>
         <div className="g-field">
+          <label>Provisionado (mês)</label>
+          <input type="month" value={cf.provisionadoMes} onChange={(e) => setCf((p) => ({ ...p, provisionadoMes: e.target.value }))} title="Filtra pelo mês em que o serviço foi provisionado, independente da data de execução" />
+        </div>
+        <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end })}
+          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end, provisionadoMes: "" })}
             disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
@@ -3953,19 +4017,25 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
             <div className="g-table-wrap">
             <table className="g-table">
               <thead>
-                <tr><th style={{ minWidth: 220 }}>Serviço</th><th>Empresa</th><th>Valor</th><th>Status de pagamento</th><th>Previsão</th></tr>
+                <tr><th style={{ minWidth: 220 }}>Serviço</th><th>Empresa</th><th>Valor</th><th>Data (execução)</th><th>Status de pagamento</th><th>Previsão</th></tr>
               </thead>
               <tbody>
                 {filtered.map((r) => {
                   const i = serviceInvoices.indexOf(r);
+                  const execMonth = (r.date || "").slice(0, 7);
+                  const divergente = r.previsaoMes && execMonth && r.previsaoMes !== execMonth;
                   return (
-                    <tr className="g-row" key={r.id}>
+                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(242,169,59,0.06)" } : undefined}>
                       <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
                       <td style={{ minWidth: 130 }}>{r.empresa}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
+                      <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(r.date)}</td>
                       <td><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
-                      <td style={{ minWidth: 130 }}>
-                        <input type="month" className="g-edit" value={r.previsaoMes || ""} onChange={(e) => updInv(i, "previsaoMes", e.target.value)} />
+                      <td style={{ minWidth: 150 }}>
+                        <div className="g-flex" style={{ gap: 5 }}>
+                          <input type="month" className="g-edit" value={r.previsaoMes || ""} onChange={(e) => updInv(i, "previsaoMes", e.target.value)} />
+                          {divergente && <span title={`Executado em ${execMonth} mas provisionado para ${r.previsaoMes} — pagamento ficou para outro mês`} style={{ fontSize: 13 }}>⚠️</span>}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -4000,7 +4070,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         <div className="g-table-wrap">
         <table className="g-table">
           <thead>
-            <tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th><th>Disponível (R$)</th></tr>
+            <tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th><th>Disponível (R$)</th><th>Ordem (Compra de Serviços)</th></tr>
           </thead>
           <tbody>
             {categoryCosts.map((c) => (
@@ -4010,6 +4080,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                 <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.orcadoBrl)}</td>
                 <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.realizado)}</td>
                 <td style={{ fontFamily: "var(--mono)", color: c.disponivel < 0 ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{fmt(c.disponivel)}</td>
+                <td style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{adpServicosLabel(c.category)}</td>
               </tr>
             ))}
           </tbody>
