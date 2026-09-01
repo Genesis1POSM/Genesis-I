@@ -591,7 +591,7 @@ const INV_COLS = [
   ["mdSentDate", "Data de Envio da MD"], ["diffDays", "Diferença de Dias"], ["daysOpenTotal", "Dias em Aberto Total"],
   ["rc", "RC"], ["serviceStatus", "Status do Serviço"], ["poContrato", "PO / Contrato"], ["medicao", "Medição"],
   ["valorTotal", "Valor Total"], ["saldoPo", "Saldo PO"], ["obs", "Observações"],
-  ["statusPagamento", "Status Pagamento"], ["dataPagamento", "Data de Pagamento"],
+  ["statusPagamento", "Status Pagamento"], ["dataPagamento", "Data de Pagamento"], ["previsaoMes", "Previsão (mês)"],
 ];
 const NUMERIC_KEYS = new Set(["budget", "committed", "actual", "forecast", "progress", "quantidade", "valor", "poValue", "nfValue", "diffDays", "daysOpenTotal", "valorTotal", "saldoPo"]);
 const DATE_KEYS = new Set(["dataSolicitacao", "dataNecessidade", "eta", "dataRecebimento", "issue", "due", "date", "mdSentDate", "dataPagamento", "dataRealInicio", "dataRealFim"]);
@@ -3581,7 +3581,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
    COSTS
    ============================================================ */
 function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
-  const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard"
+  const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
   const defaultPeriod = useMemo(() => ({ start: "2026-01-01", end: todayISO() }), []);
   const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], dataInicio: defaultPeriod.start, dataFim: defaultPeriod.end });
@@ -3630,6 +3630,23 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const totalDisponivel = totalOrcadoBrl - totalRealizado;
   const pctConsumido = totalOrcadoBrl ? Math.round((totalRealizado / totalOrcadoBrl) * 100) : 0;
   const semRateioCompleto = filtered.filter((r) => Math.round(allocatedSum(r)) !== Math.round(Number(r.valorTotal || 0))).length;
+
+  /* Previsão de provisionamento: para qual mês cada serviço foi provisionado (r.previsaoMes, "YYYY-MM") */
+  const monthLabel = (ym) => {
+    if (!ym) return "Sem previsão";
+    const [y, m] = ym.split("-");
+    return `${MONTH_NAMES[Number(m) - 1]}/${y}`;
+  };
+  const comPrevisao = filtered.filter((r) => r.previsaoMes);
+  const semPrevisao = filtered.filter((r) => !r.previsaoMes);
+  const totalProvisionado = comPrevisao.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+  const provisionadoPorMes = useMemo(() => {
+    const map = {};
+    comPrevisao.forEach((r) => {
+      map[r.previsaoMes] = (map[r.previsaoMes] || 0) + Number(r.valorTotal || 0);
+    });
+    return Object.keys(map).sort().map((ym) => ({ mes: monthLabel(ym), valor: map[ym] }));
+  }, [comPrevisao]);
 
   /* análise combinada de custo + pagamento (sub-aba Dashboard) — mesmo período/serviço/empresa do
      filtro acima, mas sem excluir os já pagos, pra dar a visão completa da situação de pagamento */
@@ -3715,6 +3732,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={costSubTab === "rateio" ? "active" : ""} onClick={() => setCostSubTab("rateio")}>Rateio por Categoria</button>
         <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard (Custos + Pagamentos)</button>
+        <button className={costSubTab === "previsao" ? "active" : ""} onClick={() => setCostSubTab("previsao")}>Previsão de Provisionamento</button>
       </div>
 
       <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
@@ -3813,6 +3831,61 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
             </div>
           </div>
         </>
+      ) : costSubTab === "previsao" ? (
+        <>
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+            {bigKpi("Total Provisionado", fmt(totalProvisionado), "var(--teal)", Wallet)}
+            {bigKpi("Serviços com Previsão", comPrevisao.length, "var(--ok)", Calculator)}
+            {bigKpi("Serviços sem Previsão", semPrevisao.length, "var(--crit)", AlertTriangle)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês</span></div>
+            {provisionadoPorMes.length === 0 ? (
+              <div className="g-muted">Nenhum serviço com previsão de mês definida ainda — preencha a coluna "Previsão" na aba Rateio por Categoria.</div>
+            ) : (
+              <div style={{ width: "100%", height: 240 }}>
+                <ResponsiveContainer>
+                  <BarChart data={provisionadoPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
+                    <Bar dataKey="valor" name="Provisionado" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Serviços — mês de provisionamento</span></div>
+            <div className="g-table-wrap">
+            <table className="g-table">
+              <thead>
+                <tr><th style={{ minWidth: 220 }}>Serviço</th><th>Empresa</th><th>Valor</th><th>Status de pagamento</th><th>Previsão</th></tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => {
+                  const i = serviceInvoices.indexOf(r);
+                  return (
+                    <tr className="g-row" key={r.id}>
+                      <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
+                      <td style={{ minWidth: 130 }}>{r.empresa}</td>
+                      <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
+                      <td><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
+                      <td style={{ minWidth: 130 }}>
+                        <input type="month" className="g-edit" value={r.previsaoMes || ""} onChange={(e) => updInv(i, "previsaoMes", e.target.value)} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum serviço encontrado com esses filtros.</div>}
+          </div>
+        </>
       ) : (
       <>
       {/* KPIs de análise */}
@@ -3862,7 +3935,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           <thead>
             <tr>
               <th></th><th style={{ minWidth: 220 }}>Serviço</th><th>Empresa</th><th>Valor</th><th>PO</th>
-              <th style={{ minWidth: 210 }}>Status de pagamento</th><th>Rateado</th>
+              <th style={{ minWidth: 210 }}>Status de pagamento</th><th>Rateado</th><th>Previsão</th>
             </tr>
           </thead>
           <tbody>
@@ -3888,11 +3961,14 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                     <td style={{ fontFamily: "var(--mono)", fontSize: 11, color: completo ? "var(--ok)" : "var(--warn)" }}>
                       {fmt(alocado)} / {fmt(total)}
                     </td>
+                    <td style={{ minWidth: 130 }}>
+                      <input type="month" className="g-edit" value={r.previsaoMes || ""} onChange={(e) => updInv(i, "previsaoMes", e.target.value)} />
+                    </td>
                   </tr>
                   {isOpen && (
                     <tr className="g-expand-row">
                       <td></td>
-                      <td colSpan={6} style={{ padding: "10px 8px 16px 8px" }}>
+                      <td colSpan={7} style={{ padding: "10px 8px 16px 8px" }}>
                         <div className="g-panel-title" style={{ marginBottom: 8 }}>
                           Rateio por categoria — {fmt(alocado)} alocado de {fmt(total)}
                           {!completo && <span style={{ color: "var(--warn)", marginLeft: 8, fontWeight: 400, fontSize: 11 }}>(ainda não bate com o valor total)</span>}
