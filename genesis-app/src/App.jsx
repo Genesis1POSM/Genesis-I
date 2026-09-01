@@ -3651,7 +3651,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     });
   }, [naoPagos, cf]);
 
-  const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0 }]);
+  const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0, criterio: "" }]);
   const updAllocation = (i, r, ai, field, value) => {
     const next = allocationsOf(r).map((a, idx) => (idx === ai ? { ...a, [field]: value } : a));
     updInv(i, "allocations", next);
@@ -3719,7 +3719,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     </div>
   );
 
-  /* registra o gerador de PDF desta página — reflete exatamente o filtro/dados atuais da aba Custos */
+  /* registra o gerador de PDF desta página — reflete exatamente o filtro/dados atuais da aba Custos,
+     com cada parte do relatório bem separada (uma seção por página) */
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
@@ -3734,32 +3735,78 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         { label: "Serviços sem Rateio Completo", value: semRateioCompleto },
         { label: "Registros no período", value: filtered.length },
       ]);
-      y = pdfSectionTitle(doc, y, "Custo por categoria — Orçado × Realizado × Disponível");
-      y = pdfTable(doc, y,
+
+      /* ---- seção 1: custo por categoria ---- */
+      doc.addPage(); y = 15;
+      y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
+      pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)"],
         categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
       );
 
-      /* detalhamento do rateio: uma linha por categoria alocada em cada serviço, com o valor exato */
+      /* ---- seção 2: detalhamento do rateio, com critério técnico ---- */
       const allocationRows = [];
       filtered.forEach((r) => {
         allocationsOf(r).forEach((a) => {
-          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, fmt(a.valor)]);
+          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, fmt(a.valor), a.criterio || "—"]);
         });
       });
       if (allocationRows.length > 0) {
-        if (y > 240) { doc.addPage(); y = 15; }
-        y = pdfSectionTitle(doc, y, "Detalhamento do rateio por categoria");
-        y = pdfTable(doc, y,
-          ["Data", "Serviço", "Empresa", "Categoria", "Valor Alocado"],
+        doc.addPage(); y = 15;
+        y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com critério técnico)");
+        pdfTable(doc, y,
+          ["Data", "Serviço", "Empresa", "Categoria", "Valor Alocado", "Critério Técnico"],
           allocationRows,
           { columnStyles: { 4: { halign: "right" } } }
         );
       }
 
-      if (y > 230) { doc.addPage(); y = 15; }
-      y = pdfSectionTitle(doc, y, "Serviços (não pagos) — Data · Serviço · Empresa · Valor · PO · Status");
+      /* ---- seção 3: situação dos pagamentos no período ---- */
+      doc.addPage(); y = 15;
+      y = pdfSectionTitle(doc, y, "3. Situação dos pagamentos no período");
+      const sumValRep = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+      y = pdfKpis(doc, y, [
+        { label: "Pago", value: `${pagosPeriodo.length} · ${fmt(sumValRep(pagosPeriodo))}` },
+        { label: "Pendente", value: `${pendentesPeriodo.length} · ${fmt(sumValRep(pendentesPeriodo))}` },
+        { label: "Atrasado", value: `${atrasadosPeriodo.length} · ${fmt(sumValRep(atrasadosPeriodo))}` },
+      ]);
+
+      /* ---- seção 4: serviços agrupados por mês provisionado ---- */
+      doc.addPage(); y = 15;
+      y = pdfSectionTitle(doc, y, "4. Serviços por mês provisionado");
+      if (comPrevisao.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
+        doc.text("Nenhum serviço com previsão de mês definida no período selecionado.", 14, y);
+        doc.setTextColor(0, 0, 0);
+      } else {
+        const byMonth = {};
+        comPrevisao.forEach((r) => { (byMonth[r.previsaoMes] = byMonth[r.previsaoMes] || []).push(r); });
+        Object.keys(byMonth).sort().forEach((ym) => {
+          const rows = byMonth[ym];
+          const subtotal = rows.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+          if (y > 250) { doc.addPage(); y = 15; }
+          y = pdfSectionTitle(doc, y, `${monthLabel(ym)} — ${rows.length} serviço(s) · subtotal ${fmt(subtotal)}`);
+          y = pdfTable(doc, y,
+            ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
+            rows.map((r) => [r.assunto, r.empresa, fmt(r.valorTotal), r.statusPagamento]),
+            { columnStyles: { 2: { halign: "right" } } }
+          );
+        });
+      }
+      if (semPrevisao.length > 0) {
+        if (y > 240) { doc.addPage(); y = 15; }
+        y = pdfSectionTitle(doc, y, `Sem previsão de mês definida — ${semPrevisao.length} serviço(s)`);
+        y = pdfTable(doc, y,
+          ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
+          semPrevisao.map((r) => [r.assunto, r.empresa, fmt(r.valorTotal), r.statusPagamento]),
+          { columnStyles: { 2: { halign: "right" } } }
+        );
+      }
+
+      /* ---- seção 5: lista completa de serviços (não pagos) ---- */
+      doc.addPage(); y = 15;
+      y = pdfSectionTitle(doc, y, "5. Serviços (não pagos) — lista completa");
       pdfTable(doc, y,
         ["Data", "Serviço", "Empresa", "Valor", "PO", "Status de Pagamento", "Rateado"],
         filtered.map((r) => [
@@ -3770,7 +3817,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       );
       pdfSave(doc, "relatorio-custos");
     });
-  }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto, exchangeRate, cf, setReportFn]);
+  }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto,
+      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, exchangeRate, cf, setReportFn]);
 
   return (
     <>
@@ -4018,15 +4066,22 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                           Rateio por categoria — {fmt(alocado)} alocado de {fmt(total)}
                           {!completo && <span style={{ color: "var(--warn)", marginLeft: 8, fontWeight: 400, fontSize: 11 }}>(ainda não bate com o valor total)</span>}
                         </div>
+                        <div className="g-flex" style={{ gap: 10, marginBottom: 4 }}>
+                          <div style={{ minWidth: 180, flexShrink: 0 }} className="g-gantt-mini-label">Categoria</div>
+                          <div style={{ width: 110, flexShrink: 0 }} className="g-gantt-mini-label">Valor</div>
+                          <div style={{ flex: 1, minWidth: 220 }} className="g-gantt-mini-label">Critério técnico do rateio</div>
+                        </div>
                         {allocationsOf(r).map((a, ai) => (
-                          <div className="g-flex" key={ai} style={{ gap: 10, marginBottom: 6 }}>
-                            <div style={{ minWidth: 200 }}>
+                          <div className="g-flex" key={ai} style={{ gap: 10, marginBottom: 6, alignItems: "center" }}>
+                            <div style={{ minWidth: 180, flexShrink: 0 }}>
                               <select className="g-edit" value={a.category} onChange={(e) => updAllocation(i, r, ai, "category", e.target.value)}>
                                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                               </select>
                             </div>
-                            <input type="number" className="g-edit num" style={{ width: 120 }} value={a.valor}
+                            <input type="number" className="g-edit num" style={{ width: 110, flexShrink: 0 }} value={a.valor}
                               onChange={(e) => updAllocation(i, r, ai, "valor", Number(e.target.value))} />
+                            <input type="text" className="g-edit" placeholder="Critério técnico do rateio..." style={{ flex: 1, minWidth: 220 }}
+                              value={a.criterio || ""} onChange={(e) => updAllocation(i, r, ai, "criterio", e.target.value)} />
                             <span className="g-btn ghost danger" onClick={() => remAllocation(i, r, ai)}><Trash2 size={13} /></span>
                           </div>
                         ))}
