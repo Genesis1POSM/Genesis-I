@@ -429,6 +429,12 @@ const pdfKpis = (doc, y, kpis) => {
   const wrapped = kpis.map((k) => doc.splitTextToSize(String(k.value), cardW - 6));
   const maxLines = Math.max(1, ...wrapped.map((w) => w.length));
   const cardH = 6 + maxLines * lineH + 6;
+  const rows = Math.ceil(kpis.length / perRow);
+  const blockHeight = rows * (cardH + 4) + 8;
+
+  /* nunca deixa o bloco de KPIs nascer perto demais do rodapé — se não sobrar espaço pra ele
+     inteiro, pula pra próxima página automaticamente */
+  if (y + blockHeight > 283) { doc.addPage(); y = 15; }
 
   kpis.forEach((k, idx) => {
     const col = idx % perRow;
@@ -455,11 +461,13 @@ const pdfKpis = (doc, y, kpis) => {
     doc.text(k.label.toUpperCase(), x + 4, cardY + 6 + lines.length * lineH + 2, { maxWidth: cardW - 6 });
   });
   doc.setTextColor(...PDF_TEXT);
-  const rows = Math.ceil(kpis.length / perRow);
-  return y + rows * (cardH + 4) + 8;
+  return y + blockHeight;
 };
 
 const pdfSectionTitle = (doc, y, title) => {
+  /* nunca deixa o título nascer perto demais do rodapé — se não sobrar espaço, pula pra
+     próxima página automaticamente, sem precisar de checagem manual espalhada pelo relatório */
+  if (y > 268) { doc.addPage(); y = 15; }
   doc.setFillColor(...PDF_AMBER);
   doc.rect(14, y - 3.2, 2.2, 4.2, "F");
   doc.setFontSize(10.5);
@@ -3855,20 +3863,20 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         );
       }
 
-      /* ---- seção 2: rateio detalhado por serviço — Categoria, Ordem, Valor, Serviço, Empresa e Status,
-         sempre com CAPEX numa tabela separada das demais categorias ---- */
+      /* ---- seção 2: rateio detalhado por serviço — Categoria, Ordem, Valor, Serviço, Empresa, Status
+         e Justificativa Geral, sempre com CAPEX numa tabela separada das demais categorias ---- */
       const allocationRowsOutras = [];
       const allocationRowsCapex = [];
       filtered.forEach((r) => {
         allocationsOf(r).forEach((a) => {
-          const row = [fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), r.statusPagamento];
+          const row = [fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), r.statusPagamento, r.justificativaGeral || "—"];
           (a.category === "CAPEX" ? allocationRowsCapex : allocationRowsOutras).push(row);
         });
       });
-      const rateioColumns = ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor", "Status"];
+      const rateioColumns = ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor", "Status", "Justificativa Geral"];
       const rateioColumnStyles = {
-        0: { cellWidth: 16 }, 1: { cellWidth: 32 }, 2: { cellWidth: 24 }, 3: { cellWidth: 22 },
-        4: { cellWidth: 16 }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 32 },
+        0: { cellWidth: 14 }, 1: { cellWidth: 26 }, 2: { cellWidth: 20 }, 3: { cellWidth: 18 },
+        4: { cellWidth: 13 }, 5: { cellWidth: 17, halign: "right" }, 6: { cellWidth: 24 }, 7: { cellWidth: 50 },
       };
       if (allocationRowsOutras.length > 0) {
         y = pdfSectionTitle(doc, y, "2. Rateio por Categoria — OPEX");
@@ -3901,18 +3909,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
             { columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 40 }, 2: { cellWidth: 24, halign: "right" }, 3: { cellWidth: 42 } } }
           );
         });
-      }
-
-      /* ---- seção 2d: justificativa geral de cada serviço rateado (texto completo) ---- */
-      const justificativaRows = filtered.filter((r) => allocationsOf(r).length > 0)
-        .map((r) => [fmtDate(r.date), r.assunto, r.empresa, r.justificativaGeral || "—"]);
-      if (justificativaRows.length > 0) {
-        y = pdfSectionTitle(doc, y, "2d. Justificativa geral do rateio, por serviço");
-        y = pdfTable(doc, y,
-          ["Data", "Serviço", "Empresa", "Justificativa Geral"],
-          justificativaRows,
-          { columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 40 }, 2: { cellWidth: 28 }, 3: { cellWidth: 96 } } }
-        );
       }
 
       /* ---- seção 3: situação dos pagamentos no período ---- */
