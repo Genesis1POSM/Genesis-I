@@ -5,7 +5,7 @@ import {
   Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from "recharts";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -476,7 +476,7 @@ const pdfTable = (doc, y, columns, rows, opts = {}) => {
     startY: y,
     head: [columns],
     body: rows,
-    styles: { fontSize: 7.5, cellPadding: 2.2, textColor: PDF_TEXT },
+    styles: { fontSize: 7.5, cellPadding: 2.2, textColor: PDF_TEXT, overflow: "linebreak" },
     headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold", fontSize: 7.5 },
     alternateRowStyles: { fillColor: [246, 247, 249] },
     margin: { left: 14, right: 14 },
@@ -3770,16 +3770,24 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const pctConsumido = totalOrcadoBrl ? Math.round((totalRealizado / totalOrcadoBrl) * 100) : 0;
   const semRateioCompleto = filtered.filter((r) => Math.round(allocatedSum(r)) !== Math.round(Number(r.valorTotal || 0))).length;
 
-  /* Previsão de provisionamento: para qual mês cada serviço foi provisionado (r.previsaoMes, "YYYY-MM") */
+  /* Previsão de provisionamento: para qual mês cada serviço foi provisionado (r.previsaoMes, "YYYY-MM").
+     O valor total é separado entre CAPEX (sem teto) e as demais categorias (com orçamento), com base
+     no que de fato foi rateado em cada uma — não no valor bruto do serviço. */
   const comPrevisao = filtered.filter((r) => r.previsaoMes);
   const semPrevisao = filtered.filter((r) => !r.previsaoMes);
-  const totalProvisionado = comPrevisao.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+  const capexProvisionado = comPrevisao.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === "CAPEX").reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+  const outrasCategoriasProvisionado = comPrevisao.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category !== "CAPEX").reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+  const totalProvisionado = capexProvisionado + outrasCategoriasProvisionado;
   const provisionadoPorMes = useMemo(() => {
     const map = {};
     comPrevisao.forEach((r) => {
-      map[r.previsaoMes] = (map[r.previsaoMes] || 0) + Number(r.valorTotal || 0);
+      if (!map[r.previsaoMes]) map[r.previsaoMes] = { capex: 0, outras: 0 };
+      allocationsOf(r).forEach((a) => {
+        if (a.category === "CAPEX") map[r.previsaoMes].capex += Number(a.valor || 0);
+        else map[r.previsaoMes].outras += Number(a.valor || 0);
+      });
     });
-    return Object.keys(map).sort().map((ym) => ({ mes: monthLabel(ym), valor: map[ym] }));
+    return Object.keys(map).sort().map((ym) => ({ mes: monthLabel(ym), capex: map[ym].capex, outras: map[ym].outras }));
   }, [comPrevisao]);
 
   /* análise combinada de custo + pagamento (sub-aba Dashboard) — mesmo mês provisionado/serviço/empresa
@@ -3830,27 +3838,56 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         { label: "Registros no período", value: filtered.length },
       ]);
 
-      /* ---- seção 1: custo por categoria ---- */
+      /* ---- seção 1: custo por categoria — categorias com orçamento e CAPEX sempre separados ---- */
       y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
+      const categoriasComOrcamento = categoryCosts.filter((c) => !c.ilimitado);
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)", "Ordem (Compra de Serviços)"],
-        categoryCosts.map((c) => [c.category, fmtBudgetUsd(c.orcadoUsd), fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl), fmt(c.realizado), c.ilimitado ? "Ilimitado" : fmt(c.disponivel), adpServicosLabel(c.category)]),
+        categoriasComOrcamento.map((c) => [c.category, fmtBudgetUsd(c.orcadoUsd), fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel), adpServicosLabel(c.category)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
       );
+      if (capexRow) {
+        y = pdfSectionTitle(doc, y, "1b. CAPEX (sem teto de orçamento)");
+        y = pdfTable(doc, y,
+          ["Categoria", "Realizado (R$)", "Observação"],
+          [["CAPEX", fmt(capexRow.realizado), "Sem orçamento limitado — contabiliza apenas o que foi utilizado"]],
+          { columnStyles: { 1: { halign: "right" } } }
+        );
+      }
 
-      /* ---- seção 2: detalhamento do rateio, com justificativa geral por serviço ---- */
-      const allocationRows = [];
+      /* ---- seção 2: rateio detalhado por serviço — Categoria, Ordem, Valor, Serviço, Empresa e Status,
+         sempre com CAPEX numa tabela separada das demais categorias ---- */
+      const allocationRowsOutras = [];
+      const allocationRowsCapex = [];
       filtered.forEach((r) => {
         allocationsOf(r).forEach((a) => {
-          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), r.justificativaGeral || "—"]);
+          const row = [fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), r.statusPagamento];
+          (a.category === "CAPEX" ? allocationRowsCapex : allocationRowsOutras).push(row);
         });
       });
-      if (allocationRows.length > 0) {
-        y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com justificativa geral por serviço)");
+      const rateioColumns = ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor", "Status"];
+      const rateioColumnStyles = {
+        0: { cellWidth: 16 }, 1: { cellWidth: 32 }, 2: { cellWidth: 24 }, 3: { cellWidth: 22 },
+        4: { cellWidth: 16 }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 32 },
+      };
+      if (allocationRowsOutras.length > 0) {
+        y = pdfSectionTitle(doc, y, "2. Rateio por Categoria — Outras Categorias");
+        y = pdfTable(doc, y, rateioColumns, allocationRowsOutras, { columnStyles: rateioColumnStyles });
+      }
+      if (allocationRowsCapex.length > 0) {
+        y = pdfSectionTitle(doc, y, "2b. Rateio por Categoria — CAPEX");
+        y = pdfTable(doc, y, rateioColumns, allocationRowsCapex, { columnStyles: rateioColumnStyles });
+      }
+
+      /* ---- seção 2c: justificativa geral de cada serviço rateado (texto completo) ---- */
+      const justificativaRows = filtered.filter((r) => allocationsOf(r).length > 0)
+        .map((r) => [fmtDate(r.date), r.assunto, r.empresa, r.justificativaGeral || "—"]);
+      if (justificativaRows.length > 0) {
+        y = pdfSectionTitle(doc, y, "2c. Justificativa geral do rateio, por serviço");
         y = pdfTable(doc, y,
-          ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor Alocado", "Justificativa Geral"],
-          allocationRows,
-          { columnStyles: { 5: { halign: "right" } } }
+          ["Data", "Serviço", "Empresa", "Justificativa Geral"],
+          justificativaRows,
+          { columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 40 }, 2: { cellWidth: 28 }, 3: { cellWidth: 96 } } }
         );
       }
 
@@ -3865,6 +3902,12 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
 
       /* ---- seção 4: serviços agrupados por mês provisionado ---- */
       y = pdfSectionTitle(doc, y, "4. Serviços por mês provisionado");
+      y = pdfKpis(doc, y, [
+        { label: "Provisionado — Outras Categorias", value: fmt(outrasCategoriasProvisionado) },
+        { label: "Provisionado — CAPEX", value: fmt(capexProvisionado) },
+        { label: "Serviços com Previsão", value: comPrevisao.length },
+        { label: "Serviços sem Previsão", value: semPrevisao.length },
+      ]);
       if (comPrevisao.length === 0) {
         doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
         doc.text("Nenhum serviço com previsão de mês definida no período selecionado.", 14, y);
@@ -3876,7 +3919,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         Object.keys(byMonth).sort().forEach((ym) => {
           const rows = byMonth[ym];
           const subtotal = rows.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
-          y = pdfSectionTitle(doc, y, `${monthLabel(ym)} — ${rows.length} serviço(s) · subtotal ${fmt(subtotal)}`);
+          const subCapex = rows.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === "CAPEX").reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+          const subOutras = rows.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category !== "CAPEX").reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+          y = pdfSectionTitle(doc, y, `${monthLabel(ym)} — ${rows.length} serviço(s) · Outras: ${fmt(subOutras)} · CAPEX: ${fmt(subCapex)} · Total: ${fmt(subtotal)}`);
           y = pdfTable(doc, y,
             ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
             rows.map((r) => [r.assunto, r.empresa, fmt(r.valorTotal), r.statusPagamento]),
@@ -3906,7 +3951,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       pdfSave(doc, "relatorio-custos");
     });
   }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto,
-      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, exchangeRate, cf, setReportFn]);
+      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, capexProvisionado, outrasCategoriasProvisionado, exchangeRate, cf, setReportFn]);
 
   return (
     <>
@@ -3977,25 +4022,31 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
             {bigKpi("Atrasado", `${atrasadosPeriodo.length} · ${fmt(sumVal(atrasadosPeriodo))}`, "var(--crit)", AlertTriangle)}
           </div>
           <div className="g-section-label">Provisionamento</div>
-          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-            {bigKpi("Total Provisionado", fmt(totalProvisionado), "var(--teal)", Wallet)}
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Provisionado — Outras Categorias", fmt(outrasCategoriasProvisionado), "var(--teal)", Wallet)}
+            {bigKpi("Provisionado — CAPEX", fmt(capexProvisionado), "var(--accent)", Wallet)}
             {bigKpi("Serviços com Previsão", comPrevisao.length, "var(--ok)", Calculator)}
             {bigKpi("Serviços sem Previsão", semPrevisao.length, "var(--crit)", AlertTriangle)}
           </div>
 
           <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês</span></div>
+            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês — Outras Categorias × CAPEX</span></div>
             {provisionadoPorMes.length === 0 ? (
               <div className="g-muted">Nenhum serviço com previsão de mês definida ainda — preencha a coluna "Previsão" na aba Rateio por Categoria.</div>
             ) : (
-              <div style={{ width: "100%", height: 220 }}>
+              <div style={{ width: "100%", height: 260 }}>
                 <ResponsiveContainer>
-                  <BarChart data={provisionadoPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <BarChart data={provisionadoPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
-                    <Bar dataKey="valor" name="Provisionado" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                    <Bar dataKey="outras" name="Outras Categorias" radius={[3, 3, 0, 0]} fill="var(--accent)">
+                      <LabelList dataKey="outras" position="top" formatter={(v) => v ? fmt(v) : ""} style={{ fill: "var(--text-dim)", fontSize: 9, fontFamily: "var(--sans)" }} />
+                    </Bar>
+                    <Bar dataKey="capex" name="CAPEX" radius={[3, 3, 0, 0]} fill="var(--teal)">
+                      <LabelList dataKey="capex" position="top" formatter={(v) => v ? fmt(v) : ""} style={{ fill: "var(--text-dim)", fontSize: 9, fontFamily: "var(--sans)" }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -4004,18 +4055,19 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Situação dos pagamentos no período</span></div>
-            <div style={{ width: "100%", height: 200 }}>
+            <div style={{ width: "100%", height: 220 }}>
               <ResponsiveContainer>
                 <BarChart data={[
                   { situacao: "Pago", valor: sumVal(pagosPeriodo) },
                   { situacao: "Pendente", valor: sumVal(pendentesPeriodo) },
                   { situacao: "Atrasado", valor: sumVal(atrasadosPeriodo) },
-                ]} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                ]} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                   <XAxis dataKey="situacao" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                   <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                   <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
                   <Bar dataKey="valor" radius={[3, 3, 0, 0]}>
+                    <LabelList dataKey="valor" position="top" formatter={(v) => fmt(v)} style={{ fill: "var(--text-dim)", fontSize: 10, fontFamily: "var(--sans)" }} />
                     <Cell fill="var(--ok)" /><Cell fill="var(--warn)" /><Cell fill="var(--crit)" />
                   </Bar>
                 </BarChart>
@@ -4093,8 +4145,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                 <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetUsd(c.orcadoUsd)}</td>
                 <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl)}</td>
                 <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.realizado)}</td>
-                <td style={{ fontFamily: "var(--mono)", color: c.ilimitado ? "var(--accent)" : (c.disponivel < 0 ? "var(--crit)" : "var(--ok)"), fontWeight: 700 }}>
-                  {c.ilimitado ? "Ilimitado" : fmt(c.disponivel)}
+                <td style={{ fontFamily: "var(--mono)", color: c.ilimitado ? "var(--text-faint)" : (c.disponivel < 0 ? "var(--crit)" : "var(--ok)"), fontWeight: c.ilimitado ? 400 : 700 }}>
+                  {c.ilimitado ? "—" : fmt(c.disponivel)}
                 </td>
                 <td style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{adpServicosLabel(c.category)}</td>
               </tr>
