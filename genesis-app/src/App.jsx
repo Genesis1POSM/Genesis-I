@@ -3722,6 +3722,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   }, [naoPagos, cf]);
 
   const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0 }]);
+  /* atalho: joga o valor total do serviço inteiro pra CAPEX de uma vez, sem precisar montar o
+     rateio manualmente — útil já que CAPEX não tem teto de orçamento (aceita qualquer valor) */
+  const marcarComoCapex = (i, r) => updInv(i, "allocations", [{ category: "CAPEX", valor: Number(r.valorTotal || 0) }]);
   const updAllocation = (i, r, ai, field, value) => {
     const next = allocationsOf(r).map((a, idx) => (idx === ai ? { ...a, [field]: value } : a));
     updInv(i, "allocations", next);
@@ -3736,12 +3739,19 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       const orcadoUsd = CATEGORY_BUDGET_USD[cat] || 0;
       const orcadoBrl = orcadoUsd * exchangeRate;
       const realizado = filtered.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
-      return { category: cat, orcadoUsd, orcadoBrl, realizado, disponivel: orcadoBrl - realizado };
+      /* CAPEX é uma categoria sem teto de orçamento — pode receber qualquer valor, então não faz
+         sentido calcular "disponível" pra ela (não tem limite pra estourar) */
+      const ilimitado = cat === "CAPEX";
+      return { category: cat, orcadoUsd, orcadoBrl, realizado, disponivel: orcadoBrl - realizado, ilimitado };
     });
   }, [filtered, exchangeRate]);
 
-  const totalOrcadoBrl = categoryCosts.reduce((s, c) => s + c.orcadoBrl, 0);
-  const totalRealizado = categoryCosts.reduce((s, c) => s + c.realizado, 0);
+  /* os totais de Orçado/Realizado/% Consumido consideram só as categorias com teto de orçamento —
+     CAPEX fica de fora dessa conta (é ilimitado) e aparece separado, no seu próprio KPI */
+  const categoryCostsLimitadas = categoryCosts.filter((c) => !c.ilimitado);
+  const capexRow = categoryCosts.find((c) => c.category === "CAPEX");
+  const totalOrcadoBrl = categoryCostsLimitadas.reduce((s, c) => s + c.orcadoBrl, 0);
+  const totalRealizado = categoryCostsLimitadas.reduce((s, c) => s + c.realizado, 0);
   const totalDisponivel = totalOrcadoBrl - totalRealizado;
   const pctConsumido = totalOrcadoBrl ? Math.round((totalRealizado / totalOrcadoBrl) * 100) : 0;
   const semRateioCompleto = filtered.filter((r) => Math.round(allocatedSum(r)) !== Math.round(Number(r.valorTotal || 0))).length;
@@ -3810,7 +3820,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)", "Ordem (Compra de Serviços)"],
-        categoryCosts.map((c) => [c.category, fmtBudgetUsd(c.orcadoUsd), fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel), adpServicosLabel(c.category)]),
+        categoryCosts.map((c) => [c.category, fmtBudgetUsd(c.orcadoUsd), fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl), fmt(c.realizado), c.ilimitado ? "Ilimitado" : fmt(c.disponivel), adpServicosLabel(c.category)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
       );
 
@@ -4049,6 +4059,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         {bigKpi("% do Orçamento Consumido", `${pctConsumido}%`, pctConsumido > 100 ? "var(--crit)" : "var(--warn)", AlertTriangle)}
         {bigKpi("Serviços sem Rateio Completo", semRateioCompleto, "var(--crit)", AlertTriangle)}
       </div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(1, 1fr)" }}>
+        {bigKpi("CAPEX Utilizado (sem teto de orçamento)", fmt(capexRow?.realizado || 0), "var(--accent)", Wallet)}
+      </div>
 
       {/* Custo por categoria — Orçado (US$/R$) × Realizado × Disponível */}
       <div className="g-panel">
@@ -4072,7 +4085,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                 <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetUsd(c.orcadoUsd)}</td>
                 <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl)}</td>
                 <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.realizado)}</td>
-                <td style={{ fontFamily: "var(--mono)", color: c.disponivel < 0 ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{fmt(c.disponivel)}</td>
+                <td style={{ fontFamily: "var(--mono)", color: c.ilimitado ? "var(--accent)" : (c.disponivel < 0 ? "var(--crit)" : "var(--ok)"), fontWeight: 700 }}>
+                  {c.ilimitado ? "Ilimitado" : fmt(c.disponivel)}
+                </td>
                 <td style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{adpServicosLabel(c.category)}</td>
               </tr>
             ))}
@@ -4147,7 +4162,12 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                             <span className="g-btn ghost danger" onClick={() => remAllocation(i, r, ai)}><Trash2 size={13} /></span>
                           </div>
                         ))}
-                        <button className="g-btn" onClick={() => addAllocation(i, r)}><Plus size={13} />Adicionar categoria</button>
+                        <div className="g-flex" style={{ gap: 8 }}>
+                          <button className="g-btn" onClick={() => addAllocation(i, r)}><Plus size={13} />Adicionar categoria</button>
+                          <button className="g-btn" onClick={() => marcarComoCapex(i, r)} title="Joga o valor total deste serviço inteiro pra CAPEX, sem precisar montar o rateio manualmente">
+                            💰 Marcar 100% como CAPEX (sem ratear)
+                          </button>
+                        </div>
 
                         <div className="g-panel-title" style={{ marginTop: 16, marginBottom: 6 }}>Justificativa geral do serviço</div>
                         <textarea className="g-edit-wrap" rows={2} placeholder="Justificativa geral do rateio deste serviço (por que foi dividido dessa forma entre as categorias acima)..."
