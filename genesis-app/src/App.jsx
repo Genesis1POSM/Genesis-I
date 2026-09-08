@@ -35,8 +35,8 @@ const Theme = () => (
       --ok: #35D399;
       --warn: #F2C94C;
       --crit: #F2685B;
-      --sans: 'IBM Plex Sans', system-ui, sans-serif;
-      --mono: 'IBM Plex Mono', ui-monospace, monospace;
+      --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --mono: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
       background: var(--bg);
       color: var(--text);
@@ -349,6 +349,10 @@ const Theme = () => (
    ============================================================ */
 const pad2 = (n) => String(n).padStart(2, "0");
 const fmt = (n) => "R$ " + Number(n || 0).toLocaleString("pt-BR");
+const fmtUsd = (n) => "US$ " + Number(n || 0).toLocaleString("en-US");
+/* para categorias sem orçamento definido (ex: CAPEX), mostra "—" em vez de "US$ 0" / "R$ 0" */
+const fmtBudgetUsd = (usd) => (usd ? fmtUsd(usd) : "—");
+const fmtBudgetBrl = (usd, brl) => (usd ? fmt(brl) : "—");
 
 const fmtDate = (d) => {
   if (!d) return "—";
@@ -540,7 +544,7 @@ const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação rece
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 /* categories + Orçado (USD) exactly as in the uploaded drill-down report */
-const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica"];
+const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica", "CAPEX"];
 const CATEGORY_BUDGET_USD = {
   "Elétrica": 27900,
   "Hse": 6200,
@@ -551,6 +555,7 @@ const CATEGORY_BUDGET_USD = {
   "Mecânica": 27900,
   "R&R Elétrica": 18600,
   "R&R Mecânica": 18600,
+  /* CAPEX não tem orçamento mensal fixo definido — fica sem valor mesmo */
 };
 const DISCIPLINES = CATEGORIES;
 
@@ -621,7 +626,7 @@ const INV_COLS = [
   ["mdSentDate", "Data de Envio da MD"], ["diffDays", "Diferença de Dias"], ["daysOpenTotal", "Dias em Aberto Total"],
   ["rc", "RC"], ["serviceStatus", "Status do Serviço"], ["poContrato", "PO / Contrato"], ["medicao", "Medição"],
   ["valorTotal", "Valor Total"], ["saldoPo", "Saldo PO"], ["obs", "Observações"],
-  ["statusPagamento", "Status Pagamento"], ["dataPagamento", "Data de Pagamento"], ["previsaoMes", "Previsão (mês)"],
+  ["statusPagamento", "Status Pagamento"], ["dataPagamento", "Data de Pagamento"], ["previsaoMes", "Previsão (mês)"], ["justificativaGeral", "Justificativa Geral do Rateio"],
 ];
 const NUMERIC_KEYS = new Set(["budget", "committed", "actual", "forecast", "progress", "quantidade", "valor", "poValue", "nfValue", "diffDays", "daysOpenTotal", "valorTotal", "saldoPo"]);
 const DATE_KEYS = new Set(["dataSolicitacao", "dataNecessidade", "eta", "dataRecebimento", "issue", "due", "date", "mdSentDate", "dataPagamento", "dataRealInicio", "dataRealFim"]);
@@ -1907,7 +1912,6 @@ function Genesis({ currentUser, onLogout, users, setUsers,
    DASHBOARD — exact KPI set requested
    ============================================================ */
 function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn }) {
-  const fmtUsd = (n) => "US$ " + Number(n || 0).toLocaleString("en-US");
 
   /* filtro de período do Dashboard — por padrão, o mês vigente */
   const defaultDashPeriod = useMemo(() => {
@@ -2029,7 +2033,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
       y = pdfSectionTitle(doc, y, "Custo por categoria (mês selecionado)");
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)"],
-        categoryCostsDash.map((d) => [d.category, fmtUsd(d.orcadoUsd), fmt(d.orcadoBrl), fmt(d.realizado)]),
+        categoryCostsDash.map((d) => [d.category, fmtBudgetUsd(d.orcadoUsd), fmtBudgetBrl(d.orcadoUsd, d.orcadoBrl), fmt(d.realizado)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } }
       );
       y = pdfSectionTitle(doc, y, "Gastos por mês provisionado");
@@ -2180,8 +2184,8 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
               {categoryCostsDash.map((d) => (
                 <tr key={d.category}>
                   <td>{d.category}</td>
-                  <td style={{ fontFamily: "var(--mono)" }}>{fmtUsd(d.orcadoUsd)}</td>
-                  <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.orcadoBrl)}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetUsd(d.orcadoUsd)}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetBrl(d.orcadoUsd, d.orcadoBrl)}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{fmt(d.realizado)}</td>
                   <td style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{adpServicosLabel(d.category)}</td>
                 </tr>
@@ -3717,7 +3721,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     });
   }, [naoPagos, cf]);
 
-  const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0, criterio: "" }]);
+  const addAllocation = (i, r) => updInv(i, "allocations", [...allocationsOf(r), { category: CATEGORIES[0], valor: 0 }]);
   const updAllocation = (i, r, ai, field, value) => {
     const next = allocationsOf(r).map((a, idx) => (idx === ai ? { ...a, [field]: value } : a));
     updInv(i, "allocations", next);
@@ -3806,22 +3810,22 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)", "Ordem (Compra de Serviços)"],
-        categoryCosts.map((c) => [c.category, "US$ " + c.orcadoUsd.toLocaleString("en-US"), fmt(c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel), adpServicosLabel(c.category)]),
+        categoryCosts.map((c) => [c.category, fmtBudgetUsd(c.orcadoUsd), fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl), fmt(c.realizado), fmt(c.disponivel), adpServicosLabel(c.category)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } }
       );
 
-      /* ---- seção 2: detalhamento do rateio, com critério técnico ---- */
+      /* ---- seção 2: detalhamento do rateio, com justificativa geral por serviço ---- */
       const allocationRows = [];
       filtered.forEach((r) => {
         allocationsOf(r).forEach((a) => {
-          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), a.criterio || "—"]);
+          allocationRows.push([fmtDate(r.date), r.assunto, r.empresa, a.category, adpServicosLabel(a.category), fmt(a.valor), r.justificativaGeral || "—"]);
         });
       });
       if (allocationRows.length > 0) {
         if (y > 230) { doc.addPage(); y = 15; }
-        y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com critério técnico)");
+        y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com justificativa geral por serviço)");
         y = pdfTable(doc, y,
-          ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor Alocado", "Critério Técnico"],
+          ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor Alocado", "Justificativa Geral"],
           allocationRows,
           { columnStyles: { 5: { halign: "right" } } }
         );
@@ -4065,8 +4069,8 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
             {categoryCosts.map((c) => (
               <tr key={c.category}>
                 <td>{c.category}</td>
-                <td style={{ fontFamily: "var(--mono)" }}>{"US$ " + c.orcadoUsd.toLocaleString("en-US")}</td>
-                <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.orcadoBrl)}</td>
+                <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetUsd(c.orcadoUsd)}</td>
+                <td style={{ fontFamily: "var(--mono)" }}>{fmtBudgetBrl(c.orcadoUsd, c.orcadoBrl)}</td>
                 <td style={{ fontFamily: "var(--mono)" }}>{fmt(c.realizado)}</td>
                 <td style={{ fontFamily: "var(--mono)", color: c.disponivel < 0 ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{fmt(c.disponivel)}</td>
                 <td style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{adpServicosLabel(c.category)}</td>
@@ -4127,7 +4131,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                           <div style={{ minWidth: 180, flexShrink: 0 }} className="g-gantt-mini-label">Categoria</div>
                           <div style={{ width: 80, flexShrink: 0 }} className="g-gantt-mini-label">Ordem</div>
                           <div style={{ width: 110, flexShrink: 0 }} className="g-gantt-mini-label">Valor</div>
-                          <div style={{ flex: 1, minWidth: 220 }} className="g-gantt-mini-label">Critério técnico do rateio</div>
                         </div>
                         {allocationsOf(r).map((a, ai) => (
                           <div className="g-flex" key={ai} style={{ gap: 10, marginBottom: 6, alignItems: "center" }}>
@@ -4141,12 +4144,15 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                             </div>
                             <input type="number" className="g-edit num" style={{ width: 110, flexShrink: 0 }} value={a.valor}
                               onChange={(e) => updAllocation(i, r, ai, "valor", Number(e.target.value))} />
-                            <input type="text" className="g-edit" placeholder="Critério técnico do rateio..." style={{ flex: 1, minWidth: 220 }}
-                              value={a.criterio || ""} onChange={(e) => updAllocation(i, r, ai, "criterio", e.target.value)} />
                             <span className="g-btn ghost danger" onClick={() => remAllocation(i, r, ai)}><Trash2 size={13} /></span>
                           </div>
                         ))}
                         <button className="g-btn" onClick={() => addAllocation(i, r)}><Plus size={13} />Adicionar categoria</button>
+
+                        <div className="g-panel-title" style={{ marginTop: 16, marginBottom: 6 }}>Justificativa geral do serviço</div>
+                        <textarea className="g-edit-wrap" rows={2} placeholder="Justificativa geral do rateio deste serviço (por que foi dividido dessa forma entre as categorias acima)..."
+                          style={{ width: "100%", background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4 }}
+                          value={r.justificativaGeral || ""} onChange={(e) => updInv(i, "justificativaGeral", e.target.value)} />
                       </td>
                     </tr>
                   )}
