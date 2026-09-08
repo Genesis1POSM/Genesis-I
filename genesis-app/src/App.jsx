@@ -3183,7 +3183,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
 /* ============================================================
    PAYMENTS SECTION — two pages: full Dashboard, and Status view
    ============================================================ */
-function MultiSelectStatus({ options, selected, onChange }) {
+function MultiSelectStatus({ options, selected, onChange, labelFor }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   React.useEffect(() => {
@@ -3194,7 +3194,8 @@ function MultiSelectStatus({ options, selected, onChange }) {
   const toggle = (opt) => {
     onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
   };
-  const label = selected.length === 0 ? "Todos" : selected.length === 1 ? selected[0] : `${selected.length} selecionados`;
+  const getLabel = labelFor || ((o) => o);
+  const label = selected.length === 0 ? "Todos" : selected.length === 1 ? getLabel(selected[0]) : `${selected.length} selecionados`;
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button type="button" className="g-btn" onClick={() => setOpen((o) => !o)} style={{ minWidth: 170, justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: 12 }}>
@@ -3209,7 +3210,7 @@ function MultiSelectStatus({ options, selected, onChange }) {
           {options.map((opt) => (
             <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 4px", fontSize: 12, cursor: "pointer" }}>
               <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-              {opt}
+              {getLabel(opt)}
             </label>
           ))}
           {selected.length > 0 && (
@@ -3695,8 +3696,9 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
   const currentMonth = useMemo(() => `${new Date().getFullYear()}-${pad2(new Date().getMonth() + 1)}`, []);
-  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMes: currentMonth });
-  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 || cf.provisionadoMes !== currentMonth;
+  const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMeses: [currentMonth] });
+  const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 ||
+    cf.provisionadoMeses.length !== 1 || cf.provisionadoMeses[0] !== currentMonth;
 
   /* esta aba só considera serviços que ainda não estão como "Pago" na aba Pagamentos */
   const naoPagos = useMemo(() => serviceInvoices.filter((r) => r.statusPagamento !== "Pago"), [serviceInvoices]);
@@ -3705,14 +3707,26 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const allocationsOf = (r) => r.allocations || [];
   const allocatedSum = (r) => allocationsOf(r).reduce((s, a) => s + Number(a.valor || 0), 0);
 
-  /* Único filtro de tempo desta aba: o MÊS PROVISIONADO de cada serviço (não a data de execução).
-     Isso evita que pagamentos de backlog (executados num mês anterior, mas provisionados para o mês
-     corrente) fiquem de fora quando o mês selecionado é o atual. Sem nenhum mês selecionado, mostra
-     tudo (todos os meses somados). */
+  /* opções de mês disponíveis para o filtro Provisionado, geradas a partir dos dados reais */
+  const monthLabel = (ym) => {
+    if (!ym) return "Sem previsão";
+    const [y, m] = ym.split("-");
+    return `${MONTH_NAMES[Number(m) - 1]}/${y}`;
+  };
+  const provisionadoMesOptions = useMemo(() => {
+    const set = new Set(serviceInvoices.map((r) => r.previsaoMes).filter(Boolean));
+    set.add(currentMonth);
+    return [...set].sort();
+  }, [serviceInvoices, currentMonth]);
+
+  /* Único filtro de tempo desta aba: o(s) MÊS(ES) PROVISIONADO(S) de cada serviço (não a data de
+     execução). Isso evita que pagamentos de backlog (executados num mês anterior, mas provisionados
+     para o mês corrente) fiquem de fora quando o mês selecionado é o atual. Sem nenhum mês
+     selecionado, mostra tudo (todos os meses somados). Múltiplos meses podem ser combinados. */
   const filtered = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return naoPagos.filter((r) => {
-      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
+      const inProvisionado = cf.provisionadoMeses.length === 0 || cf.provisionadoMeses.includes(r.previsaoMes);
       const inStatus = cf.statuses.length === 0 || cf.statuses.includes(r.statusPagamento);
       const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
       const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
@@ -3757,11 +3771,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const semRateioCompleto = filtered.filter((r) => Math.round(allocatedSum(r)) !== Math.round(Number(r.valorTotal || 0))).length;
 
   /* Previsão de provisionamento: para qual mês cada serviço foi provisionado (r.previsaoMes, "YYYY-MM") */
-  const monthLabel = (ym) => {
-    if (!ym) return "Sem previsão";
-    const [y, m] = ym.split("-");
-    return `${MONTH_NAMES[Number(m) - 1]}/${y}`;
-  };
   const comPrevisao = filtered.filter((r) => r.previsaoMes);
   const semPrevisao = filtered.filter((r) => !r.previsaoMes);
   const totalProvisionado = comPrevisao.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
@@ -3778,7 +3787,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const allInPeriod = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return serviceInvoices.filter((r) => {
-      const inProvisionado = !cf.provisionadoMes || r.previsaoMes === cf.provisionadoMes;
+      const inProvisionado = cf.provisionadoMeses.length === 0 || cf.provisionadoMeses.includes(r.previsaoMes);
       const inServico = !cf.servico || norm(r.assunto).includes(norm(cf.servico));
       const inEmpresa = !cf.empresa || norm(r.empresa).includes(norm(cf.empresa));
       return inProvisionado && inServico && inEmpresa;
@@ -3805,8 +3814,13 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     if (!setReportFn) return;
     setReportFn(() => () => {
       const doc = new jsPDF();
+      const mesesLabel = cf.provisionadoMeses.length === 0
+        ? "Todos os meses"
+        : cf.provisionadoMeses.length === 1
+          ? `Mês provisionado: ${monthLabel(cf.provisionadoMeses[0])}`
+          : `Meses provisionados: ${cf.provisionadoMeses.map(monthLabel).join(", ")}`;
       let y = pdfHeader(doc, "Relatório de Custos",
-        `${cf.provisionadoMes ? `Mês provisionado: ${monthLabel(cf.provisionadoMes)}` : "Todos os meses"} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        `${mesesLabel} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       y = pdfKpis(doc, y, [
         { label: "Total Realizado (rateado)", value: fmt(totalRealizado) },
         { label: "Total Orçado", value: fmt(totalOrcadoBrl) },
@@ -3832,7 +3846,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         });
       });
       if (allocationRows.length > 0) {
-        if (y > 230) { doc.addPage(); y = 15; }
         y = pdfSectionTitle(doc, y, "2. Detalhamento do rateio por categoria (com justificativa geral por serviço)");
         y = pdfTable(doc, y,
           ["Data", "Serviço", "Empresa", "Categoria", "Ordem", "Valor Alocado", "Justificativa Geral"],
@@ -3842,7 +3855,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       }
 
       /* ---- seção 3: situação dos pagamentos no período ---- */
-      if (y > 230) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "3. Situação dos pagamentos no período");
       const sumValRep = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
       y = pdfKpis(doc, y, [
@@ -3852,7 +3864,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       ]);
 
       /* ---- seção 4: serviços agrupados por mês provisionado ---- */
-      if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "4. Serviços por mês provisionado");
       if (comPrevisao.length === 0) {
         doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
@@ -3865,7 +3876,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         Object.keys(byMonth).sort().forEach((ym) => {
           const rows = byMonth[ym];
           const subtotal = rows.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
-          if (y > 250) { doc.addPage(); y = 15; }
           y = pdfSectionTitle(doc, y, `${monthLabel(ym)} — ${rows.length} serviço(s) · subtotal ${fmt(subtotal)}`);
           y = pdfTable(doc, y,
             ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
@@ -3875,7 +3885,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         });
       }
       if (semPrevisao.length > 0) {
-        if (y > 230) { doc.addPage(); y = 15; }
         y = pdfSectionTitle(doc, y, `Sem previsão de mês definida — ${semPrevisao.length} serviço(s)`);
         y = pdfTable(doc, y,
           ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
@@ -3885,7 +3894,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       }
 
       /* ---- seção 5: lista completa de serviços (não pagos) ---- */
-      if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "5. Serviços (não pagos) — lista completa");
       pdfTable(doc, y,
         ["Data", "Serviço", "Empresa", "Valor", "PO", "Status de Pagamento", "Rateado"],
@@ -3934,19 +3942,19 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           <input type="text" value={cf.empresa} onChange={(e) => setCf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
         </div>
         <div className="g-field">
-          <label>Provisionado (mês)</label>
-          <input type="month" value={cf.provisionadoMes} onChange={(e) => setCf((p) => ({ ...p, provisionadoMes: e.target.value }))}
-            title="Filtra pelo mês em que o serviço foi provisionado. Deixe em branco para ver todos os meses somados." />
+          <label>Provisionado (múltiplos meses)</label>
+          <MultiSelectStatus options={provisionadoMesOptions} selected={cf.provisionadoMeses} labelFor={monthLabel}
+            onChange={(v) => setCf((p) => ({ ...p, provisionadoMeses: v }))} />
         </div>
         <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setCf((p) => ({ ...p, provisionadoMes: "" }))} disabled={!cf.provisionadoMes} style={{ opacity: cf.provisionadoMes ? 1 : 0.5 }}>
+          <button className="g-btn" onClick={() => setCf((p) => ({ ...p, provisionadoMeses: [] }))} disabled={cf.provisionadoMeses.length === 0} style={{ opacity: cf.provisionadoMeses.length ? 1 : 0.5 }}>
             <X size={13} />Ver todos os meses
           </button>
         </div>
         <div className="g-field">
           <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMes: currentMonth })}
+          <button className="g-btn" onClick={() => setCf({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMeses: [currentMonth] })}
             disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
             <X size={13} />Limpar filtro
           </button>
