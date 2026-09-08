@@ -3839,7 +3839,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       ]);
 
       /* ---- seção 1: custo por categoria — categorias com orçamento e CAPEX sempre separados ---- */
-      y = pdfSectionTitle(doc, y, "1. Custo por categoria — Orçado × Realizado × Disponível");
+      y = pdfSectionTitle(doc, y, "1. Custo por categoria (OPEX) — Orçado × Realizado × Disponível");
       const categoriasComOrcamento = categoryCosts.filter((c) => !c.ilimitado);
       y = pdfTable(doc, y,
         ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)", "Disponível (R$)", "Ordem (Compra de Serviços)"],
@@ -3871,7 +3871,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         4: { cellWidth: 16 }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 32 },
       };
       if (allocationRowsOutras.length > 0) {
-        y = pdfSectionTitle(doc, y, "2. Rateio por Categoria — Outras Categorias");
+        y = pdfSectionTitle(doc, y, "2. Rateio por Categoria — OPEX");
         y = pdfTable(doc, y, rateioColumns, allocationRowsOutras, { columnStyles: rateioColumnStyles });
       }
       if (allocationRowsCapex.length > 0) {
@@ -3879,11 +3879,35 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         y = pdfTable(doc, y, rateioColumns, allocationRowsCapex, { columnStyles: rateioColumnStyles });
       }
 
-      /* ---- seção 2c: justificativa geral de cada serviço rateado (texto completo) ---- */
+      /* ---- seção 2c: tabela invertida — agrupada por CATEGORIA (em vez de por serviço), mostrando
+         a Ordem de cada categoria e todos os serviços/valores que a compõem ---- */
+      const porCategoria = [...CATEGORIES].map((cat) => {
+        const rows = [];
+        filtered.forEach((r) => {
+          allocationsOf(r).filter((a) => a.category === cat).forEach((a) => {
+            rows.push([r.assunto, r.empresa, fmt(a.valor), r.statusPagamento]);
+          });
+        });
+        const subtotal = filtered.reduce((s, r) => s + allocationsOf(r).filter((a) => a.category === cat).reduce((s2, a) => s2 + Number(a.valor || 0), 0), 0);
+        return { cat, ordem: adpServicosLabel(cat), rows, subtotal };
+      }).filter((g) => g.rows.length > 0);
+      if (porCategoria.length > 0) {
+        y = pdfSectionTitle(doc, y, "2c. Rateio agrupado por Categoria (Ordem, Serviços e Valores)");
+        porCategoria.forEach((g) => {
+          y = pdfSectionTitle(doc, y, `${g.cat} — Ordem: ${g.ordem} · ${g.rows.length} serviço(s) · Subtotal: ${fmt(g.subtotal)}`);
+          y = pdfTable(doc, y,
+            ["Serviço", "Empresa", "Valor", "Status de Pagamento"],
+            g.rows,
+            { columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 40 }, 2: { cellWidth: 24, halign: "right" }, 3: { cellWidth: 42 } } }
+          );
+        });
+      }
+
+      /* ---- seção 2d: justificativa geral de cada serviço rateado (texto completo) ---- */
       const justificativaRows = filtered.filter((r) => allocationsOf(r).length > 0)
         .map((r) => [fmtDate(r.date), r.assunto, r.empresa, r.justificativaGeral || "—"]);
       if (justificativaRows.length > 0) {
-        y = pdfSectionTitle(doc, y, "2c. Justificativa geral do rateio, por serviço");
+        y = pdfSectionTitle(doc, y, "2d. Justificativa geral do rateio, por serviço");
         y = pdfTable(doc, y,
           ["Data", "Serviço", "Empresa", "Justificativa Geral"],
           justificativaRows,
@@ -3903,7 +3927,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       /* ---- seção 4: serviços agrupados por mês provisionado ---- */
       y = pdfSectionTitle(doc, y, "4. Serviços por mês provisionado");
       y = pdfKpis(doc, y, [
-        { label: "Provisionado — Outras Categorias", value: fmt(outrasCategoriasProvisionado) },
+        { label: "Provisionado — OPEX", value: fmt(outrasCategoriasProvisionado) },
         { label: "Provisionado — CAPEX", value: fmt(capexProvisionado) },
         { label: "Serviços com Previsão", value: comPrevisao.length },
         { label: "Serviços sem Previsão", value: semPrevisao.length },
@@ -4023,14 +4047,14 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           </div>
           <div className="g-section-label">Provisionamento</div>
           <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-            {bigKpi("Provisionado — Outras Categorias", fmt(outrasCategoriasProvisionado), "var(--teal)", Wallet)}
+            {bigKpi("Provisionado — OPEX", fmt(outrasCategoriasProvisionado), "var(--teal)", Wallet)}
             {bigKpi("Provisionado — CAPEX", fmt(capexProvisionado), "var(--accent)", Wallet)}
             {bigKpi("Serviços com Previsão", comPrevisao.length, "var(--ok)", Calculator)}
             {bigKpi("Serviços sem Previsão", semPrevisao.length, "var(--crit)", AlertTriangle)}
           </div>
 
           <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês — Outras Categorias × CAPEX</span></div>
+            <div className="g-panel-head"><span className="g-panel-title">Valor provisionado por mês — OPEX × CAPEX</span></div>
             {provisionadoPorMes.length === 0 ? (
               <div className="g-muted">Nenhum serviço com previsão de mês definida ainda — preencha a coluna "Previsão" na aba Rateio por Categoria.</div>
             ) : (
@@ -4041,7 +4065,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                     <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
-                    <Bar dataKey="outras" name="Outras Categorias" radius={[3, 3, 0, 0]} fill="var(--accent)">
+                    <Bar dataKey="outras" name="OPEX" radius={[3, 3, 0, 0]} fill="var(--accent)">
                       <LabelList dataKey="outras" position="top" formatter={(v) => v ? fmt(v) : ""} style={{ fill: "var(--text-dim)", fontSize: 9, fontFamily: "var(--sans)" }} />
                     </Bar>
                     <Bar dataKey="capex" name="CAPEX" radius={[3, 3, 0, 0]} fill="var(--teal)">
