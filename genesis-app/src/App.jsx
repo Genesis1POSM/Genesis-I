@@ -2875,6 +2875,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    MATERIALS — fully editable, including ID
    ============================================================ */
 function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais }) {
+  const [matSubTab, setMatSubTab] = useState("requisicoes"); // "requisicoes" | "analises"
   const emergFileRef = useRef(null);
   const [expandedRow, setExpandedRow] = useState(null);
   const [sort, setSort] = useState({ key: null, dir: 1 });
@@ -2965,22 +2966,12 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
 
   return (
     <>
-      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div className="g-panel-title" style={{ marginBottom: 4 }}>Importação semanal — Pedidos Emergenciais</div>
-          <div className="g-muted" style={{ fontSize: 11.5 }}>
-            Suba a planilha toda semana neste mesmo padrão de colunas. Itens já existentes (mesmo SAP) são atualizados; itens novos são adicionados — nada é duplicado.
-          </div>
-        </div>
-        <div>
-          <input ref={emergFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportEmergenciais} />
-          <button className="g-btn primary" onClick={() => emergFileRef.current?.click()}>
-            <Upload size={14} />Importar Pedidos Emergenciais
-          </button>
-        </div>
+      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+        <button className={matSubTab === "requisicoes" ? "active" : ""} onClick={() => setMatSubTab("requisicoes")}>Requisições</button>
+        <button className={matSubTab === "analises" ? "active" : ""} onClick={() => setMatSubTab("analises")}>Análises</button>
       </div>
 
-      {/* filtros da aba Materiais — digitáveis + selecionáveis */}
+      {/* filtros da aba Materiais — digitáveis + selecionáveis, compartilhados pelas duas sub-abas */}
       <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
         <div className="g-field">
           <label>TM Master</label>
@@ -3037,7 +3028,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
         </div>
       </div>
 
-      {/* KPIs de análise de materiais */}
+      {/* KPIs de análise de materiais — visíveis nas duas sub-abas */}
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {bigKpi("Total de Materiais", filtered.length, "var(--teal)", Package)}
         {bigKpi("Materiais Urgentes", urgentes.length, "var(--crit)", AlertTriangle)}
@@ -3046,57 +3037,93 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
         {bigKpi("Sem PO", semPo.length, "var(--warn)", AlertTriangle)}
       </div>
 
-      <div className="g-grid-2">
-        <div className="g-panel">
-          <div className="g-panel-head"><span className="g-panel-title">Materiais por Status</span></div>
-          <div style={{ width: "100%", height: 220 }}>
-            <ResponsiveContainer>
-              <BarChart data={porStatus} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
-                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
-                  {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      {matSubTab === "analises" ? (
+        <>
+          <div className="g-grid-2">
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Materiais por Status</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={porStatus} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                    <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
+                      {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Materiais por Prioridade</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={porPrioridade} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                    <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
+                      {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Materiais por Departamento</span></div>
+            <div style={{ width: "100%", height: 220 }}>
+              <ResponsiveContainer>
+                <BarChart data={porDepartamento} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                  <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Materiais urgentes em aberto ({urgentes.length})</span></div>
+            {urgentes.length === 0 && <div className="g-muted">Nenhum material urgente em aberto no momento.</div>}
+            {urgentes.slice(0, 15).map((m) => (
+              <div className="g-list-item" key={m.id}>
+                <span>{m.descricao} · {m.departamento || "sem departamento"} · necessário {fmtDate(m.dataNecessidade)}</span>
+                <span className="g-flex">
+                  <span className="g-pill" style={{ background: "var(--panel-raised)" }}>
+                    <span className="g-dot" style={{ background: PRIORITY_COLOR[m.priority] || "var(--warn)" }} />{m.priority}
+                  </span>
+                  <Pill status={m.status} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div className="g-panel-title" style={{ marginBottom: 4 }}>Importação semanal — Pedidos Emergenciais</div>
+          <div className="g-muted" style={{ fontSize: 11.5 }}>
+            Suba a planilha toda semana neste mesmo padrão de colunas. Itens já existentes (mesmo SAP) são atualizados; itens novos são adicionados — nada é duplicado.
           </div>
         </div>
-
-        <div className="g-panel">
-          <div className="g-panel-head"><span className="g-panel-title">Materiais por Prioridade</span></div>
-          <div style={{ width: "100%", height: 220 }}>
-            <ResponsiveContainer>
-              <BarChart data={porPrioridade} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
-                <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
-                  {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        <div>
+          <input ref={emergFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportEmergenciais} />
+          <button className="g-btn primary" onClick={() => emergFileRef.current?.click()}>
+            <Upload size={14} />Importar Pedidos Emergenciais
+          </button>
         </div>
       </div>
+      )}
 
-      <div className="g-panel">
-        <div className="g-panel-head"><span className="g-panel-title">Materiais por Departamento</span></div>
-        <div style={{ width: "100%", height: 220 }}>
-          <ResponsiveContainer>
-            <BarChart data={porDepartamento} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-              <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
-              <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-              <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
+      {matSubTab === "requisicoes" && (
       <div className="g-panel">
         <div className="g-table-wrap">
         <table className="g-table">
@@ -3181,6 +3208,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
         </div>
         {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum material encontrado com esses filtros.</div>}
       </div>
+      )}
     </>
   );
 }
