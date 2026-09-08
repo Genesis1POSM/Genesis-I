@@ -3827,7 +3827,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   /* registra o gerador de PDF desta página — reflete exatamente o filtro/dados atuais da aba Custos,
      com cada parte do relatório bem separada (uma seção por página) */
   React.useEffect(() => {
-    if (!setReportFn) return;
+    if (!setReportFn || costSubTab !== "rateio") return;
     setReportFn(() => () => {
       const doc = new jsPDF();
       const mesesLabel = cf.provisionadoMeses.length === 0
@@ -3835,7 +3835,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         : cf.provisionadoMeses.length === 1
           ? `Mês provisionado: ${monthLabel(cf.provisionadoMeses[0])}`
           : `Meses provisionados: ${cf.provisionadoMeses.map(monthLabel).join(", ")}`;
-      let y = pdfHeader(doc, "Relatório de Custos",
+      let y = pdfHeader(doc, "Relatório de Custos — Rateio por Categoria",
         `${mesesLabel} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       y = pdfKpis(doc, y, [
         { label: "Total Realizado (rateado)", value: fmt(totalRealizado) },
@@ -3968,10 +3968,110 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         ]),
         { columnStyles: { 3: { halign: "right" } } }
       );
-      pdfSave(doc, "relatorio-custos");
+      pdfSave(doc, "relatorio-custos-rateio");
     });
   }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto,
-      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, capexProvisionado, outrasCategoriasProvisionado, exchangeRate, cf, setReportFn]);
+      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, capexProvisionado, outrasCategoriasProvisionado, exchangeRate, cf, costSubTab, setReportFn]);
+
+  /* relatório próprio do Dashboard Financeiro — reflete o que essa sub-aba mostra de fato:
+     KPIs de Custos/Pagamentos/Provisionamento, os dados dos três gráficos, e a tabela de
+     serviços por mês de provisionamento (com a divergência execução × previsão) */
+  React.useEffect(() => {
+    if (!setReportFn || costSubTab !== "dashboard") return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      const mesesLabel = cf.provisionadoMeses.length === 0
+        ? "Todos os meses"
+        : cf.provisionadoMeses.length === 1
+          ? `Mês provisionado: ${monthLabel(cf.provisionadoMeses[0])}`
+          : `Meses provisionados: ${cf.provisionadoMeses.map(monthLabel).join(", ")}`;
+      let y = pdfHeader(doc, "Relatório — Dashboard Financeiro",
+        `${mesesLabel} · Câmbio US$→R$ ${exchangeRate} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+
+      y = pdfSectionTitle(doc, y, "Custos");
+      y = pdfKpis(doc, y, [
+        { label: "Total Realizado (rateado)", value: fmt(totalRealizado) },
+        { label: "Total Orçado", value: fmt(totalOrcadoBrl) },
+        { label: "Saldo Disponível", value: fmt(totalDisponivel) },
+        { label: "% Orçamento Consumido", value: `${pctConsumido}%` },
+      ]);
+
+      const sumValRep2 = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
+      y = pdfSectionTitle(doc, y, "Pagamentos");
+      y = pdfKpis(doc, y, [
+        { label: "Pago", value: `${pagosPeriodo.length} · ${fmt(sumValRep2(pagosPeriodo))}` },
+        { label: "Pendente", value: `${pendentesPeriodo.length} · ${fmt(sumValRep2(pendentesPeriodo))}` },
+        { label: "Atrasado", value: `${atrasadosPeriodo.length} · ${fmt(sumValRep2(atrasadosPeriodo))}` },
+      ]);
+
+      y = pdfSectionTitle(doc, y, "Provisionamento");
+      y = pdfKpis(doc, y, [
+        { label: "Provisionado — OPEX", value: fmt(outrasCategoriasProvisionado) },
+        { label: "Provisionado — CAPEX", value: fmt(capexProvisionado) },
+        { label: "Serviços com Previsão", value: comPrevisao.length },
+        { label: "Serviços sem Previsão", value: semPrevisao.length },
+      ]);
+
+      /* gráfico 1: custo por categoria (dados) */
+      y = pdfSectionTitle(doc, y, "Gráfico — Custo por categoria (Orçado × Realizado)");
+      y = pdfTable(doc, y,
+        ["Categoria", "Orçado (R$)", "Realizado (R$)"],
+        categoryCosts.map((c) => [c.category, c.ilimitado ? "—" : fmt(c.orcadoBrl), fmt(c.realizado)]),
+        { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } } }
+      );
+
+      /* gráfico 2: situação dos pagamentos (dados) */
+      y = pdfSectionTitle(doc, y, "Gráfico — Situação dos pagamentos no período");
+      y = pdfTable(doc, y,
+        ["Situação", "Valor"],
+        [
+          ["Pago", fmt(sumValRep2(pagosPeriodo))],
+          ["Pendente", fmt(sumValRep2(pendentesPeriodo))],
+          ["Atrasado", fmt(sumValRep2(atrasadosPeriodo))],
+        ],
+        { columnStyles: { 1: { halign: "right" } } }
+      );
+
+      /* gráfico 3: valor provisionado por mês — OPEX × CAPEX (dados) */
+      y = pdfSectionTitle(doc, y, "Gráfico — Valor provisionado por mês (OPEX × CAPEX)");
+      if (provisionadoPorMes.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
+        doc.text("Nenhum serviço com previsão de mês definida no período selecionado.", 14, y);
+        doc.setTextColor(0, 0, 0);
+        y += 10;
+      } else {
+        y = pdfTable(doc, y,
+          ["Mês", "OPEX (R$)", "CAPEX (R$)", "Total (R$)"],
+          provisionadoPorMes.map((m) => [m.mes, fmt(m.outras), fmt(m.capex), fmt(m.outras + m.capex)]),
+          { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } }
+        );
+      }
+
+      /* detalhamento: serviços por mês de provisionamento, com a divergência execução × previsão */
+      y = pdfSectionTitle(doc, y, "Detalhamento — Serviços por mês de provisionamento");
+      if (filtered.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
+        doc.text("Nenhum serviço encontrado com esses filtros.", 14, y);
+        doc.setTextColor(0, 0, 0);
+      } else {
+        pdfTable(doc, y,
+          ["Serviço", "Empresa", "Valor", "Data (execução)", "Status de Pagamento", "Previsão"],
+          filtered.map((r) => {
+            const execMonth = (r.date || "").slice(0, 7);
+            const divergente = r.previsaoMes && execMonth && r.previsaoMes !== execMonth;
+            return [
+              r.assunto, r.empresa, fmt(r.valorTotal), fmtDate(r.date), r.statusPagamento,
+              `${r.previsaoMes ? monthLabel(r.previsaoMes) : "—"}${divergente ? " ⚠" : ""}`,
+            ];
+          }),
+          { columnStyles: { 2: { halign: "right" } } }
+        );
+      }
+      pdfSave(doc, "relatorio-custos-dashboard-financeiro");
+    });
+  }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido,
+      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, capexProvisionado,
+      outrasCategoriasProvisionado, provisionadoPorMes, exchangeRate, cf, costSubTab, setReportFn]);
 
   return (
     <>
