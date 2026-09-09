@@ -18,21 +18,25 @@ import autoTable from "jspdf-autotable";
 const Theme = () => (
   <style>{`
     .genesis {
-      --bg: #EEF1F4;
-      --panel: #FFFFFF;
-      --panel-alt: #F6F8FA;
-      --panel-raised: #F1F3F6;
-      --border: #DCE1E7;
-      --border-soft: #E7EBEE;
-      --text: #1B2430;
-      --text-dim: #56637A;
-      --text-faint: #8A96AA;
+      --bg: #FFFFFF;
+      --panel: #F0F2F5;
+      --panel-alt: #E4E8EC;
+      --panel-raised: #FFFFFF;
+      --border: #D3D9E0;
+      --border-soft: #DEE3E8;
+      --text: #10151D;
+      --text-dim: #414D61;
+      --text-faint: #6B7688;
       --accent: #2568A0;
       --accent-dim: #DCEAF7;
       --teal: #1F7A75;
       --ok: #257A4A;
       --warn: #9C6B1F;
       --crit: #B23B31;
+      --navbar: #101826;
+      --navbar-alt: #1A2434;
+      --navbar-text: #C7D0DC;
+      --navbar-accent: #6DAAE0;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --mono: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -51,7 +55,7 @@ const Theme = () => (
     /* ---------- Login ---------- */
     .g-login-wrap {
       min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
-      background: #EEF1F4;
+      background: #FFFFFF;
     }
     .g-login-card {
       width: 340px; background: var(--panel); border: 1px solid var(--border);
@@ -73,20 +77,20 @@ const Theme = () => (
     .g-topnav {
       display: flex; align-items: center; gap: 22px;
       padding: 0 22px; height: 54px; flex-shrink: 0;
-      background: var(--panel); border-bottom: 1px solid var(--border);
+      background: var(--navbar); border-bottom: 1px solid #050810;
     }
-    .g-brand-mark { font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: .5px; white-space: nowrap; }
+    .g-brand-mark { font-family: var(--mono); font-weight: 700; font-size: 15px; color: #FFFFFF; letter-spacing: .5px; white-space: nowrap; }
     .g-nav-row { display: flex; align-items: center; gap: 2px; flex: 1; overflow-x: auto; }
     .g-nav-item {
       display: flex; align-items: center; gap: 7px;
-      padding: 8px 13px; border-radius: 4px; color: var(--text-dim); cursor: pointer;
+      padding: 8px 13px; border-radius: 4px; color: var(--navbar-text); cursor: pointer;
       font-size: 12.5px; font-weight: 500; white-space: nowrap;
       border-bottom: 2px solid transparent;
     }
-    .g-nav-item:hover { background: var(--panel-alt); color: var(--text); }
-    .g-nav-item.active { color: var(--accent); border-bottom: 2px solid var(--accent); background: var(--panel-alt); }
-    .g-logout { display: flex; align-items: center; gap: 6px; color: var(--text-faint); cursor: pointer; font-size: 12px; white-space: nowrap; }
-    .g-logout:hover { color: var(--crit); }
+    .g-nav-item:hover { background: var(--navbar-alt); color: #FFFFFF; }
+    .g-nav-item.active { color: var(--navbar-accent); border-bottom: 2px solid var(--navbar-accent); background: var(--navbar-alt); }
+    .g-logout { display: flex; align-items: center; gap: 6px; color: var(--navbar-text); cursor: pointer; font-size: 12px; white-space: nowrap; }
+    .g-logout:hover { color: #F0A79E; }
 
     /* ---------- Global period filter bar ---------- */
     .g-filterbar {
@@ -1778,7 +1782,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             </div>
           ))}
         </div>
-        {currentUser && <span className="g-muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{currentUser.name}</span>}
+        {currentUser && <span style={{ fontSize: 12, whiteSpace: "nowrap", color: "var(--navbar-text)" }}>{currentUser.name}</span>}
         {onLogout && <div className="g-logout" onClick={onLogout}><LogOut size={14} />Sair</div>}
       </div>
 
