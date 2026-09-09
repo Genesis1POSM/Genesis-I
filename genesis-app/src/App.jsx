@@ -18,25 +18,25 @@ import autoTable from "jspdf-autotable";
 const Theme = () => (
   <style>{`
     .genesis {
-      --bg: #FFFFFF;
-      --panel: #F0F2F5;
-      --panel-alt: #E4E8EC;
-      --panel-raised: #FFFFFF;
-      --border: #D3D9E0;
-      --border-soft: #DEE3E8;
-      --text: #10151D;
-      --text-dim: #414D61;
-      --text-faint: #6B7688;
-      --accent: #2568A0;
-      --accent-dim: #DCEAF7;
-      --teal: #1F7A75;
-      --ok: #257A4A;
-      --warn: #9C6B1F;
-      --crit: #B23B31;
-      --navbar: #101826;
-      --navbar-alt: #1A2434;
+      --bg: #D9DEE5;
+      --panel: #FFFFFF;
+      --panel-alt: #EEF1F4;
+      --panel-raised: #F4F6F8;
+      --border: #C3CBD4;
+      --border-soft: #DCE1E7;
+      --text: #0A0E14;
+      --text-dim: #333D4D;
+      --text-faint: #5A6576;
+      --accent: #1D5C94;
+      --accent-dim: #D2E4F2;
+      --teal: #146F68;
+      --ok: #1F7A4C;
+      --warn: #8A5D14;
+      --crit: #A32E24;
+      --navbar: #0F1826;
+      --navbar-alt: #1A2436;
       --navbar-text: #C7D0DC;
-      --navbar-accent: #6DAAE0;
+      --navbar-accent: #78B4E8;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --mono: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -55,11 +55,11 @@ const Theme = () => (
     /* ---------- Login ---------- */
     .g-login-wrap {
       min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
-      background: #FFFFFF;
+      background: #D9DEE5;
     }
     .g-login-card {
       width: 340px; background: var(--panel); border: 1px solid var(--border);
-      border-radius: 6px; padding: 30px 28px; box-shadow: 0 12px 32px rgba(20,30,45,0.10);
+      border-radius: 6px; padding: 30px 28px; box-shadow: 0 12px 32px rgba(15,24,38,0.14);
     }
     .g-login-brand { font-family: var(--mono); font-weight: 700; font-size: 20px; color: var(--accent); letter-spacing: .5px; margin-bottom: 2px; }
     .g-login-sub { font-family: var(--mono); font-size: 10px; color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 24px; }
@@ -207,7 +207,7 @@ const Theme = () => (
       display: inline-flex; align-items: center;
       font-family: var(--mono); font-size: 10.5px; font-weight: 600;
       color: var(--accent);
-      background: rgba(37,104,160,0.08);
+      background: rgba(29,92,148,0.08);
       border: 1px solid var(--accent-dim);
       padding: 3px 8px 3px 9px;
       clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
@@ -290,10 +290,10 @@ const Theme = () => (
       display: flex; align-items: center; height: 34px; padding: 0 6px 0 8px;
       border-bottom: 1px solid var(--border-soft); transition: background .12s;
     }
-    .g-gantt-gridrow:nth-child(even) { background: rgba(20,30,45,0.02); }
+    .g-gantt-gridrow:nth-child(even) { background: rgba(10,14,20,0.025); }
     .g-gantt-gridrow:hover { background: var(--panel-alt); }
     .g-gantt-timeline-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--border-soft); padding: 0 6px; position: relative; }
-    .g-gantt-timeline-row:nth-child(even) { background: rgba(20,30,45,0.02); }
+    .g-gantt-timeline-row:nth-child(even) { background: rgba(10,14,20,0.025); }
     .g-gantt-col-num { width: 20px; flex-shrink: 0; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
     .g-gantt-col-task { width: 190px; flex-shrink: 0; padding: 0 6px; overflow: hidden; }
     .g-gantt-col-empresa { width: 84px; flex-shrink: 0; padding: 0 4px; overflow: hidden; }
@@ -342,7 +342,7 @@ const Theme = () => (
     .g-bar-fg { height: 100%; border-radius: 20px; }
     .g-alert {
       display: flex; align-items: flex-start; gap: 8px;
-      background: rgba(178,59,49,0.08); border: 1px solid rgba(178,59,49,0.35);
+      background: rgba(163,46,36,0.08); border: 1px solid rgba(163,46,36,0.35);
       color: #F6A79E; padding: 8px 10px; border-radius: 4px; font-size: 11.5px; margin-bottom: 8px;
     }
   `}</style>
@@ -384,7 +384,7 @@ const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 7).toUp
    sendo mostrado/filtrado naquela página no momento do clique.
    ============================================================ */
 const PDF_NAVY = [11, 20, 32];
-const PDF_ACCENT = [62, 124, 184];
+const PDF_ACCENT = [29, 92, 148];
 const PDF_TEXT = [30, 34, 42];
 const PDF_MUTED = [120, 128, 140];
 
@@ -1870,7 +1870,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
       {importMsg && (
         <div style={{ margin: "10px 22px 0 22px" }}>
-          <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)" }}>
+          <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)" }}>
             {importMsg}
           </div>
         </div>
@@ -2792,7 +2792,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                             <span style={{
                               fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
                               color: d === 0 ? "var(--ok)" : "var(--crit)",
-                              background: d === 0 ? "rgba(37,122,74,0.12)" : "rgba(178,59,49,0.12)",
+                              background: d === 0 ? "rgba(31,122,76,0.12)" : "rgba(163,46,36,0.12)",
                             }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
                               {d > 0 ? `+${d}d` : `${d}d`}
                             </span>
@@ -2833,7 +2833,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {w.repeatOf && (() => {
                           const orig = workPackages.find((o) => o.id === w.repeatOf);
                           return (
-                            <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)", marginBottom: 10 }}>
                               🔁 Esta linha é uma repetição de <strong>{orig ? orig.name : "um serviço anterior"}</strong>
                               {orig && ` — planejado originalmente para ${fmtDate(orig.start?.slice(0, 10))}, ficou como "${orig.status}"`}.
                             </div>
@@ -2842,7 +2842,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {(() => {
                           const repeats = workPackages.filter((o) => o.repeatOf === w.id);
                           return repeats.length > 0 && (
-                            <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(29,92,148,0.08)", borderColor: "rgba(29,92,148,0.35)", color: "var(--accent)", marginBottom: 10 }}>
                               Este serviço foi reagendado em {repeats.length} nova(s) linha(s): {repeats.map((r) => r.name).join(", ")}.
                             </div>
                           );
@@ -3052,7 +3052,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(20,30,45,0.04)" }} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.05)" }} />
                     <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
                       {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
                     </Bar>
@@ -3069,7 +3069,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(20,30,45,0.04)" }} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.05)" }} />
                     <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
                       {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
                     </Bar>
@@ -3087,7 +3087,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                   <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                   <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(20,30,45,0.04)" }} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.05)" }} />
                   <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
                 </BarChart>
               </ResponsiveContainer>
@@ -3325,7 +3325,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="g-alert" style={{ background: "rgba(37,104,160,0.1)", borderColor: "rgba(37,104,160,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
+        <div className="g-alert" style={{ background: "rgba(29,92,148,0.1)", borderColor: "rgba(29,92,148,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
           <span><strong>{selectedIds.size}</strong> serviço(s) selecionado(s) — os KPIs abaixo refletem só a seleção.</span>
           <span className="g-btn ghost" onClick={clearSelection} style={{ color: "var(--accent)" }}><X size={13} />Limpar seleção</span>
         </div>
@@ -3452,7 +3452,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
             {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(37,104,160,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(29,92,148,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
@@ -3579,7 +3579,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
               const days = Number(r.daysOpenTotal || 0);
               const daysColor = days > 90 ? "var(--crit)" : days > 30 ? "var(--warn)" : "var(--text-dim)";
               return (
-                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(37,104,160,0.08)" : "rgba(20,30,45,0.015)" } : (selectedIds.has(r.id) ? { background: "rgba(37,104,160,0.08)" } : undefined)}>
+                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(29,92,148,0.08)" : "rgba(10,14,20,0.02)" } : (selectedIds.has(r.id) ? { background: "rgba(29,92,148,0.08)" } : undefined)}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 140 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -3705,7 +3705,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
               const i = serviceInvoices.indexOf(r);
               const days = Number(r.daysOpenTotal || 0);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(37,104,160,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(29,92,148,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 220 }}><EText value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -4112,7 +4112,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard Financeiro</button>
       </div>
 
-      <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)" }}>
+      <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)" }}>
         {costSubTab === "rateio"
           ? <>Esta página mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos. Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.</>
           : <>Visão combinada: custo por categoria (Orçado × Realizado) e situação dos pagamentos (Pago/Pendente/Atrasado), para o mesmo período e filtros abaixo.</>}
@@ -4240,7 +4240,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                   const execMonth = (r.date || "").slice(0, 7);
                   const divergente = r.previsaoMes && execMonth && r.previsaoMes !== execMonth;
                   return (
-                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(37,104,160,0.06)" } : undefined}>
+                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(29,92,148,0.06)" } : undefined}>
                       <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
                       <td style={{ minWidth: 130 }}>{r.empresa}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
@@ -4425,7 +4425,7 @@ function SettingsView({ currentUser, users, setUsers }) {
           <span className="g-panel-title">Usuários e senhas de acesso</span>
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
-        <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)" }}>
+        <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
           Login local ao navegador, apenas para separar o acesso entre as pessoas — não é uma autenticação segura de servidor.
         </div>
