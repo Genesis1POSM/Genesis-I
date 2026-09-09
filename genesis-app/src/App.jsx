@@ -17,24 +17,22 @@ import autoTable from "jspdf-autotable";
    ============================================================ */
 const Theme = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-
     .genesis {
-      --bg: #0A1220;
-      --panel: #101B2E;
-      --panel-alt: #16223A;
-      --panel-raised: #1C2A44;
-      --border: #22314C;
-      --border-soft: #1A2740;
-      --text: #E7ECF3;
-      --text-dim: #8D9BB5;
-      --text-faint: #5D6E8C;
-      --accent: #F2A93B;
-      --accent-dim: #7A5A24;
-      --teal: #3FC1C9;
-      --ok: #35D399;
-      --warn: #F2C94C;
-      --crit: #F2685B;
+      --bg: #EEF1F4;
+      --panel: #FFFFFF;
+      --panel-alt: #F6F8FA;
+      --panel-raised: #F1F3F6;
+      --border: #DCE1E7;
+      --border-soft: #E7EBEE;
+      --text: #1B2430;
+      --text-dim: #56637A;
+      --text-faint: #8A96AA;
+      --accent: #2568A0;
+      --accent-dim: #DCEAF7;
+      --teal: #1F7A75;
+      --ok: #257A4A;
+      --warn: #9C6B1F;
+      --crit: #B23B31;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --mono: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -53,11 +51,11 @@ const Theme = () => (
     /* ---------- Login ---------- */
     .g-login-wrap {
       min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
-      background: radial-gradient(circle at 30% 20%, #142138 0%, #0A1220 60%);
+      background: #EEF1F4;
     }
     .g-login-card {
       width: 340px; background: var(--panel); border: 1px solid var(--border);
-      border-radius: 6px; padding: 30px 28px; box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+      border-radius: 6px; padding: 30px 28px; box-shadow: 0 12px 32px rgba(20,30,45,0.10);
     }
     .g-login-brand { font-family: var(--mono); font-weight: 700; font-size: 20px; color: var(--accent); letter-spacing: .5px; margin-bottom: 2px; }
     .g-login-sub { font-family: var(--mono); font-size: 10px; color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 24px; }
@@ -107,7 +105,7 @@ const Theme = () => (
       background: var(--panel-raised); border: none; color: var(--text-dim); padding: 7px 12px;
       font-size: 11.5px; font-weight: 500; cursor: pointer; font-family: var(--sans);
     }
-    .g-mode-toggle button.active { background: var(--accent); color: #1a1204; font-weight: 600; }
+    .g-mode-toggle button.active { background: var(--accent); color: #FFFFFF; font-weight: 600; }
     .g-filter-spacer { flex: 1; }
     .g-filter-summary { font-family: var(--mono); font-size: 11px; color: var(--text-faint); align-self: center; }
     .g-period-bar {
@@ -141,10 +139,10 @@ const Theme = () => (
     .g-btn.primary {
       background: var(--accent);
       border-color: var(--accent);
-      color: #1a1204;
+      color: #FFFFFF;
       font-weight: 600;
     }
-    .g-btn.primary:hover { filter: brightness(1.08); color: #1a1204; }
+    .g-btn.primary:hover { filter: brightness(1.12); color: #FFFFFF; }
     .g-btn.ghost { background: transparent; border-color: transparent; padding: 4px 6px; }
     .g-btn.danger:hover { border-color: var(--crit); color: var(--crit); }
 
@@ -153,10 +151,11 @@ const Theme = () => (
     .g-kpi {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: 6px;
       padding: 13px 14px;
       position: relative;
       overflow: hidden;
+      box-shadow: 0 1px 3px rgba(20,30,45,0.05);
     }
     .g-kpi::before {
       content: '';
@@ -182,9 +181,10 @@ const Theme = () => (
     .g-panel {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: 6px;
       padding: 16px;
       margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(20,30,45,0.05);
     }
     .g-panel-head {
       display: flex; align-items: center; justify-content: space-between;
@@ -203,7 +203,7 @@ const Theme = () => (
       display: inline-flex; align-items: center;
       font-family: var(--mono); font-size: 10.5px; font-weight: 600;
       color: var(--accent);
-      background: rgba(242,169,59,0.08);
+      background: rgba(37,104,160,0.08);
       border: 1px solid var(--accent-dim);
       padding: 3px 8px 3px 9px;
       clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
@@ -286,10 +286,10 @@ const Theme = () => (
       display: flex; align-items: center; height: 34px; padding: 0 6px 0 8px;
       border-bottom: 1px solid var(--border-soft); transition: background .12s;
     }
-    .g-gantt-gridrow:nth-child(even) { background: rgba(255,255,255,0.012); }
+    .g-gantt-gridrow:nth-child(even) { background: rgba(20,30,45,0.02); }
     .g-gantt-gridrow:hover { background: var(--panel-alt); }
     .g-gantt-timeline-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--border-soft); padding: 0 6px; position: relative; }
-    .g-gantt-timeline-row:nth-child(even) { background: rgba(255,255,255,0.012); }
+    .g-gantt-timeline-row:nth-child(even) { background: rgba(20,30,45,0.02); }
     .g-gantt-col-num { width: 20px; flex-shrink: 0; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
     .g-gantt-col-task { width: 190px; flex-shrink: 0; padding: 0 6px; overflow: hidden; }
     .g-gantt-col-empresa { width: 84px; flex-shrink: 0; padding: 0 4px; overflow: hidden; }
@@ -338,7 +338,7 @@ const Theme = () => (
     .g-bar-fg { height: 100%; border-radius: 20px; }
     .g-alert {
       display: flex; align-items: flex-start; gap: 8px;
-      background: rgba(242,104,91,0.08); border: 1px solid rgba(242,104,91,0.35);
+      background: rgba(178,59,49,0.08); border: 1px solid rgba(178,59,49,0.35);
       color: #F6A79E; padding: 8px 10px; border-radius: 4px; font-size: 11.5px; margin-bottom: 8px;
     }
   `}</style>
@@ -379,8 +379,8 @@ const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 7).toUp
    relatório (via setReportFn), refletindo exatamente o que está
    sendo mostrado/filtrado naquela página no momento do clique.
    ============================================================ */
-const PDF_NAVY = [10, 18, 32];
-const PDF_AMBER = [242, 169, 59];
+const PDF_NAVY = [11, 20, 32];
+const PDF_ACCENT = [62, 124, 184];
 const PDF_TEXT = [30, 34, 42];
 const PDF_MUTED = [120, 128, 140];
 
@@ -388,7 +388,7 @@ const pdfHeader = (doc, pageTitle, subtitle) => {
   // faixa de marca no topo
   doc.setFillColor(...PDF_NAVY);
   doc.rect(0, 0, 210, 26, "F");
-  doc.setFillColor(...PDF_AMBER);
+  doc.setFillColor(...PDF_ACCENT);
   doc.rect(0, 26, 210, 1.1, "F");
 
   doc.setFontSize(16);
@@ -403,7 +403,7 @@ const pdfHeader = (doc, pageTitle, subtitle) => {
 
   doc.setFontSize(11);
   doc.setFont(undefined, "bold");
-  doc.setTextColor(...PDF_AMBER);
+  doc.setTextColor(...PDF_ACCENT);
   doc.text(pageTitle, 196, 12, { align: "right" });
 
   doc.setFontSize(8);
@@ -444,7 +444,7 @@ const pdfKpis = (doc, y, kpis) => {
 
     doc.setFillColor(248, 249, 251);
     doc.roundedRect(x, cardY, cardW, cardH, 1.2, 1.2, "F");
-    doc.setFillColor(...PDF_AMBER);
+    doc.setFillColor(...PDF_ACCENT);
     doc.rect(x, cardY, 1.2, cardH, "F");
 
     doc.setFontSize(valueFontSize);
@@ -468,7 +468,7 @@ const pdfSectionTitle = (doc, y, title) => {
   /* nunca deixa o título nascer perto demais do rodapé — se não sobrar espaço, pula pra
      próxima página automaticamente, sem precisar de checagem manual espalhada pelo relatório */
   if (y > 268) { doc.addPage(); y = 15; }
-  doc.setFillColor(...PDF_AMBER);
+  doc.setFillColor(...PDF_ACCENT);
   doc.rect(14, y - 3.2, 2.2, 4.2, "F");
   doc.setFontSize(10.5);
   doc.setFont(undefined, "bold");
@@ -1866,7 +1866,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
       {importMsg && (
         <div style={{ margin: "10px 22px 0 22px" }}>
-          <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
+          <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)" }}>
             {importMsg}
           </div>
         </div>
@@ -2788,7 +2788,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                             <span style={{
                               fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
                               color: d === 0 ? "var(--ok)" : "var(--crit)",
-                              background: d === 0 ? "rgba(53,211,153,0.12)" : "rgba(242,104,91,0.12)",
+                              background: d === 0 ? "rgba(37,122,74,0.12)" : "rgba(178,59,49,0.12)",
                             }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
                               {d > 0 ? `+${d}d` : `${d}d`}
                             </span>
@@ -2829,7 +2829,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {w.repeatOf && (() => {
                           const orig = workPackages.find((o) => o.id === w.repeatOf);
                           return (
-                            <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)", marginBottom: 10 }}>
                               🔁 Esta linha é uma repetição de <strong>{orig ? orig.name : "um serviço anterior"}</strong>
                               {orig && ` — planejado originalmente para ${fmtDate(orig.start?.slice(0, 10))}, ficou como "${orig.status}"`}.
                             </div>
@@ -2838,7 +2838,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {(() => {
                           const repeats = workPackages.filter((o) => o.repeatOf === w.id);
                           return repeats.length > 0 && (
-                            <div className="g-alert" style={{ background: "rgba(242,169,59,0.08)", borderColor: "rgba(242,169,59,0.35)", color: "var(--accent)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)", marginBottom: 10 }}>
                               Este serviço foi reagendado em {repeats.length} nova(s) linha(s): {repeats.map((r) => r.name).join(", ")}.
                             </div>
                           );
@@ -3048,7 +3048,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(20,30,45,0.04)" }} />
                     <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
                       {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
                     </Bar>
@@ -3065,7 +3065,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(20,30,45,0.04)" }} />
                     <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
                       {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
                     </Bar>
@@ -3083,7 +3083,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                   <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                   <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(20,30,45,0.04)" }} />
                   <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
                 </BarChart>
               </ResponsiveContainer>
@@ -3321,7 +3321,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="g-alert" style={{ background: "rgba(242,169,59,0.1)", borderColor: "rgba(242,169,59,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
+        <div className="g-alert" style={{ background: "rgba(37,104,160,0.1)", borderColor: "rgba(37,104,160,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
           <span><strong>{selectedIds.size}</strong> serviço(s) selecionado(s) — os KPIs abaixo refletem só a seleção.</span>
           <span className="g-btn ghost" onClick={clearSelection} style={{ color: "var(--accent)" }}><X size={13} />Limpar seleção</span>
         </div>
@@ -3448,7 +3448,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
             {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(242,169,59,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(37,104,160,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
@@ -3575,7 +3575,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
               const days = Number(r.daysOpenTotal || 0);
               const daysColor = days > 90 ? "var(--crit)" : days > 30 ? "var(--warn)" : "var(--text-dim)";
               return (
-                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(242,169,59,0.08)" : "rgba(255,255,255,0.015)" } : (selectedIds.has(r.id) ? { background: "rgba(242,169,59,0.08)" } : undefined)}>
+                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(37,104,160,0.08)" : "rgba(20,30,45,0.015)" } : (selectedIds.has(r.id) ? { background: "rgba(37,104,160,0.08)" } : undefined)}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 140 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -3701,7 +3701,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
               const i = serviceInvoices.indexOf(r);
               const days = Number(r.daysOpenTotal || 0);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(242,169,59,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(37,104,160,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 220 }}><EText value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -4108,7 +4108,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard Financeiro</button>
       </div>
 
-      <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
+      <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)" }}>
         {costSubTab === "rateio"
           ? <>Esta página mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos. Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.</>
           : <>Visão combinada: custo por categoria (Orçado × Realizado) e situação dos pagamentos (Pago/Pendente/Atrasado), para o mesmo período e filtros abaixo.</>}
@@ -4236,7 +4236,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                   const execMonth = (r.date || "").slice(0, 7);
                   const divergente = r.previsaoMes && execMonth && r.previsaoMes !== execMonth;
                   return (
-                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(242,169,59,0.06)" } : undefined}>
+                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(37,104,160,0.06)" } : undefined}>
                       <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
                       <td style={{ minWidth: 130 }}>{r.empresa}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
@@ -4421,7 +4421,7 @@ function SettingsView({ currentUser, users, setUsers }) {
           <span className="g-panel-title">Usuários e senhas de acesso</span>
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
-        <div className="g-alert" style={{ background: "rgba(63,193,201,0.08)", borderColor: "rgba(63,193,201,0.35)", color: "var(--teal)" }}>
+        <div className="g-alert" style={{ background: "rgba(31,122,117,0.08)", borderColor: "rgba(31,122,117,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
           Login local ao navegador, apenas para separar o acesso entre as pessoas — não é uma autenticação segura de servidor.
         </div>
