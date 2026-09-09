@@ -18,25 +18,25 @@ import autoTable from "jspdf-autotable";
 const Theme = () => (
   <style>{`
     .genesis {
-      --bg: #D9DEE5;
+      --bg: #F3F2F2;
       --panel: #FFFFFF;
-      --panel-alt: #EEF1F4;
-      --panel-raised: #F4F6F8;
-      --border: #C3CBD4;
-      --border-soft: #DCE1E7;
-      --text: #0A0E14;
-      --text-dim: #333D4D;
-      --text-faint: #5A6576;
-      --accent: #1D5C94;
-      --accent-dim: #D2E4F2;
-      --teal: #146F68;
-      --ok: #1F7A4C;
-      --warn: #8A5D14;
-      --crit: #A32E24;
-      --navbar: #0F1826;
-      --navbar-alt: #1A2436;
-      --navbar-text: #C7D0DC;
-      --navbar-accent: #78B4E8;
+      --panel-alt: #F3F2F2;
+      --panel-raised: #FAFAF9;
+      --border: #DDDBDA;
+      --border-soft: #E5E5E4;
+      --text: #181818;
+      --text-dim: #3E3E3C;
+      --text-faint: #706E6B;
+      --accent: #0176D3;
+      --accent-dim: #D8EDFF;
+      --teal: #0B5CAB;
+      --ok: #2E844A;
+      --warn: #B0700D;
+      --crit: #C23934;
+      --navbar: #16325C;
+      --navbar-alt: #0B5CAB;
+      --navbar-text: #C9D8E8;
+      --navbar-accent: #FFFFFF;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --mono: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -55,7 +55,7 @@ const Theme = () => (
     /* ---------- Login ---------- */
     .g-login-wrap {
       min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
-      background: #D9DEE5;
+      background: #F3F2F2;
     }
     .g-login-card {
       width: 340px; background: var(--panel); border: 1px solid var(--border);
@@ -207,7 +207,7 @@ const Theme = () => (
       display: inline-flex; align-items: center;
       font-family: var(--mono); font-size: 10.5px; font-weight: 600;
       color: var(--accent);
-      background: rgba(29,92,148,0.08);
+      background: rgba(1,118,211,0.08);
       border: 1px solid var(--accent-dim);
       padding: 3px 8px 3px 9px;
       clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
@@ -342,7 +342,7 @@ const Theme = () => (
     .g-bar-fg { height: 100%; border-radius: 20px; }
     .g-alert {
       display: flex; align-items: flex-start; gap: 8px;
-      background: rgba(163,46,36,0.08); border: 1px solid rgba(163,46,36,0.35);
+      background: rgba(194,57,52,0.08); border: 1px solid rgba(194,57,52,0.35);
       color: #F6A79E; padding: 8px 10px; border-radius: 4px; font-size: 11.5px; margin-bottom: 8px;
     }
   `}</style>
@@ -383,8 +383,8 @@ const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 7).toUp
    relatório (via setReportFn), refletindo exatamente o que está
    sendo mostrado/filtrado naquela página no momento do clique.
    ============================================================ */
-const PDF_NAVY = [11, 20, 32];
-const PDF_ACCENT = [29, 92, 148];
+const PDF_NAVY = [22, 50, 92];
+const PDF_ACCENT = [1, 118, 211];
 const PDF_TEXT = [30, 34, 42];
 const PDF_MUTED = [120, 128, 140];
 
@@ -1870,7 +1870,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
       {importMsg && (
         <div style={{ margin: "10px 22px 0 22px" }}>
-          <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)" }}>
+          <div className="g-alert" style={{ background: "rgba(11,92,171,0.08)", borderColor: "rgba(11,92,171,0.35)", color: "var(--teal)" }}>
             {importMsg}
           </div>
         </div>
@@ -2792,7 +2792,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                             <span style={{
                               fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
                               color: d === 0 ? "var(--ok)" : "var(--crit)",
-                              background: d === 0 ? "rgba(31,122,76,0.12)" : "rgba(163,46,36,0.12)",
+                              background: d === 0 ? "rgba(46,132,74,0.12)" : "rgba(194,57,52,0.12)",
                             }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
                               {d > 0 ? `+${d}d` : `${d}d`}
                             </span>
@@ -2833,7 +2833,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {w.repeatOf && (() => {
                           const orig = workPackages.find((o) => o.id === w.repeatOf);
                           return (
-                            <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(11,92,171,0.08)", borderColor: "rgba(11,92,171,0.35)", color: "var(--teal)", marginBottom: 10 }}>
                               🔁 Esta linha é uma repetição de <strong>{orig ? orig.name : "um serviço anterior"}</strong>
                               {orig && ` — planejado originalmente para ${fmtDate(orig.start?.slice(0, 10))}, ficou como "${orig.status}"`}.
                             </div>
@@ -2842,7 +2842,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {(() => {
                           const repeats = workPackages.filter((o) => o.repeatOf === w.id);
                           return repeats.length > 0 && (
-                            <div className="g-alert" style={{ background: "rgba(29,92,148,0.08)", borderColor: "rgba(29,92,148,0.35)", color: "var(--accent)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(1,118,211,0.08)", borderColor: "rgba(1,118,211,0.35)", color: "var(--accent)", marginBottom: 10 }}>
                               Este serviço foi reagendado em {repeats.length} nova(s) linha(s): {repeats.map((r) => r.name).join(", ")}.
                             </div>
                           );
@@ -3325,7 +3325,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="g-alert" style={{ background: "rgba(29,92,148,0.1)", borderColor: "rgba(29,92,148,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
+        <div className="g-alert" style={{ background: "rgba(1,118,211,0.1)", borderColor: "rgba(1,118,211,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
           <span><strong>{selectedIds.size}</strong> serviço(s) selecionado(s) — os KPIs abaixo refletem só a seleção.</span>
           <span className="g-btn ghost" onClick={clearSelection} style={{ color: "var(--accent)" }}><X size={13} />Limpar seleção</span>
         </div>
@@ -3452,7 +3452,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
             {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(29,92,148,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(1,118,211,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
@@ -3579,7 +3579,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
               const days = Number(r.daysOpenTotal || 0);
               const daysColor = days > 90 ? "var(--crit)" : days > 30 ? "var(--warn)" : "var(--text-dim)";
               return (
-                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(29,92,148,0.08)" : "rgba(10,14,20,0.02)" } : (selectedIds.has(r.id) ? { background: "rgba(29,92,148,0.08)" } : undefined)}>
+                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(1,118,211,0.08)" : "rgba(10,14,20,0.02)" } : (selectedIds.has(r.id) ? { background: "rgba(1,118,211,0.08)" } : undefined)}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 140 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -3705,7 +3705,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
               const i = serviceInvoices.indexOf(r);
               const days = Number(r.daysOpenTotal || 0);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(29,92,148,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(1,118,211,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 220 }}><EText value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -4112,7 +4112,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard Financeiro</button>
       </div>
 
-      <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)" }}>
+      <div className="g-alert" style={{ background: "rgba(11,92,171,0.08)", borderColor: "rgba(11,92,171,0.35)", color: "var(--teal)" }}>
         {costSubTab === "rateio"
           ? <>Esta página mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos. Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.</>
           : <>Visão combinada: custo por categoria (Orçado × Realizado) e situação dos pagamentos (Pago/Pendente/Atrasado), para o mesmo período e filtros abaixo.</>}
@@ -4240,7 +4240,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                   const execMonth = (r.date || "").slice(0, 7);
                   const divergente = r.previsaoMes && execMonth && r.previsaoMes !== execMonth;
                   return (
-                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(29,92,148,0.06)" } : undefined}>
+                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(1,118,211,0.06)" } : undefined}>
                       <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
                       <td style={{ minWidth: 130 }}>{r.empresa}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
@@ -4425,7 +4425,7 @@ function SettingsView({ currentUser, users, setUsers }) {
           <span className="g-panel-title">Usuários e senhas de acesso</span>
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
-        <div className="g-alert" style={{ background: "rgba(20,111,104,0.08)", borderColor: "rgba(20,111,104,0.35)", color: "var(--teal)" }}>
+        <div className="g-alert" style={{ background: "rgba(11,92,171,0.08)", borderColor: "rgba(11,92,171,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
           Login local ao navegador, apenas para separar o acesso entre as pessoas — não é uma autenticação segura de servidor.
         </div>
