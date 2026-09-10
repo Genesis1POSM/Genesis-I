@@ -18,25 +18,25 @@ import autoTable from "jspdf-autotable";
 const Theme = () => (
   <style>{`
     .genesis {
-      --bg: #F0F4F4;
+      --bg: #F4F5F9;
       --panel: #FFFFFF;
-      --panel-alt: #E8EFEF;
-      --panel-raised: #F5F8F8;
-      --border: #D4E0DF;
-      --border-soft: #E2EAEA;
-      --text: #152A2B;
-      --text-dim: #3D5456;
-      --text-faint: #6B7F80;
-      --accent: #0E8A8F;
-      --accent-dim: #D7EEEE;
-      --teal: #0B6E72;
-      --ok: #2E8659;
-      --warn: #B37B1D;
-      --crit: #B23B31;
-      --navbar: #0D3B3E;
-      --navbar-alt: #155F5B;
-      --navbar-text: #C7DEDD;
-      --navbar-accent: #5FD1C9;
+      --panel-alt: #F0F2F7;
+      --panel-raised: #F7F8FB;
+      --border: #E7E9F0;
+      --border-soft: #EFF1F5;
+      --text: #1F2430;
+      --text-dim: #5B6273;
+      --text-faint: #9499A8;
+      --accent: #3B82F6;
+      --accent-dim: #E8F0FE;
+      --teal: #2B6CB0;
+      --ok: #22C55E;
+      --warn: #F5A623;
+      --crit: #EF4444;
+      --navbar: #FFFFFF;
+      --navbar-alt: #EAF1FF;
+      --navbar-text: #5B6273;
+      --navbar-accent: #3B82F6;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --mono: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -55,11 +55,11 @@ const Theme = () => (
     /* ---------- Login ---------- */
     .g-login-wrap {
       min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
-      background: #F0F4F4;
+      background: #F4F5F9;
     }
     .g-login-card {
       width: 340px; background: var(--panel); border: 1px solid var(--border);
-      border-radius: 6px; padding: 30px 28px; box-shadow: 0 12px 32px rgba(15,24,38,0.14);
+      border-radius: 6px; padding: 30px 28px; box-shadow: 0 12px 32px rgba(20,30,45,0.10);
     }
     .g-login-brand { font-family: var(--mono); font-weight: 700; font-size: 20px; color: var(--accent); letter-spacing: .5px; margin-bottom: 2px; }
     .g-login-sub { font-family: var(--mono); font-size: 10px; color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 24px; }
@@ -77,9 +77,9 @@ const Theme = () => (
     .g-topnav {
       display: flex; align-items: center; gap: 22px;
       padding: 0 22px; height: 54px; flex-shrink: 0;
-      background: var(--navbar); border-bottom: 1px solid #050810;
+      background: var(--navbar); border-bottom: 1px solid var(--border);
     }
-    .g-brand-mark { font-family: var(--mono); font-weight: 700; font-size: 15px; color: #FFFFFF; letter-spacing: .5px; white-space: nowrap; }
+    .g-brand-mark { font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--navbar-accent); letter-spacing: .5px; white-space: nowrap; }
     .g-nav-row { display: flex; align-items: center; gap: 2px; flex: 1; overflow-x: auto; }
     .g-nav-item {
       display: flex; align-items: center; gap: 7px;
@@ -87,10 +87,10 @@ const Theme = () => (
       font-size: 12.5px; font-weight: 500; white-space: nowrap;
       border-bottom: 2px solid transparent;
     }
-    .g-nav-item:hover { background: var(--navbar-alt); color: #FFFFFF; }
+    .g-nav-item:hover { background: var(--navbar-alt); color: var(--navbar-accent); }
     .g-nav-item.active { color: var(--navbar-accent); border-bottom: 2px solid var(--navbar-accent); background: var(--navbar-alt); }
     .g-logout { display: flex; align-items: center; gap: 6px; color: var(--navbar-text); cursor: pointer; font-size: 12px; white-space: nowrap; }
-    .g-logout:hover { color: #F0A79E; }
+    .g-logout:hover { color: var(--crit); }
 
     /* ---------- Global period filter bar ---------- */
     .g-filterbar {
@@ -153,22 +153,17 @@ const Theme = () => (
     /* ---------- KPI cards ---------- */
     .g-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
     .g-kpi {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      background: color-mix(in srgb, var(--kpi-accent, var(--teal)) 12%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--teal)) 22%, var(--border));
+      border-radius: 8px;
       padding: 13px 14px;
       position: relative;
       overflow: hidden;
-      box-shadow: 0 1px 3px rgba(20,30,45,0.05);
+      box-shadow: 0 1px 3px rgba(20,30,45,0.04);
     }
-    .g-kpi::before {
-      content: '';
-      position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
-      background: var(--kpi-accent, var(--teal));
-    }
-    .g-kpi.clickable { cursor: pointer; transition: border-color .12s, background .12s; }
-    .g-kpi.clickable:hover { background: var(--panel-alt); }
-    .g-kpi.active { background: var(--panel-alt); border-color: var(--kpi-accent, var(--teal)); }
+    .g-kpi.clickable { cursor: pointer; transition: filter .12s, border-color .12s; }
+    .g-kpi.clickable:hover { filter: brightness(0.97); }
+    .g-kpi.active { border-color: var(--kpi-accent, var(--teal)); box-shadow: 0 0 0 1px var(--kpi-accent, var(--teal)); }
     .g-kpi-label {
       font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
       color: var(--text-faint); font-family: var(--mono); margin-bottom: 6px;
@@ -207,7 +202,7 @@ const Theme = () => (
       display: inline-flex; align-items: center;
       font-family: var(--mono); font-size: 10.5px; font-weight: 600;
       color: var(--accent);
-      background: rgba(14,138,143,0.08);
+      background: rgba(59,130,246,0.08);
       border: 1px solid var(--accent-dim);
       padding: 3px 8px 3px 9px;
       clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
@@ -290,10 +285,10 @@ const Theme = () => (
       display: flex; align-items: center; height: 34px; padding: 0 6px 0 8px;
       border-bottom: 1px solid var(--border-soft); transition: background .12s;
     }
-    .g-gantt-gridrow:nth-child(even) { background: rgba(10,14,20,0.025); }
+    .g-gantt-gridrow:nth-child(even) { background: rgba(10,14,20,0.02); }
     .g-gantt-gridrow:hover { background: var(--panel-alt); }
     .g-gantt-timeline-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--border-soft); padding: 0 6px; position: relative; }
-    .g-gantt-timeline-row:nth-child(even) { background: rgba(10,14,20,0.025); }
+    .g-gantt-timeline-row:nth-child(even) { background: rgba(10,14,20,0.02); }
     .g-gantt-col-num { width: 20px; flex-shrink: 0; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
     .g-gantt-col-task { width: 190px; flex-shrink: 0; padding: 0 6px; overflow: hidden; }
     .g-gantt-col-empresa { width: 84px; flex-shrink: 0; padding: 0 4px; overflow: hidden; }
@@ -342,7 +337,7 @@ const Theme = () => (
     .g-bar-fg { height: 100%; border-radius: 20px; }
     .g-alert {
       display: flex; align-items: flex-start; gap: 8px;
-      background: rgba(178,59,49,0.08); border: 1px solid rgba(178,59,49,0.35);
+      background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.35);
       color: #F6A79E; padding: 8px 10px; border-radius: 4px; font-size: 11.5px; margin-bottom: 8px;
     }
   `}</style>
@@ -383,8 +378,8 @@ const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 7).toUp
    relatório (via setReportFn), refletindo exatamente o que está
    sendo mostrado/filtrado naquela página no momento do clique.
    ============================================================ */
-const PDF_NAVY = [13, 59, 62];
-const PDF_ACCENT = [14, 138, 143];
+const PDF_NAVY = [22, 24, 29];
+const PDF_ACCENT = [59, 130, 246];
 const PDF_TEXT = [30, 34, 42];
 const PDF_MUTED = [120, 128, 140];
 
@@ -1870,7 +1865,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
       {importMsg && (
         <div style={{ margin: "10px 22px 0 22px" }}>
-          <div className="g-alert" style={{ background: "rgba(11,110,114,0.08)", borderColor: "rgba(11,110,114,0.35)", color: "var(--teal)" }}>
+          <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
             {importMsg}
           </div>
         </div>
@@ -2654,12 +2649,16 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
   }, [filtered, concluidos, emAndamento, naoIniciados, cancelados, taxaConclusao, comDesvio, desvioMedio, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
-      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
-        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
+      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+        {Icon && (
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon size={14} style={{ color: "#fff" }} />
+          </div>
+        )}
       </div>
-      <div className="g-kpi-value" style={{ fontSize: 24, color }}>{value}</div>
+      <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
     </div>
   );
 
@@ -2792,7 +2791,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                             <span style={{
                               fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
                               color: d === 0 ? "var(--ok)" : "var(--crit)",
-                              background: d === 0 ? "rgba(46,134,89,0.12)" : "rgba(178,59,49,0.12)",
+                              background: d === 0 ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
                             }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
                               {d > 0 ? `+${d}d` : `${d}d`}
                             </span>
@@ -2833,7 +2832,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {w.repeatOf && (() => {
                           const orig = workPackages.find((o) => o.id === w.repeatOf);
                           return (
-                            <div className="g-alert" style={{ background: "rgba(11,110,114,0.08)", borderColor: "rgba(11,110,114,0.35)", color: "var(--teal)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)", marginBottom: 10 }}>
                               🔁 Esta linha é uma repetição de <strong>{orig ? orig.name : "um serviço anterior"}</strong>
                               {orig && ` — planejado originalmente para ${fmtDate(orig.start?.slice(0, 10))}, ficou como "${orig.status}"`}.
                             </div>
@@ -2842,7 +2841,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {(() => {
                           const repeats = workPackages.filter((o) => o.repeatOf === w.id);
                           return repeats.length > 0 && (
-                            <div className="g-alert" style={{ background: "rgba(14,138,143,0.08)", borderColor: "rgba(14,138,143,0.35)", color: "var(--accent)", marginBottom: 10 }}>
+                            <div className="g-alert" style={{ background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.35)", color: "var(--accent)", marginBottom: 10 }}>
                               Este serviço foi reagendado em {repeats.length} nova(s) linha(s): {repeats.map((r) => r.name).join(", ")}.
                             </div>
                           );
@@ -2959,12 +2958,16 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
   }, [filtered, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
-      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
-        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
+      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+        {Icon && (
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon size={14} style={{ color: "#fff" }} />
+          </div>
+        )}
       </div>
-      <div className="g-kpi-value" style={{ fontSize: 24, color }}>{value}</div>
+      <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
     </div>
   );
 
@@ -3052,7 +3055,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.05)" }} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
                     <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
                       {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
                     </Bar>
@@ -3069,7 +3072,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.05)" }} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
                     <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
                       {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
                     </Bar>
@@ -3087,7 +3090,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                   <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                   <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.05)" }} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
                   <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
                 </BarChart>
               </ResponsiveContainer>
@@ -3325,7 +3328,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="g-alert" style={{ background: "rgba(14,138,143,0.1)", borderColor: "rgba(14,138,143,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
+        <div className="g-alert" style={{ background: "rgba(59,130,246,0.1)", borderColor: "rgba(59,130,246,0.4)", color: "var(--accent)", justifyContent: "space-between", display: "flex", alignItems: "center" }}>
           <span><strong>{selectedIds.size}</strong> serviço(s) selecionado(s) — os KPIs abaixo refletem só a seleção.</span>
           <span className="g-btn ghost" onClick={clearSelection} style={{ color: "var(--accent)" }}><X size={13} />Limpar seleção</span>
         </div>
@@ -3401,12 +3404,16 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
   }, [activeRows, valorTotalSum, emAtraso, execPayVals, mdExecVals, totalDiasAberto, selectedIds, setReportFn]);
 
   const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
-      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
-        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
+      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+        {Icon && (
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon size={14} style={{ color: "#fff" }} />
+          </div>
+        )}
       </div>
-      <div className="g-kpi-value" style={{ fontSize: 24, color }}>{value}</div>
+      <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
     </div>
   );
 
@@ -3452,7 +3459,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
             {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(14,138,143,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
@@ -3579,7 +3586,7 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
               const days = Number(r.daysOpenTotal || 0);
               const daysColor = days > 90 ? "var(--crit)" : days > 30 ? "var(--warn)" : "var(--text-dim)";
               return (
-                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(14,138,143,0.08)" : "rgba(10,14,20,0.02)" } : (selectedIds.has(r.id) ? { background: "rgba(14,138,143,0.08)" } : undefined)}>
+                <tr className="g-row" key={r.id} style={color ? { borderLeft: `3px solid ${color}`, background: selectedIds.has(r.id) ? "rgba(59,130,246,0.08)" : "rgba(10,14,20,0.015)" } : (selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.08)" } : undefined)}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 140 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -3705,7 +3712,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
               const i = serviceInvoices.indexOf(r);
               const days = Number(r.daysOpenTotal || 0);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(14,138,143,0.06)" } : undefined}>
+                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={{ minWidth: 220 }}><EText value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
                   <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
@@ -3847,12 +3854,16 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const sumVal = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
 
   const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "18px 16px" }}>
-      <div className="g-flex" style={{ gap: 6, marginBottom: 6 }}>
-        {Icon && <Icon size={14} style={{ color, flexShrink: 0 }} />}
+    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
+      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+        {Icon && (
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon size={14} style={{ color: "#fff" }} />
+          </div>
+        )}
       </div>
-      <div className="g-kpi-value" style={{ fontSize: 22, color }}>{value}</div>
+      <div className="g-kpi-value" style={{ fontSize: 22, color: "var(--text)" }}>{value}</div>
     </div>
   );
 
@@ -4112,7 +4123,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
         <button className={costSubTab === "dashboard" ? "active" : ""} onClick={() => setCostSubTab("dashboard")}>Dashboard Financeiro</button>
       </div>
 
-      <div className="g-alert" style={{ background: "rgba(11,110,114,0.08)", borderColor: "rgba(11,110,114,0.35)", color: "var(--teal)" }}>
+      <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
         {costSubTab === "rateio"
           ? <>Esta página mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos. Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.</>
           : <>Visão combinada: custo por categoria (Orçado × Realizado) e situação dos pagamentos (Pago/Pendente/Atrasado), para o mesmo período e filtros abaixo.</>}
@@ -4240,7 +4251,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
                   const execMonth = (r.date || "").slice(0, 7);
                   const divergente = r.previsaoMes && execMonth && r.previsaoMes !== execMonth;
                   return (
-                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(14,138,143,0.06)" } : undefined}>
+                    <tr className="g-row" key={r.id} style={divergente ? { background: "rgba(59,130,246,0.06)" } : undefined}>
                       <td style={{ minWidth: 220, whiteSpace: "normal" }}>{r.assunto}</td>
                       <td style={{ minWidth: 130 }}>{r.empresa}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{fmt(r.valorTotal)}</td>
@@ -4425,7 +4436,7 @@ function SettingsView({ currentUser, users, setUsers }) {
           <span className="g-panel-title">Usuários e senhas de acesso</span>
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
-        <div className="g-alert" style={{ background: "rgba(11,110,114,0.08)", borderColor: "rgba(11,110,114,0.35)", color: "var(--teal)" }}>
+        <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
           Login local ao navegador, apenas para separar o acesso entre as pessoas — não é uma autenticação segura de servidor.
         </div>
