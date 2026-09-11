@@ -240,6 +240,12 @@ const Theme = () => (
       font-size: 12px; vertical-align: middle; white-space: nowrap;
     }
     .g-table tr.g-row:hover { background: var(--panel-alt); }
+    @keyframes g-row-flash-anim {
+      0% { background: color-mix(in srgb, var(--accent) 35%, var(--panel)); }
+      100% { background: transparent; }
+    }
+    .g-row-flash { animation: g-row-flash-anim 2.2s ease-out; scroll-margin-top: 90px; }
+    .g-panel-flash { animation: g-row-flash-anim 2.2s ease-out; scroll-margin-top: 90px; }
     .g-table tr.g-expand-row { background: var(--panel-alt); }
 
     .g-edit {
@@ -1232,6 +1238,13 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate, loadError }) {
   const [tab, setTab] = useState("dashboard");
+  const [newRowId, setNewRowId] = useState(null);
+  /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
+     guarda o id por alguns segundos pra a linha poder ser destacada e "scrollada" até a visão do usuário */
+  const flashNewRow = (id) => {
+    setNewRowId(id);
+    setTimeout(() => setNewRowId((cur) => (cur === id ? null : cur)), 2500);
+  };
   const [expandedWp, setExpandedWp] = useState(null);
   const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
   const [importMsg, setImportMsg] = useState(null);
@@ -1240,11 +1253,11 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
   /* global period filter — present on every page */
   const [period, setPeriod] = useState({
-    mode: "mes", // "mes" | "periodo" | "ano"
+    mode: "periodo", // "mes" | "periodo" | "ano"
     month: 8,
     year: 2026,
-    start: "2026-08-25",
-    end: "2026-09-10",
+    start: "2020-01-01",
+    end: "2030-12-31",
   });
 
   /* workPackages vem de props (compartilhado via backend) */
@@ -1267,11 +1280,15 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const updPay = upd(setPayments), remPay = rem(setPayments);
   const updInv = upd(setServiceInvoices), remInv = rem(setServiceInvoices);
 
-  const addWp = () => setWorkPackages((r) => [...r, {
-    id: uid("PC-2026-08"), name: "Novo serviço", discipline: "Marine", group: "Sem categoria", empresa: "", md: "Não", rc: "", obs: "",
-    budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-25T08:00", end: "2026-08-26T17:00",
-    status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
-  }]);
+  const addWp = () => {
+    const id = uid("PC-2026-08");
+    setWorkPackages((r) => [...r, {
+      id, name: "Novo serviço", discipline: "Marine", group: "Sem categoria", empresa: "", md: "Não", rc: "", obs: "",
+      budget: 0, committed: 0, actual: 0, forecast: 0, start: "2026-08-25T08:00", end: "2026-08-26T17:00",
+      status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
+    }]);
+    flashNewRow(id);
+  };
 
   /* serviço não concluído na data planejada → gera uma NOVA linha com data em branco para reagendar,
      mantendo o registro antigo intacto (com seu desvio/histórico) e um vínculo entre as duas */
@@ -1484,20 +1501,28 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     return filterRange;
   }, [selectedPortCallDate, filterRange, portCallSpans]);
 
-  const addMat = () => setMaterials((r) => [...r, {
-    id: uid("MAT"), wp: "", tmMaster: "", departamento: "", sap: "", descricao: "Novo item",
-    quantidade: 1, priority: "Média", dataSolicitacao: todayISO(), dataNecessidade: "", reserva: "", rc: "", po: "", linhaPo: "",
-    valor: 0, eta: "", obs: "", dataRecebimento: "", status: "Solicitado",
-  }]);
+  const addMat = () => {
+    const id = uid("MAT");
+    setMaterials((r) => [...r, {
+      id, wp: "", tmMaster: "", departamento: "", sap: "", descricao: "Novo item",
+      quantidade: 1, priority: "Média", dataSolicitacao: todayISO(), dataNecessidade: "", reserva: "", rc: "", po: "", linhaPo: "",
+      valor: 0, eta: "", obs: "", dataRecebimento: "", status: "Solicitado",
+    }]);
+    flashNewRow(id);
+  };
   const addPay = () => setPayments((r) => [...r, {
     id: uid("PAY"), service: "—", po: "", poValue: 0,
     nf: "", nfValue: 0, issue: "", due: "", status: "Orçamento",
   }]);
-  const addInv = () => setServiceInvoices((r) => [...r, {
-    id: uid("INV"), date: todayISO(), assunto: "Novo serviço", empresa: "", md: "Não", mdSentDate: "",
-    diffDays: 0, daysOpenTotal: 0, rc: "", serviceStatus: "Aberto", poContrato: "", medicao: "",
-    valorTotal: 0, saldoPo: 0, obs: "", statusPagamento: "Aguardando Medição", dataPagamento: "",
-  }]);
+  const addInv = () => {
+    const id = uid("INV");
+    setServiceInvoices((r) => [...r, {
+      id, date: todayISO(), assunto: "Novo serviço", empresa: "", md: "Não", mdSentDate: "",
+      diffDays: 0, daysOpenTotal: 0, rc: "", serviceStatus: "Aberto", poContrato: "", medicao: "",
+      valorTotal: 0, saldoPo: 0, obs: "", statusPagamento: "Aguardando Medição", dataPagamento: "",
+    }]);
+    flashNewRow(id);
+  };
 
   const portCallRange = useMemo(() => {
     if (workPackages.length === 0) return filterRange;
@@ -1781,8 +1806,9 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         {onLogout && <div className="g-logout" onClick={onLogout}><LogOut size={14} />Sair</div>}
       </div>
 
-      {/* Global period filter — presente em todas as páginas, exceto Pagamentos (que tem seu próprio filtro por período) */}
-      {tab !== "payments" && tab !== "materials" && tab !== "costs" && tab !== "services" && (
+      {/* Global period filter — removido conforme solicitado; workPackages/Dashboard agora mostram
+          todos os dados por padrão (período fixado num intervalo amplo em vez de restringir por mês) */}
+      {false && (
       <div className="g-filterbar">
         <div className="g-field">
           <label>Port Call</label>
@@ -1889,16 +1915,16 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
         {tab === "services" && (
           <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
-            expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} />
+            expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} newRowId={newRowId} />
         )}
 
-        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} />}
+        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
 
         {tab === "payments" && (
           <PaymentsSection
             paySubTab={paySubTab} setPaySubTab={setPaySubTab}
             serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} addInv={addInv}
-            setReportFn={setReportFn}
+            setReportFn={setReportFn} newRowId={newRowId}
           />
         )}
 
@@ -2058,7 +2084,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
 
   return (
     <>
-      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field">
           <label>Período — de</label>
           <input type="date" value={dp.dataInicio} onChange={(e) => setDp((p) => ({ ...p, dataInicio: e.target.value }))} />
@@ -2560,7 +2586,12 @@ const StatusServicoSelect = ({ value, onChange }) => {
   );
 };
 
-function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp, setReportFn }) {
+function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp, setReportFn, newRowId }) {
+  React.useEffect(() => {
+    if (!newRowId) return;
+    const el = document.getElementById(`row-${newRowId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [newRowId]);
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const [sf, setSf] = useState({ empresa: "", rc: "", manutencao: "", status: "Todos", portCall: "", dataInicio: "", dataFim: "" });
   const hasActiveFilter = sf.empresa || sf.rc || sf.manutencao || sf.status !== "Todos" || sf.portCall || sf.dataInicio || sf.dataFim;
@@ -2665,7 +2696,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
   return (
     <>
       {/* filtros locais — Portcall e Período agora são só desta aba, junto com Manutenção/Empresa/RC/Status */}
-      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field">
           <label>Manutenção</label>
           <input type="text" value={sf.manutencao} onChange={(e) => setSf((p) => ({ ...p, manutencao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 150 }} />
@@ -2752,7 +2783,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
               const isOpen = expandedWp === w.id;
               return (
                 <React.Fragment key={w.id}>
-                  <tr className="g-row" style={w.status === "Cancelado" ? { opacity: 0.5 } : undefined}>
+                  <tr id={`row-${w.id}`} className={"g-row" + (newRowId === w.id ? " g-row-flash" : "")} style={w.status === "Cancelado" ? { opacity: 0.5 } : undefined}>
                     <td>
                       <span className="g-btn ghost" onClick={() => setExpandedWp(isOpen ? null : w.id)}>
                         {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -2877,7 +2908,12 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
-function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais }) {
+function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais, newRowId }) {
+  React.useEffect(() => {
+    if (!newRowId) return;
+    const el = document.getElementById(`row-${newRowId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [newRowId]);
   const [matSubTab, setMatSubTab] = useState("requisicoes"); // "requisicoes" | "analises"
   const emergFileRef = useRef(null);
   const [expandedRow, setExpandedRow] = useState(null);
@@ -2979,7 +3015,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
       </div>
 
       {/* filtros da aba Materiais — digitáveis + selecionáveis, compartilhados pelas duas sub-abas */}
-      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field">
           <label>TM Master</label>
           <input type="text" value={mf.tmMaster} onChange={(e) => setMf((p) => ({ ...p, tmMaster: e.target.value }))} placeholder="digitar..." style={{ minWidth: 110 }} />
@@ -3163,7 +3199,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
               const isOpen = expandedRow === i;
               return (
                 <React.Fragment key={i}>
-                  <tr className="g-row">
+                  <tr id={`row-${m.id}`} className={"g-row" + (newRowId === m.id ? " g-row-flash" : "")}>
                     <td>
                       <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : i)}>
                         {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -3172,7 +3208,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                     <td style={{ minWidth: 100 }}><EText value={m.tmMaster} onChange={(v) => updMat(i, "tmMaster", v)} mono /></td>
                     <td style={{ minWidth: 120 }}><EText value={m.departamento} onChange={(v) => updMat(i, "departamento", v)} /></td>
                     <td style={{ minWidth: 100 }}><EText value={m.sap} onChange={(v) => updMat(i, "sap", v)} mono /></td>
-                    <td style={{ minWidth: 190 }}><EText value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} /></td>
+                    <td style={{ minWidth: 190, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} /></td>
                     <td><ENum value={m.quantidade} onChange={(v) => updMat(i, "quantidade", v)} /></td>
                     <td><ESelect value={m.priority} onChange={(v) => updMat(i, "priority", v)} options={PRIORITY} /></td>
                     <td><EDate value={m.dataSolicitacao} onChange={(v) => updMat(i, "dataSolicitacao", v)} /></td>
@@ -3188,7 +3224,7 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                         : <span className="g-flex"><span style={{ color: "var(--crit)", fontSize: 11 }}>sem ETA</span>
                             <input type="date" className="g-edit mono" onChange={(e) => updMat(i, "eta", e.target.value)} /></span>}
                     </td>
-                    <td style={{ minWidth: 160 }}><EText value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></td>
+                    <td style={{ minWidth: 160, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></td>
                     <td><EDate value={m.dataRecebimento} onChange={(v) => updMat(i, "dataRecebimento", v)} /></td>
                     <td style={{ minWidth: 180 }}><ESelect value={m.status} onChange={(v) => updMat(i, "status", v)} options={MAT_STATUS} /></td>
                     <td><span className="g-btn ghost danger" onClick={() => remMat(i)}><Trash2 size={13} /></span></td>
@@ -3267,7 +3303,7 @@ function MultiSelectStatus({ options, selected, onChange, labelFor }) {
 
 const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
-function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn }) {
+function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn, newRowId }) {
   const [f, setF] = useState(emptyPayFilter);
   const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
@@ -3290,7 +3326,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       </div>
 
       {/* filtro compartilhado — presente em todas as páginas da aba Pagamentos */}
-      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field">
           <label>Status (múltipla escolha)</label>
           <MultiSelectStatus options={STATUS_PAGAMENTO_OPTIONS} selected={f.statuses} onChange={(v) => setF((p) => ({ ...p, statuses: v }))} />
@@ -3334,15 +3370,20 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
         </div>
       )}
 
-      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} />}
-      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} />}
-      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} />}
+      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
     </>
   );
 }
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
-function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
+function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn, newRowId }) {
+  React.useEffect(() => {
+    if (!newRowId) return;
+    const el = document.getElementById(`row-${newRowId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [newRowId]);
   const [sort, setSort] = useState({ key: "date", dir: 1 });
   const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
   const execToPayDays = (r) => {
@@ -3459,7 +3500,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
             {sorted.map((r) => {
               const i = serviceInvoices.indexOf(r);
               return (
-                <tr className="g-row" key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.06)" } : undefined}>
+                <tr id={`row-${r.id}`} className={"g-row" + (newRowId === r.id ? " g-row-flash" : "")} key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.06)" } : undefined}>
                   <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
                   <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
@@ -3742,6 +3783,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
 function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
   const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
+  const [categoriaTableCollapsed, setCategoriaTableCollapsed] = useState(false);
   const currentMonth = useMemo(() => `${new Date().getFullYear()}-${pad2(new Date().getMonth() + 1)}`, []);
   const [cf, setCf] = useState({ statuses: [], servico: "", empresa: "", categorias: [], provisionadoMeses: [currentMonth] });
   const hasActiveFilter = cf.statuses.length > 0 || cf.servico || cf.empresa || cf.categorias.length > 0 ||
@@ -4128,7 +4170,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           ? <>Esta página mostra apenas serviços que ainda <strong>não</strong> estão marcados como "Pago" na aba Pagamentos. Os valores de orçamento por categoria são mensais — ao trocar o período para outro mês, o realizado zera e o orçado volta inteiro.</>
           : <>Visão combinada: custo por categoria (Orçado × Realizado) e situação dos pagamentos (Pago/Pendente/Atrasado), para o mesmo período e filtros abaixo.</>}
       </div>
-      <div className="g-filterbar" style={{ padding: "12px 0", marginBottom: 14, borderRadius: 4 }}>
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         {costSubTab === "rateio" && (
           <>
             <div className="g-field">
@@ -4289,13 +4331,19 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
       {/* Custo por categoria — Orçado (US$/R$) × Realizado × Disponível */}
       <div className="g-panel">
         <div className="g-panel-head">
-          <span className="g-panel-title">Custo por categoria — Orçado × Realizado × Disponível</span>
+          <span className="g-flex" style={{ gap: 8 }}>
+            <span className="g-btn ghost" onClick={() => setCategoriaTableCollapsed((c) => !c)} title={categoriaTableCollapsed ? "Expandir" : "Minimizar"}>
+              {categoriaTableCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+            </span>
+            <span className="g-panel-title">Custo por categoria — Orçado × Realizado × Disponível</span>
+          </span>
           <span className="g-flex" style={{ fontSize: 11 }}>
             <span className="g-muted" style={{ fontFamily: "var(--mono)" }}>Câmbio US$→R$</span>
             <input type="number" step="0.01" value={exchangeRate} onChange={(e) => setExchangeRate(Number(e.target.value))}
               style={{ width: 64, background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 11, padding: "4px 6px", borderRadius: 3 }} />
           </span>
         </div>
+        {!categoriaTableCollapsed && (
         <div className="g-table-wrap">
         <table className="g-table">
           <thead>
@@ -4317,6 +4365,7 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
           </tbody>
         </table>
         </div>
+        )}
       </div>
 
       {/* Tabela de serviços com rateio por categoria */}
