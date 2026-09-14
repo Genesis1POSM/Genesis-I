@@ -1168,6 +1168,10 @@ const INITIAL_OP_CATEGORIES = [
 "Manobras", "Troca de Turma", "Visitantes", "Manutenção", "Inspeção", "Base Açu", "Load", "Backload",
 ];
 const INITIAL_EXCHANGE_RATE = 5.30;
+/* Planejamento — lista independente de "mapeados para execução": nasce aqui, sem data de execução
+   ainda, e só passa a existir também como um Serviço de verdade (na aba Serviços/Gantt) quando
+   ganhar uma data de execução */
+const INITIAL_PLANNING_ITEMS = [];
 
 export default function Root() {
   const [loaded, setLoaded] = useState(false);
@@ -1183,6 +1187,7 @@ export default function Root() {
   const [portCallMeta, setPortCallMeta] = useState(INITIAL_PORT_CALL_META);
   const [opCategories, setOpCategories] = useState(INITIAL_OP_CATEGORIES);
   const [exchangeRate, setExchangeRate] = useState(INITIAL_EXCHANGE_RATE);
+  const [planningItems, setPlanningItems] = useState(INITIAL_PLANNING_ITEMS);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar */
   React.useEffect(() => {
@@ -1199,6 +1204,7 @@ export default function Root() {
           if (d.portCallMeta) setPortCallMeta(d.portCallMeta);
           if (d.opCategories) setOpCategories(d.opCategories);
           if (typeof d.exchangeRate === "number") setExchangeRate(d.exchangeRate);
+          if (d.planningItems) setPlanningItems(d.planningItems);
         }
         setLoaded(true);
       })
@@ -1215,12 +1221,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate]);
+  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems]);
 
   if (!loaded) {
     return (
@@ -1244,6 +1250,7 @@ export default function Root() {
       portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta}
       opCategories={opCategories} setOpCategories={setOpCategories}
       exchangeRate={exchangeRate} setExchangeRate={setExchangeRate}
+      planningItems={planningItems} setPlanningItems={setPlanningItems}
       loadError={loadError}
     />
   );
@@ -1255,7 +1262,8 @@ export default function Root() {
 function Genesis({ currentUser, onLogout, users, setUsers,
   workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
-  opCategories, setOpCategories, exchangeRate, setExchangeRate, loadError }) {
+  opCategories, setOpCategories, exchangeRate, setExchangeRate,
+  planningItems, setPlanningItems, loadError }) {
   const [tab, setTab] = useState("dashboard");
   const [newRowId, setNewRowId] = useState(null);
   /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
@@ -1298,6 +1306,41 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const updMat = upd(setMaterials), remMat = rem(setMaterials);
   const updPay = upd(setPayments), remPay = rem(setPayments);
   const updInv = upd(setServiceInvoices), remInv = rem(setServiceInvoices);
+  const updPlan = upd(setPlanningItems), remPlan = rem(setPlanningItems);
+  const addPlanningItem = () => {
+    const id = uid("PLAN");
+    setPlanningItems((r) => [...r, {
+      id, nome: "Novo mapeamento", departamento: "", empresa: "", planoAcao: "",
+      precisaMaterial: false, materialNecessario: "", poMaterial: "", impacto: "Baixo",
+      dataExecucao: "", linkedServiceId: null,
+    }]);
+    flashNewRow(id);
+  };
+
+  /* Assim que um item mapeado ganha uma Data de Execução, ele "vira" um Serviço de verdade — cria
+     automaticamente uma linha correspondente em Serviços (aparece no Gantt/Port Call normalmente),
+     e marca o vínculo pra não duplicar se a data for editada de novo depois */
+  React.useEffect(() => {
+    const paraGraduar = planningItems.filter((p) => p.dataExecucao && !p.linkedServiceId);
+    if (paraGraduar.length === 0) return;
+    const linkByPlanId = {};
+    const novosServicos = paraGraduar.map((p) => {
+      const serviceId = uid("PC-2026-08");
+      linkByPlanId[p.id] = serviceId;
+      const start = `${p.dataExecucao}T08:00`;
+      const end = `${p.dataExecucao}T17:00`;
+      return {
+        id: serviceId, name: p.nome, discipline: "Marine", group: "Sem categoria",
+        ganttCategory: "Manutenção", empresa: p.empresa || "", md: "Não", rc: "", obs: "",
+        budget: 0, committed: 0, actual: 0, forecast: 0, start, end,
+        status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
+        planoAcao: p.planoAcao || "", precisaMaterial: p.precisaMaterial || false,
+        materialNecessario: p.materialNecessario || "", impacto: p.impacto || "Baixo",
+      };
+    });
+    setWorkPackages((prev) => [...prev, ...novosServicos]);
+    setPlanningItems((prev) => prev.map((p) => (linkByPlanId[p.id] ? { ...p, linkedServiceId: linkByPlanId[p.id] } : p)));
+  }, [planningItems]);
 
   const addWp = () => {
     const id = uid("PC-2026-08");
@@ -1904,6 +1947,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
           {tab === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
+          {tab === "planejamento" && <button className="g-btn primary" onClick={addPlanningItem}><Plus size={14} />Novo mapeamento</button>}
           {tab === "materials" && <button className="g-btn primary" onClick={addMat}><Plus size={14} />Nova requisição</button>}
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
         </div>
@@ -1940,7 +1984,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
         {tab === "planejamento" && (
           <PlanejamentoView workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn}
-            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate} />
+            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
+            planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem} newRowId={newRowId} />
         )}
 
         {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
@@ -2920,19 +2965,50 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    PLANEJAMENTO — mapeia manutenções em atraso: plano de ação para
    concluir, necessidade de material, e impacto de cada atraso
    ============================================================ */
-function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPortCallDates, portCallLabel, addWpOnDate }) {
-  const [planSubTab, setPlanSubTab] = useState("board"); // "board" | "atrasados"
+function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPortCallDates, portCallLabel, addWpOnDate,
+  planningItems, updPlan, remPlan, addPlanningItem, newRowId }) {
+  const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "board"
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
-  const hoje = new Date();
   const todayKey = todayISO();
 
   const dateKeyOf = (dt) => (dt ? dt.slice(0, 10) : null);
+  const materiaisPendentesDe = (serviceId) => materials.filter((m) => m.wp === serviceId && !["Recebido", "Entregue a bordo"].includes(m.status));
 
-  /* ---------- pendentes de planejamento: tudo que ainda não terminou (nem foi cancelado) ---------- */
+  React.useEffect(() => {
+    if (!newRowId) return;
+    const el = document.getElementById(`row-${newRowId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [newRowId]);
+
+  /* ========================================================
+     MAPEADOS PARA EXECUÇÃO — lista independente da aba Serviços.
+     Um item aqui só passa a existir também como um Serviço de verdade
+     (no Gantt/Port Call) quando ganha uma Data de Execução.
+     ======================================================== */
+  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos" });
+  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos";
+  const filteredMapeados = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return planningItems.filter((p) => {
+      const inBusca = !mf.busca || norm(p.nome).includes(norm(mf.busca));
+      const inDep = !mf.departamento || norm(p.departamento).includes(norm(mf.departamento));
+      const inEmpresa = !mf.empresa || norm(p.empresa).includes(norm(mf.empresa));
+      const inImpacto = mf.impacto === "Todos" || (p.impacto || "Baixo") === mf.impacto;
+      return inBusca && inDep && inEmpresa && inImpacto;
+    });
+  }, [planningItems, mf]);
+
+  const totalMapeados = planningItems.length;
+  const semDataExecucao = planningItems.filter((p) => !p.dataExecucao).length;
+  const jaExecutando = planningItems.filter((p) => !!p.linkedServiceId).length;
+  const precisamMaterialMap = planningItems.filter((p) => p.precisaMaterial).length;
+
+  /* ========================================================
+     QUADRO POR PORT CALL — visão dos serviços já com data de execução (já "graduados"
+     pra Serviços), organizados por Port Call, com opção de redistribuir entre eles
+     ======================================================== */
   const pendentes = useMemo(() => workPackages.filter((w) => !["Concluído", "Cancelado"].includes(w.status)), [workPackages]);
-
-  /* ---------- quadro por Port Call: agrupa os pendentes pela data de cada Port Call ---------- */
   const colunas = useMemo(() => {
     const dates = [...new Set([...allPortCallDates, ...pendentes.map((w) => dateKeyOf(w.start)).filter(Boolean)])].sort();
     const visibleDates = showPast ? dates : dates.filter((dk) => dk >= todayKey);
@@ -2943,13 +3019,6 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
     }));
   }, [allPortCallDates, pendentes, showPast, todayKey]);
 
-  const totalPendentes = pendentes.length;
-  const materiaisPendentesDe = (w) => materials.filter((m) => m.wp === w.id && !["Recebido", "Entregue a bordo"].includes(m.status));
-  const precisamMaterialTotal = pendentes.filter((w) => w.precisaMaterial || materiaisPendentesDe(w).length > 0).length;
-  const impactoCriticoTotal = pendentes.filter((w) => w.impacto === "Crítico").length;
-  const semEmpresaTotal = pendentes.filter((w) => !w.empresa).length;
-
-  /* move um item pendente para outro Port Call, preservando a duração original */
   const moverParaPortCall = (w, targetDateKey) => {
     const i = workPackages.indexOf(w);
     const durMs = w.start && w.end ? (new Date(w.end) - new Date(w.start)) : 8 * 3600000;
@@ -2961,142 +3030,168 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
     updWp(i, "end", toLocal(newEnd));
   };
 
-  /* ---------- atrasados: já passou da data fim prevista ---------- */
-  const [pf, setPf] = useState({ busca: "", empresa: "", impacto: "Todos", precisaMaterial: "Todos" });
-  const hasActiveFilter = pf.busca || pf.empresa || pf.impacto !== "Todos" || pf.precisaMaterial !== "Todos";
-  const [sort, setSort] = useState({ key: "diasAtraso", dir: -1 });
-  const atrasados = useMemo(() => {
-    return workPackages
-      .filter((w) => w.end && new Date(w.end) < hoje && !["Concluído", "Cancelado"].includes(w.status))
-      .map((w) => {
-        const diasAtraso = Math.max(0, Math.floor((hoje - new Date(w.end)) / 86400000));
-        return { ...w, diasAtraso, materiaisPendentes: materiaisPendentesDe(w) };
-      });
-  }, [workPackages, materials]);
-  const filtered = useMemo(() => {
-    const norm = (s) => (s || "").toString().toLowerCase();
-    return atrasados.filter((w) => {
-      const inBusca = !pf.busca || norm(w.name).includes(norm(pf.busca));
-      const inEmpresa = !pf.empresa || norm(w.empresa).includes(norm(pf.empresa));
-      const inImpacto = pf.impacto === "Todos" || (w.impacto || "Baixo") === pf.impacto;
-      const precisaMat = w.precisaMaterial || w.materiaisPendentes.length > 0;
-      const inMaterial = pf.precisaMaterial === "Todos" || (pf.precisaMaterial === "Sim" ? precisaMat : !precisaMat);
-      return inBusca && inEmpresa && inImpacto && inMaterial;
-    });
-  }, [atrasados, pf]);
-  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
-  const diasAtrasoMedio = filtered.length ? Math.round(filtered.reduce((s, w) => s + w.diasAtraso, 0) / filtered.length) : 0;
-  const precisamMaterial = filtered.filter((w) => w.precisaMaterial || w.materiaisPendentes.length > 0);
-  const impactoCritico = filtered.filter((w) => w.impacto === "Crítico");
-  const porImpacto = useMemo(() => IMPACT_LEVELS.map((lvl) => ({ impacto: lvl, count: filtered.filter((w) => (w.impacto || "Baixo") === lvl).length })), [filtered]);
-
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
       const doc = new jsPDF();
-      if (planSubTab === "board") {
-        let y = pdfHeader(doc, "Relatório de Planejamento — Quadro por Port Call",
-          `${totalPendentes} serviço(s) pendente(s) de execução · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      if (planSubTab === "mapeados") {
+        let y = pdfHeader(doc, "Relatório de Planejamento — Mapeados para Execução",
+          `${filteredMapeados.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
         y = pdfKpis(doc, y, [
-          { label: "Total Pendente", value: totalPendentes },
-          { label: "Precisam de Material", value: precisamMaterialTotal },
-          { label: "Impacto Crítico", value: impactoCriticoTotal },
-          { label: "Sem Empresa Definida", value: semEmpresaTotal },
+          { label: "Total Mapeado", value: totalMapeados },
+          { label: "Sem Data de Execução", value: semDataExecucao },
+          { label: "Já em Execução (Serviço criado)", value: jaExecutando },
+          { label: "Precisam de Material", value: precisamMaterialMap },
         ]);
+        y = pdfSectionTitle(doc, y, "Itens mapeados");
+        pdfTable(doc, y,
+          ["Nome", "Departamento", "Empresa", "Impacto", "Precisa Material", "PO", "Data de Execução", "Status"],
+          filteredMapeados.map((p) => [
+            p.nome, p.departamento || "—", p.empresa || "—", p.impacto || "Baixo",
+            p.precisaMaterial ? "Sim" : "Não", p.precisaMaterial ? (p.poMaterial || "—") : "—",
+            p.dataExecucao ? fmtDate(p.dataExecucao) : "—", p.linkedServiceId ? "Em execução" : "Mapeado",
+          ])
+        );
+        pdfSave(doc, "relatorio-planejamento-mapeados");
+      } else {
+        let y = pdfHeader(doc, "Relatório de Planejamento — Quadro por Port Call",
+          `${pendentes.length} serviço(s) pendente(s) · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
         colunas.forEach((col) => {
           if (col.itens.length === 0) return;
           y = pdfSectionTitle(doc, y, `${col.label} — ${col.itens.length} serviço(s)`);
           y = pdfTable(doc, y,
-            ["Serviço", "Empresa", "Impacto", "Precisa Material", "Plano de Ação"],
-            col.itens.map((w) => [w.name, w.empresa || "—", w.impacto || "Baixo",
-              (w.precisaMaterial || materiaisPendentesDe(w).length > 0) ? "Sim" : "Não", w.planoAcao || "—"])
+            ["Serviço", "Empresa", "Impacto", "Plano de Ação"],
+            col.itens.map((w) => [w.name, w.empresa || "—", w.impacto || "Baixo", w.planoAcao || "—"])
           );
         });
         pdfSave(doc, "relatorio-planejamento-quadro");
-      } else {
-        let y = pdfHeader(doc, "Relatório de Planejamento — Manutenções em Atraso",
-          `${filtered.length} manutenção(ões) em atraso no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-        y = pdfKpis(doc, y, [
-          { label: "Total em Atraso", value: filtered.length },
-          { label: "Dias de Atraso (média)", value: `${diasAtrasoMedio}d` },
-          { label: "Precisam de Material", value: precisamMaterial.length },
-          { label: "Impacto Crítico", value: impactoCritico.length },
-        ]);
-        y = pdfSectionTitle(doc, y, "Distribuição por impacto");
-        y = pdfTable(doc, y, ["Impacto", "Quantidade"], porImpacto.map((d) => [d.impacto, d.count]));
-        y = pdfSectionTitle(doc, y, "Manutenções em atraso — detalhamento");
-        pdfTable(doc, y,
-          ["Manutenção", "Empresa", "Data Prevista", "Dias em Atraso", "Impacto", "Precisa Material", "Plano de Ação", "Nova Data Prevista"],
-          sorted.map((w) => [
-            w.name, w.empresa || "—", fmtDate(w.end), w.diasAtraso, w.impacto || "Baixo",
-            (w.precisaMaterial || w.materiaisPendentes.length > 0) ? "Sim" : "Não",
-            w.planoAcao || "—", w.novaDataPrevista ? fmtDate(w.novaDataPrevista) : "—",
-          ]),
-          { columnStyles: { 3: { halign: "right" } } }
-        );
-        pdfSave(doc, "relatorio-planejamento-atrasados");
       }
     });
-  }, [planSubTab, colunas, totalPendentes, precisamMaterialTotal, impactoCriticoTotal, semEmpresaTotal,
-      filtered, sorted, diasAtrasoMedio, precisamMaterial, impactoCritico, porImpacto, setReportFn]);
-
-  const CardDetail = ({ w, i }) => (
-    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
-      <div style={{ marginBottom: 6 }}>
-        <div className="g-gantt-mini-label" style={{ marginBottom: 3 }}>Plano de ação</div>
-        <ETextArea rows={2} value={w.planoAcao} onChange={(v) => updWp(i, "planoAcao", v)} />
-      </div>
-      <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer", marginBottom: 4 }}>
-        <input type="checkbox" checked={!!w.precisaMaterial} onChange={(e) => updWp(i, "precisaMaterial", e.target.checked)} />
-        Precisa de material
-      </label>
-      {w.precisaMaterial && (
-        <input type="text" className="g-edit" placeholder="qual material..." value={w.materialNecessario || ""}
-          onChange={(e) => updWp(i, "materialNecessario", e.target.value)}
-          style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%", marginBottom: 6 }} />
-      )}
-      {materiaisPendentesDe(w).length > 0 && (
-        <div style={{ fontSize: 10.5, color: "var(--warn)", marginBottom: 6 }}>
-          ⚠ {materiaisPendentesDe(w).length} material(is) vinculado(s) ainda pendente(s) na aba Materiais
-        </div>
-      )}
-      <div className="g-flex" style={{ gap: 8, marginBottom: 6 }}>
-        <div style={{ flex: 1 }}>
-          <div className="g-gantt-mini-label" style={{ marginBottom: 3 }}>Impacto</div>
-          <select value={w.impacto || "Baixo"} onChange={(e) => updWp(i, "impacto", e.target.value)}
-            style={{ width: "100%", background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[w.impacto || "Baixo"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5 }}>
-            {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div className="g-gantt-mini-label" style={{ marginBottom: 3 }}>Empresa</div>
-          <input type="text" className="g-edit" value={w.empresa || ""} onChange={(e) => updWp(i, "empresa", e.target.value)}
-            style={{ fontSize: 11.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
-        </div>
-      </div>
-    </div>
-  );
+  }, [planSubTab, filteredMapeados, totalMapeados, semDataExecucao, jaExecutando, precisamMaterialMap, colunas, pendentes, setReportFn]);
 
   return (
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+        <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
         <button className={planSubTab === "board" ? "active" : ""} onClick={() => setPlanSubTab("board")}>Quadro por Port Call</button>
-        <button className={planSubTab === "atrasados" ? "active" : ""} onClick={() => setPlanSubTab("atrasados")}>Atrasados</button>
       </div>
 
-      {planSubTab === "board" ? (
+      {planSubTab === "mapeados" ? (
         <>
           <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
-            Todo serviço que ainda não foi concluído nem cancelado aparece aqui, organizado pelo Port Call em que está agendado.
-            Use o seletor "Mover para" em cada cartão pra redistribuir o serviço entre os Port Calls, e clique num cartão pra
-            preencher o plano de ação, a necessidade de material e o impacto.
+            Cadastre aqui toda manutenção que você precisa mapear — mesmo sem saber ainda quando ela vai acontecer.
+            Assim que você preencher a <strong>Data de Execução</strong> de um item, ele passa a aparecer também
+            na aba Serviços e no Port Call automaticamente, como um serviço de verdade agendado.
+          </div>
+
+          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+            <div className="g-field">
+              <label>Nome</label>
+              <input type="text" value={mf.busca} onChange={(e) => setMf((p) => ({ ...p, busca: e.target.value }))} placeholder="digitar..." style={{ minWidth: 160 }} />
+            </div>
+            <div className="g-field">
+              <label>Departamento</label>
+              <input type="text" value={mf.departamento} onChange={(e) => setMf((p) => ({ ...p, departamento: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
+            </div>
+            <div className="g-field">
+              <label>Empresa</label>
+              <input type="text" value={mf.empresa} onChange={(e) => setMf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
+            </div>
+            <div className="g-field">
+              <label>Impacto</label>
+              <select value={mf.impacto} onChange={(e) => setMf((p) => ({ ...p, impacto: e.target.value }))}>
+                <option>Todos</option>
+                {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos" })}
+                disabled={!hasActiveFilterMap} style={{ opacity: hasActiveFilterMap ? 1 : 0.5 }}>
+                <X size={13} />Limpar filtro
+              </button>
+            </div>
           </div>
 
           <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-            {bigKpi("Total Pendente", totalPendentes, "var(--teal)", ClipboardList)}
-            {bigKpi("Precisam de Material", precisamMaterialTotal, "var(--warn)", Package)}
-            {bigKpi("Impacto Crítico", impactoCriticoTotal, "var(--crit)", AlertTriangle)}
-            {bigKpi("Sem Empresa Definida", semEmpresaTotal, "var(--text-faint)", AlertTriangle)}
+            {bigKpi("Total Mapeado", totalMapeados, "var(--teal)", ClipboardList)}
+            {bigKpi("Sem Data de Execução", semDataExecucao, "var(--warn)", Clock)}
+            {bigKpi("Já em Execução", jaExecutando, "var(--ok)", ClipboardList)}
+            {bigKpi("Precisam de Material", precisamMaterialMap, "var(--crit)", Package)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Itens mapeados para execução ({filteredMapeados.length})</span></div>
+            <div className="g-table-wrap">
+            <table className="g-table">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 180 }}>Nome</th>
+                  <th style={{ minWidth: 120 }}>Departamento</th>
+                  <th style={{ minWidth: 120 }}>Empresa</th>
+                  <th style={{ minWidth: 200 }}>Plano de Ação</th>
+                  <th style={{ minWidth: 110 }}>Precisa de Material</th>
+                  <th style={{ minWidth: 100 }}>PO</th>
+                  <th>Impacto</th>
+                  <th style={{ minWidth: 130 }}>Data de Execução</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredMapeados.map((p) => {
+                  const i = planningItems.indexOf(p);
+                  return (
+                    <tr id={`row-${p.id}`} className={"g-row" + (newRowId === p.id ? " g-row-flash" : "")} key={p.id}>
+                      <td style={{ minWidth: 180, whiteSpace: "normal" }}><EText value={p.nome} onChange={(v) => updPlan(i, "nome", v)} /></td>
+                      <td style={{ minWidth: 120 }}><EText value={p.departamento} onChange={(v) => updPlan(i, "departamento", v)} /></td>
+                      <td style={{ minWidth: 120 }}><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></td>
+                      <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.planoAcao} onChange={(v) => updPlan(i, "planoAcao", v)} /></td>
+                      <td style={{ minWidth: 110 }}>
+                        <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
+                          <input type="checkbox" checked={!!p.precisaMaterial} onChange={(e) => updPlan(i, "precisaMaterial", e.target.checked)} />
+                          Sim
+                        </label>
+                      </td>
+                      <td style={{ minWidth: 100 }}>
+                        {p.precisaMaterial ? (
+                          <input type="text" className="g-edit" placeholder="nº da PO..." value={p.poMaterial || ""} onChange={(e) => updPlan(i, "poMaterial", e.target.value)}
+                            style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
+                        ) : <span className="g-muted">—</span>}
+                      </td>
+                      <td>
+                        <select value={p.impacto || "Baixo"} onChange={(e) => updPlan(i, "impacto", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[p.impacto || "Baixo"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5 }}>
+                          {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ minWidth: 130 }}>
+                        <input type="date" value={p.dataExecucao || ""} onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
+                      </td>
+                      <td>
+                        {p.linkedServiceId ? (
+                          <span className="g-pill" style={{ background: "var(--panel-raised)" }}><span className="g-dot" style={{ background: "var(--ok)" }} />Em execução</span>
+                        ) : (
+                          <span className="g-pill" style={{ background: "var(--panel-raised)" }}><span className="g-dot" style={{ background: "var(--text-faint)" }} />Mapeado</span>
+                        )}
+                      </td>
+                      <td><span className="g-btn ghost danger" onClick={() => remPlan(i)}><Trash2 size={13} /></span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            {filteredMapeados.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item mapeado ainda — use o botão "Novo mapeamento" no topo da página.</div>}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
+            Aqui aparecem os serviços que já têm data de execução (vindos da aba Serviços, incluindo os que
+            acabaram de "graduar" do mapeamento acima), organizados pelo Port Call em que estão agendados.
+            Use "Mover para" pra redistribuir um serviço entre os Port Calls.
           </div>
 
           <div className="g-flex" style={{ justifyContent: "flex-end", marginBottom: 10 }}>
@@ -3120,9 +3215,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                   </div>
                   {col.itens.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nada agendado aqui.</div>}
                   {col.itens.map((w) => {
-                    const i = workPackages.indexOf(w);
                     const isOpen = expandedCard === w.id;
-                    const precisaMat = w.precisaMaterial || materiaisPendentesDe(w).length > 0;
+                    const precisaMat = w.precisaMaterial || materiaisPendentesDe(w.id).length > 0;
                     return (
                       <div key={w.id}
                         style={{
@@ -3143,139 +3237,12 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                             {colunas.map((c) => <option key={c.dateKey} value={c.dateKey}>Mover para: {c.label}</option>)}
                           </select>
                         </div>
-                        {isOpen && <div onClick={(e) => e.stopPropagation()}><CardDetail w={w} i={i} /></div>}
                       </div>
                     );
                   })}
                 </div>
               </div>
             ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="g-alert" style={{ background: "rgba(224,72,62,0.08)", borderColor: "rgba(224,72,62,0.35)", color: "var(--crit)" }}>
-            Esta aba lista automaticamente todo serviço cuja <strong>data fim prevista já passou</strong> e que ainda não está
-            Concluído nem Cancelado. Preencha o plano de ação, a necessidade de material e o impacto de cada atraso abaixo.
-          </div>
-
-          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
-            <div className="g-field">
-              <label>Manutenção</label>
-              <input type="text" value={pf.busca} onChange={(e) => setPf((p) => ({ ...p, busca: e.target.value }))} placeholder="digitar..." style={{ minWidth: 160 }} />
-            </div>
-            <div className="g-field">
-              <label>Empresa</label>
-              <input type="text" value={pf.empresa} onChange={(e) => setPf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
-            </div>
-            <div className="g-field">
-              <label>Impacto</label>
-              <select value={pf.impacto} onChange={(e) => setPf((p) => ({ ...p, impacto: e.target.value }))}>
-                <option>Todos</option>
-                {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-              </select>
-            </div>
-            <div className="g-field">
-              <label>Precisa de Material</label>
-              <select value={pf.precisaMaterial} onChange={(e) => setPf((p) => ({ ...p, precisaMaterial: e.target.value }))}>
-                <option>Todos</option><option>Sim</option><option>Não</option>
-              </select>
-            </div>
-            <div className="g-field">
-              <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setPf({ busca: "", empresa: "", impacto: "Todos", precisaMaterial: "Todos" })}
-                disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
-                <X size={13} />Limpar filtro
-              </button>
-            </div>
-          </div>
-
-          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-            {bigKpi("Total em Atraso", filtered.length, "var(--crit)", AlertTriangle)}
-            {bigKpi("Dias de Atraso (média)", `${diasAtrasoMedio}d`, "var(--warn)", Clock)}
-            {bigKpi("Precisam de Material", precisamMaterial.length, "var(--teal)", Package)}
-            {bigKpi("Impacto Crítico", impactoCritico.length, "var(--crit)", AlertTriangle)}
-          </div>
-
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Manutenções em atraso — por impacto</span></div>
-            <div style={{ width: "100%", height: 180 }}>
-              <ResponsiveContainer>
-                <BarChart data={porImpacto} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                  <XAxis dataKey="impacto" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                  <Bar dataKey="count" name="Manutenções" radius={[3, 3, 0, 0]}>
-                    {porImpacto.map((d, idx) => <Cell key={idx} fill={IMPACT_COLOR[d.impacto]} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Manutenções em atraso — plano de recuperação ({filtered.length})</span></div>
-            <div className="g-table-wrap">
-            <table className="g-table">
-              <thead>
-                <tr>
-                  <SortTh sortKey="name" sort={sort} setSort={setSort} style={{ minWidth: 200 }}>Manutenção</SortTh>
-                  <th style={{ minWidth: 110 }}>Empresa</th>
-                  <SortTh sortKey="end" sort={sort} setSort={setSort}>Data Prevista</SortTh>
-                  <SortTh sortKey="diasAtraso" sort={sort} setSort={setSort}>Dias em Atraso</SortTh>
-                  <th style={{ minWidth: 220 }}>Plano de Ação</th>
-                  <th style={{ minWidth: 130 }}>Precisa de Material</th>
-                  <th>Impacto</th>
-                  <th style={{ minWidth: 130 }}>Nova Data Prevista</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((w) => {
-                  const i = workPackages.indexOf(w);
-                  const materiaisPendentes = w.materiaisPendentes;
-                  return (
-                    <tr className="g-row" key={w.id}>
-                      <td style={{ minWidth: 200, whiteSpace: "normal" }}>{w.name}</td>
-                      <td style={{ minWidth: 110 }}>{w.empresa || "—"}</td>
-                      <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(w.end)}</td>
-                      <td style={{ fontFamily: "var(--mono)", fontWeight: 700, color: w.diasAtraso > 30 ? "var(--crit)" : "var(--warn)" }}>{w.diasAtraso}d</td>
-                      <td style={{ minWidth: 220 }}>
-                        <ETextArea rows={1} value={w.planoAcao} onChange={(v) => updWp(i, "planoAcao", v)} />
-                      </td>
-                      <td style={{ minWidth: 130 }}>
-                        <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
-                          <input type="checkbox" checked={!!w.precisaMaterial} onChange={(e) => updWp(i, "precisaMaterial", e.target.checked)} />
-                          Sim
-                        </label>
-                        {(w.precisaMaterial) && (
-                          <input type="text" className="g-edit" placeholder="qual material..." value={w.materialNecessario || ""}
-                            onChange={(e) => updWp(i, "materialNecessario", e.target.value)}
-                            style={{ marginTop: 4, fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
-                        )}
-                        {materiaisPendentes.length > 0 && (
-                          <div style={{ marginTop: 4, fontSize: 10, color: "var(--warn)" }}>
-                            ⚠ {materiaisPendentes.length} material(is) vinculado(s) ainda pendente(s)
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        <select value={w.impacto || "Baixo"} onChange={(e) => updWp(i, "impacto", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[w.impacto || "Baixo"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5 }}>
-                          {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ minWidth: 130 }}>
-                        <input type="date" value={w.novaDataPrevista || ""} onChange={(e) => updWp(i, "novaDataPrevista", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
-            {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhuma manutenção em atraso encontrada com esses filtros — ótimo sinal!</div>}
           </div>
         </>
       )}
