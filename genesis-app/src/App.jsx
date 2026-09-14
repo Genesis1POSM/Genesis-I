@@ -1310,11 +1310,83 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const addPlanningItem = () => {
     const id = uid("PLAN");
     setPlanningItems((r) => [...r, {
-      id, nome: "Novo mapeamento", departamento: "", empresa: "", planoAcao: "",
+      id, nome: "Novo mapeamento", departamento: "", empresa: "",
+      descricaoProblema: "", planoAcao: "", rc: "", obs: "",
       precisaMaterial: false, materialNecessario: "", poMaterial: "", impacto: "Baixo",
       dataExecucao: "", linkedServiceId: null,
     }]);
     flashNewRow(id);
+  };
+
+  /* Importação de planilhas de mapeamento (ex.: "Saúde do Ativo", "Planejamento de Manutenção") —
+     lê TODAS as abas do arquivo, usando o mesmo padrão de colunas (Equipamento/Título/Área/
+     Prioridade/Status/Descrição/MD/RC/Observação). Só traz itens ainda pendentes (não traz o que já
+     está Concluído/Realizado). Mescla por Título, pra reimportações não duplicarem. */
+  const handleImportPlanejamento = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const norm = (s) => (s || "").toString().trim();
+        const mapImpacto = (p) => {
+          const s = norm(p).toLowerCase();
+          if (s.startsWith("crít")) return "Crítico";
+          if (s.startsWith("alt")) return "Alto";
+          if (s.startsWith("méd") || s.startsWith("med")) return "Médio";
+          if (s.startsWith("bai")) return "Baixo";
+          return "Médio";
+        };
+        const parsedRows = [];
+        wb.SheetNames.forEach((sheetName) => {
+          const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+          json.forEach((row) => {
+            const titulo = norm(row["Título"] || row["Titulo"]);
+            if (!titulo) return;
+            const rc = row["RC"];
+            parsedRows.push({
+              nome: titulo,
+              departamento: norm(row["Área"] || row["Area"]),
+              empresa: "",
+              descricaoProblema: norm(row["Descrição"] || row["Descricao"]),
+              planoAcao: "",
+              rc: rc ? String(rc) : "",
+              obs: norm(row["Observação"] || row["Observacao"]),
+              precisaMaterial: !!rc,
+              materialNecessario: "",
+              poMaterial: "",
+              impacto: mapImpacto(row["Prioridade"]),
+              dataExecucao: "",
+            });
+          });
+        });
+
+        setPlanningItems((prev) => {
+          const byNome = new Map(prev.map((p, idx) => [p.nome.toLowerCase(), idx]));
+          const next = [...prev];
+          let added = 0, updated = 0;
+          parsedRows.forEach((row) => {
+            const key = row.nome.toLowerCase();
+            if (byNome.has(key)) {
+              const idx = byNome.get(key);
+              next[idx] = { ...next[idx], ...row, id: next[idx].id, dataExecucao: next[idx].dataExecucao, linkedServiceId: next[idx].linkedServiceId };
+              updated++;
+            } else {
+              next.push({ id: uid("PLAN"), linkedServiceId: null, ...row });
+              added++;
+            }
+          });
+          setImportMsg(`Planejamento importado: ${added} novo(s), ${updated} atualizado(s).`);
+          return next;
+        });
+      } catch (err) {
+        setImportMsg("Erro ao ler a planilha de planejamento. Confira se as colunas seguem o padrão esperado.");
+      }
+      setTimeout(() => setImportMsg(null), 6000);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
   };
 
   /* Assim que um item mapeado ganha uma Data de Execução, ele "vira" um Serviço de verdade — cria
@@ -1985,7 +2057,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         {tab === "planejamento" && (
           <PlanejamentoView workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
-            planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem} newRowId={newRowId} />
+            planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
+            newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
         )}
 
         {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
@@ -2966,10 +3039,11 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    concluir, necessidade de material, e impacto de cada atraso
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPortCallDates, portCallLabel, addWpOnDate,
-  planningItems, updPlan, remPlan, addPlanningItem, newRowId }) {
+  planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento }) {
   const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "board"
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
+  const importFileRef = useRef(null);
   const todayKey = todayISO();
 
   const dateKeyOf = (dt) => (dt ? dt.slice(0, 10) : null);
@@ -3078,6 +3152,22 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
 
       {planSubTab === "mapeados" ? (
         <>
+          <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div className="g-panel-title" style={{ marginBottom: 4 }}>Importar planilha de mapeamento</div>
+              <div className="g-muted" style={{ fontSize: 11.5 }}>
+                Aceita arquivos no padrão Título/Área/Prioridade/Status/Descrição/RC/Observação (ex.: "Saúde do Ativo").
+                Lê todas as abas do arquivo e importa tudo, independente do status. Mescla por Título — reimportar não duplica.
+              </div>
+            </div>
+            <div>
+              <input ref={importFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportPlanejamento} />
+              <button className="g-btn primary" onClick={() => importFileRef.current?.click()}>
+                <Upload size={14} />Importar planilha
+              </button>
+            </div>
+          </div>
+
           <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
             Cadastre aqui toda manutenção que você precisa mapear — mesmo sem saber ainda quando ela vai acontecer.
             Assim que você preencher a <strong>Data de Execução</strong> de um item, ele passa a aparecer também
@@ -3129,6 +3219,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                   <th style={{ minWidth: 180 }}>Nome</th>
                   <th style={{ minWidth: 120 }}>Departamento</th>
                   <th style={{ minWidth: 120 }}>Empresa</th>
+                  <th style={{ minWidth: 220 }}>Descrição do Problema</th>
                   <th style={{ minWidth: 200 }}>Plano de Ação</th>
                   <th style={{ minWidth: 110 }}>Precisa de Material</th>
                   <th style={{ minWidth: 100 }}>PO</th>
@@ -3146,6 +3237,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                       <td style={{ minWidth: 180, whiteSpace: "normal" }}><EText value={p.nome} onChange={(v) => updPlan(i, "nome", v)} /></td>
                       <td style={{ minWidth: 120 }}><EText value={p.departamento} onChange={(v) => updPlan(i, "departamento", v)} /></td>
                       <td style={{ minWidth: 120 }}><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></td>
+                      <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.descricaoProblema} onChange={(v) => updPlan(i, "descricaoProblema", v)} /></td>
                       <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.planoAcao} onChange={(v) => updPlan(i, "planoAcao", v)} /></td>
                       <td style={{ minWidth: 110 }}>
                         <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
