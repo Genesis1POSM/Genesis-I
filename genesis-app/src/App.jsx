@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from "react";
 import {
   LayoutGrid, Ship, Wrench, Package, Wallet, Calculator,
   Plus, Trash2, ChevronDown, ChevronUp, ChevronRight, AlertTriangle,
-  Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock
+  Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock, ClipboardList
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -556,6 +556,8 @@ const WP_STATUS_DEFAULT_PROGRESS = { "Planejamento": 0, "Não iniciado": 0, "Em 
 const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo", "Dentro do Prazo", "Fora do Prazo"];
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
+const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
+const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
 /* categories + Orçado (USD) exactly as in the uploaded drill-down report */
 const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica", "CAPEX"];
 const CATEGORY_BUDGET_USD = {
@@ -606,6 +608,8 @@ const WP_COLS = [
   ["budget", "Budget"], ["committed", "Comprometido"], ["actual", "Realizado"], ["forecast", "Forecast"],
   ["start", "Início"], ["end", "Fim"], ["status", "Status"], ["progress", "Progresso (%)"],
   ["dataRealInicio", "Data Real de Início"], ["dataRealFim", "Data Real de Conclusão"], ["repeatOf", "Repetição de (ID)"],
+  ["planoAcao", "Plano de Ação"], ["precisaMaterial", "Precisa de Material"], ["materialNecessario", "Material Necessário"],
+  ["impacto", "Impacto"], ["novaDataPrevista", "Nova Data Prevista"],
 ];
 const MAT_COLS = [
   ["tmMaster", "TM Master"], ["departamento", "Departamento"], ["sap", "SAP"], ["descricao", "Descrição"],
@@ -1782,6 +1786,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
     { key: "gantt", label: "Port Call", icon: Ship },
     { key: "services", label: "Serviços", icon: Wrench },
+    { key: "planejamento", label: "Planejamento", icon: ClipboardList },
     { key: "materials", label: "Materiais", icon: Package },
     { key: "payments", label: "Pagamentos", icon: Wallet },
     { key: "costs", label: "Custos", icon: Calculator },
@@ -1916,6 +1921,11 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         {tab === "services" && (
           <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} newRowId={newRowId} />
+        )}
+
+        {tab === "planejamento" && (
+          <PlanejamentoView workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn}
+            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate} />
         )}
 
         {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
@@ -2900,6 +2910,373 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
         </table>
         </div>
       </div>
+      )}
+    </>
+  );
+}
+
+/* ============================================================
+   PLANEJAMENTO — mapeia manutenções em atraso: plano de ação para
+   concluir, necessidade de material, e impacto de cada atraso
+   ============================================================ */
+function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPortCallDates, portCallLabel, addWpOnDate }) {
+  const [planSubTab, setPlanSubTab] = useState("board"); // "board" | "atrasados"
+  const [showPast, setShowPast] = useState(false);
+  const [expandedCard, setExpandedCard] = useState(null);
+  const hoje = new Date();
+  const todayKey = todayISO();
+
+  const dateKeyOf = (dt) => (dt ? dt.slice(0, 10) : null);
+
+  /* ---------- pendentes de planejamento: tudo que ainda não terminou (nem foi cancelado) ---------- */
+  const pendentes = useMemo(() => workPackages.filter((w) => !["Concluído", "Cancelado"].includes(w.status)), [workPackages]);
+
+  /* ---------- quadro por Port Call: agrupa os pendentes pela data de cada Port Call ---------- */
+  const colunas = useMemo(() => {
+    const dates = [...new Set([...allPortCallDates, ...pendentes.map((w) => dateKeyOf(w.start)).filter(Boolean)])].sort();
+    const visibleDates = showPast ? dates : dates.filter((dk) => dk >= todayKey);
+    return visibleDates.map((dk) => ({
+      dateKey: dk,
+      label: portCallLabel(dk),
+      itens: pendentes.filter((w) => dateKeyOf(w.start) === dk),
+    }));
+  }, [allPortCallDates, pendentes, showPast, todayKey]);
+
+  const totalPendentes = pendentes.length;
+  const materiaisPendentesDe = (w) => materials.filter((m) => m.wp === w.id && !["Recebido", "Entregue a bordo"].includes(m.status));
+  const precisamMaterialTotal = pendentes.filter((w) => w.precisaMaterial || materiaisPendentesDe(w).length > 0).length;
+  const impactoCriticoTotal = pendentes.filter((w) => w.impacto === "Crítico").length;
+  const semEmpresaTotal = pendentes.filter((w) => !w.empresa).length;
+
+  /* move um item pendente para outro Port Call, preservando a duração original */
+  const moverParaPortCall = (w, targetDateKey) => {
+    const i = workPackages.indexOf(w);
+    const durMs = w.start && w.end ? (new Date(w.end) - new Date(w.start)) : 8 * 3600000;
+    const newStart = new Date(`${targetDateKey}T08:00:00`);
+    const newEnd = new Date(newStart.getTime() + durMs);
+    const pad = (n) => String(n).padStart(2, "0");
+    const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    updWp(i, "start", toLocal(newStart));
+    updWp(i, "end", toLocal(newEnd));
+  };
+
+  /* ---------- atrasados: já passou da data fim prevista ---------- */
+  const [pf, setPf] = useState({ busca: "", empresa: "", impacto: "Todos", precisaMaterial: "Todos" });
+  const hasActiveFilter = pf.busca || pf.empresa || pf.impacto !== "Todos" || pf.precisaMaterial !== "Todos";
+  const [sort, setSort] = useState({ key: "diasAtraso", dir: -1 });
+  const atrasados = useMemo(() => {
+    return workPackages
+      .filter((w) => w.end && new Date(w.end) < hoje && !["Concluído", "Cancelado"].includes(w.status))
+      .map((w) => {
+        const diasAtraso = Math.max(0, Math.floor((hoje - new Date(w.end)) / 86400000));
+        return { ...w, diasAtraso, materiaisPendentes: materiaisPendentesDe(w) };
+      });
+  }, [workPackages, materials]);
+  const filtered = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return atrasados.filter((w) => {
+      const inBusca = !pf.busca || norm(w.name).includes(norm(pf.busca));
+      const inEmpresa = !pf.empresa || norm(w.empresa).includes(norm(pf.empresa));
+      const inImpacto = pf.impacto === "Todos" || (w.impacto || "Baixo") === pf.impacto;
+      const precisaMat = w.precisaMaterial || w.materiaisPendentes.length > 0;
+      const inMaterial = pf.precisaMaterial === "Todos" || (pf.precisaMaterial === "Sim" ? precisaMat : !precisaMat);
+      return inBusca && inEmpresa && inImpacto && inMaterial;
+    });
+  }, [atrasados, pf]);
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+  const diasAtrasoMedio = filtered.length ? Math.round(filtered.reduce((s, w) => s + w.diasAtraso, 0) / filtered.length) : 0;
+  const precisamMaterial = filtered.filter((w) => w.precisaMaterial || w.materiaisPendentes.length > 0);
+  const impactoCritico = filtered.filter((w) => w.impacto === "Crítico");
+  const porImpacto = useMemo(() => IMPACT_LEVELS.map((lvl) => ({ impacto: lvl, count: filtered.filter((w) => (w.impacto || "Baixo") === lvl).length })), [filtered]);
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      if (planSubTab === "board") {
+        let y = pdfHeader(doc, "Relatório de Planejamento — Quadro por Port Call",
+          `${totalPendentes} serviço(s) pendente(s) de execução · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Total Pendente", value: totalPendentes },
+          { label: "Precisam de Material", value: precisamMaterialTotal },
+          { label: "Impacto Crítico", value: impactoCriticoTotal },
+          { label: "Sem Empresa Definida", value: semEmpresaTotal },
+        ]);
+        colunas.forEach((col) => {
+          if (col.itens.length === 0) return;
+          y = pdfSectionTitle(doc, y, `${col.label} — ${col.itens.length} serviço(s)`);
+          y = pdfTable(doc, y,
+            ["Serviço", "Empresa", "Impacto", "Precisa Material", "Plano de Ação"],
+            col.itens.map((w) => [w.name, w.empresa || "—", w.impacto || "Baixo",
+              (w.precisaMaterial || materiaisPendentesDe(w).length > 0) ? "Sim" : "Não", w.planoAcao || "—"])
+          );
+        });
+        pdfSave(doc, "relatorio-planejamento-quadro");
+      } else {
+        let y = pdfHeader(doc, "Relatório de Planejamento — Manutenções em Atraso",
+          `${filtered.length} manutenção(ões) em atraso no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Total em Atraso", value: filtered.length },
+          { label: "Dias de Atraso (média)", value: `${diasAtrasoMedio}d` },
+          { label: "Precisam de Material", value: precisamMaterial.length },
+          { label: "Impacto Crítico", value: impactoCritico.length },
+        ]);
+        y = pdfSectionTitle(doc, y, "Distribuição por impacto");
+        y = pdfTable(doc, y, ["Impacto", "Quantidade"], porImpacto.map((d) => [d.impacto, d.count]));
+        y = pdfSectionTitle(doc, y, "Manutenções em atraso — detalhamento");
+        pdfTable(doc, y,
+          ["Manutenção", "Empresa", "Data Prevista", "Dias em Atraso", "Impacto", "Precisa Material", "Plano de Ação", "Nova Data Prevista"],
+          sorted.map((w) => [
+            w.name, w.empresa || "—", fmtDate(w.end), w.diasAtraso, w.impacto || "Baixo",
+            (w.precisaMaterial || w.materiaisPendentes.length > 0) ? "Sim" : "Não",
+            w.planoAcao || "—", w.novaDataPrevista ? fmtDate(w.novaDataPrevista) : "—",
+          ]),
+          { columnStyles: { 3: { halign: "right" } } }
+        );
+        pdfSave(doc, "relatorio-planejamento-atrasados");
+      }
+    });
+  }, [planSubTab, colunas, totalPendentes, precisamMaterialTotal, impactoCriticoTotal, semEmpresaTotal,
+      filtered, sorted, diasAtrasoMedio, precisamMaterial, impactoCritico, porImpacto, setReportFn]);
+
+  const CardDetail = ({ w, i }) => (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
+      <div style={{ marginBottom: 6 }}>
+        <div className="g-gantt-mini-label" style={{ marginBottom: 3 }}>Plano de ação</div>
+        <ETextArea rows={2} value={w.planoAcao} onChange={(v) => updWp(i, "planoAcao", v)} />
+      </div>
+      <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer", marginBottom: 4 }}>
+        <input type="checkbox" checked={!!w.precisaMaterial} onChange={(e) => updWp(i, "precisaMaterial", e.target.checked)} />
+        Precisa de material
+      </label>
+      {w.precisaMaterial && (
+        <input type="text" className="g-edit" placeholder="qual material..." value={w.materialNecessario || ""}
+          onChange={(e) => updWp(i, "materialNecessario", e.target.value)}
+          style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%", marginBottom: 6 }} />
+      )}
+      {materiaisPendentesDe(w).length > 0 && (
+        <div style={{ fontSize: 10.5, color: "var(--warn)", marginBottom: 6 }}>
+          ⚠ {materiaisPendentesDe(w).length} material(is) vinculado(s) ainda pendente(s) na aba Materiais
+        </div>
+      )}
+      <div className="g-flex" style={{ gap: 8, marginBottom: 6 }}>
+        <div style={{ flex: 1 }}>
+          <div className="g-gantt-mini-label" style={{ marginBottom: 3 }}>Impacto</div>
+          <select value={w.impacto || "Baixo"} onChange={(e) => updWp(i, "impacto", e.target.value)}
+            style={{ width: "100%", background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[w.impacto || "Baixo"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5 }}>
+            {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div className="g-gantt-mini-label" style={{ marginBottom: 3 }}>Empresa</div>
+          <input type="text" className="g-edit" value={w.empresa || ""} onChange={(e) => updWp(i, "empresa", e.target.value)}
+            style={{ fontSize: 11.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+        <button className={planSubTab === "board" ? "active" : ""} onClick={() => setPlanSubTab("board")}>Quadro por Port Call</button>
+        <button className={planSubTab === "atrasados" ? "active" : ""} onClick={() => setPlanSubTab("atrasados")}>Atrasados</button>
+      </div>
+
+      {planSubTab === "board" ? (
+        <>
+          <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
+            Todo serviço que ainda não foi concluído nem cancelado aparece aqui, organizado pelo Port Call em que está agendado.
+            Use o seletor "Mover para" em cada cartão pra redistribuir o serviço entre os Port Calls, e clique num cartão pra
+            preencher o plano de ação, a necessidade de material e o impacto.
+          </div>
+
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Total Pendente", totalPendentes, "var(--teal)", ClipboardList)}
+            {bigKpi("Precisam de Material", precisamMaterialTotal, "var(--warn)", Package)}
+            {bigKpi("Impacto Crítico", impactoCriticoTotal, "var(--crit)", AlertTriangle)}
+            {bigKpi("Sem Empresa Definida", semEmpresaTotal, "var(--text-faint)", AlertTriangle)}
+          </div>
+
+          <div className="g-flex" style={{ justifyContent: "flex-end", marginBottom: 10 }}>
+            <label className="g-flex" style={{ gap: 6, fontSize: 12, cursor: "pointer" }}>
+              <input type="checkbox" checked={showPast} onChange={(e) => setShowPast(e.target.checked)} />
+              Mostrar Port Calls passados também
+            </label>
+          </div>
+
+          {colunas.length === 0 && (
+            <div className="g-panel"><div className="g-muted">Nenhum Port Call encontrado. Cadastre um na aba Port Call primeiro.</div></div>
+          )}
+
+          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
+            {colunas.map((col) => (
+              <div key={col.dateKey} style={{ minWidth: 280, maxWidth: 280, flexShrink: 0 }}>
+                <div className="g-panel" style={{ marginBottom: 0, height: "100%" }}>
+                  <div className="g-panel-head" style={{ marginBottom: 10 }}>
+                    <span className="g-panel-title" style={{ fontSize: 12.5 }}>{col.label}</span>
+                    <span className="g-muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{col.itens.length}</span>
+                  </div>
+                  {col.itens.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nada agendado aqui.</div>}
+                  {col.itens.map((w) => {
+                    const i = workPackages.indexOf(w);
+                    const isOpen = expandedCard === w.id;
+                    const precisaMat = w.precisaMaterial || materiaisPendentesDe(w).length > 0;
+                    return (
+                      <div key={w.id}
+                        style={{
+                          background: "var(--panel-raised)", border: "1px solid var(--border)", borderLeft: `3px solid ${WP_STATUS_COLOR[w.status] || "var(--border)"}`,
+                          borderRadius: 5, padding: "8px 9px", marginBottom: 8, cursor: "pointer",
+                        }}
+                        onClick={() => setExpandedCard(isOpen ? null : w.id)}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{w.name}</div>
+                        <div className="g-flex" style={{ gap: 5, flexWrap: "wrap", marginBottom: 4 }}>
+                          <Pill status={w.status} />
+                          {w.impacto && <span className="g-pill" style={{ background: "var(--panel)" }}><span className="g-dot" style={{ background: IMPACT_COLOR[w.impacto] }} />{w.impacto}</span>}
+                          {precisaMat && <span title="Precisa de material" style={{ fontSize: 12 }}>📦</span>}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: "var(--text-faint)" }}>{w.empresa || "sem empresa definida"}</div>
+                        <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 6 }}>
+                          <select value={col.dateKey} onChange={(e) => moverParaPortCall(w, e.target.value)}
+                            style={{ width: "100%", fontSize: 10.5, background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 3, padding: "3px 4px" }}>
+                            {colunas.map((c) => <option key={c.dateKey} value={c.dateKey}>Mover para: {c.label}</option>)}
+                          </select>
+                        </div>
+                        {isOpen && <div onClick={(e) => e.stopPropagation()}><CardDetail w={w} i={i} /></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="g-alert" style={{ background: "rgba(224,72,62,0.08)", borderColor: "rgba(224,72,62,0.35)", color: "var(--crit)" }}>
+            Esta aba lista automaticamente todo serviço cuja <strong>data fim prevista já passou</strong> e que ainda não está
+            Concluído nem Cancelado. Preencha o plano de ação, a necessidade de material e o impacto de cada atraso abaixo.
+          </div>
+
+          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+            <div className="g-field">
+              <label>Manutenção</label>
+              <input type="text" value={pf.busca} onChange={(e) => setPf((p) => ({ ...p, busca: e.target.value }))} placeholder="digitar..." style={{ minWidth: 160 }} />
+            </div>
+            <div className="g-field">
+              <label>Empresa</label>
+              <input type="text" value={pf.empresa} onChange={(e) => setPf((p) => ({ ...p, empresa: e.target.value }))} placeholder="digitar..." style={{ minWidth: 130 }} />
+            </div>
+            <div className="g-field">
+              <label>Impacto</label>
+              <select value={pf.impacto} onChange={(e) => setPf((p) => ({ ...p, impacto: e.target.value }))}>
+                <option>Todos</option>
+                {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Precisa de Material</label>
+              <select value={pf.precisaMaterial} onChange={(e) => setPf((p) => ({ ...p, precisaMaterial: e.target.value }))}>
+                <option>Todos</option><option>Sim</option><option>Não</option>
+              </select>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <button className="g-btn" onClick={() => setPf({ busca: "", empresa: "", impacto: "Todos", precisaMaterial: "Todos" })}
+                disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
+                <X size={13} />Limpar filtro
+              </button>
+            </div>
+          </div>
+
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Total em Atraso", filtered.length, "var(--crit)", AlertTriangle)}
+            {bigKpi("Dias de Atraso (média)", `${diasAtrasoMedio}d`, "var(--warn)", Clock)}
+            {bigKpi("Precisam de Material", precisamMaterial.length, "var(--teal)", Package)}
+            {bigKpi("Impacto Crítico", impactoCritico.length, "var(--crit)", AlertTriangle)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Manutenções em atraso — por impacto</span></div>
+            <div style={{ width: "100%", height: 180 }}>
+              <ResponsiveContainer>
+                <BarChart data={porImpacto} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="impacto" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
+                  <Bar dataKey="count" name="Manutenções" radius={[3, 3, 0, 0]}>
+                    {porImpacto.map((d, idx) => <Cell key={idx} fill={IMPACT_COLOR[d.impacto]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Manutenções em atraso — plano de recuperação ({filtered.length})</span></div>
+            <div className="g-table-wrap">
+            <table className="g-table">
+              <thead>
+                <tr>
+                  <SortTh sortKey="name" sort={sort} setSort={setSort} style={{ minWidth: 200 }}>Manutenção</SortTh>
+                  <th style={{ minWidth: 110 }}>Empresa</th>
+                  <SortTh sortKey="end" sort={sort} setSort={setSort}>Data Prevista</SortTh>
+                  <SortTh sortKey="diasAtraso" sort={sort} setSort={setSort}>Dias em Atraso</SortTh>
+                  <th style={{ minWidth: 220 }}>Plano de Ação</th>
+                  <th style={{ minWidth: 130 }}>Precisa de Material</th>
+                  <th>Impacto</th>
+                  <th style={{ minWidth: 130 }}>Nova Data Prevista</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((w) => {
+                  const i = workPackages.indexOf(w);
+                  const materiaisPendentes = w.materiaisPendentes;
+                  return (
+                    <tr className="g-row" key={w.id}>
+                      <td style={{ minWidth: 200, whiteSpace: "normal" }}>{w.name}</td>
+                      <td style={{ minWidth: 110 }}>{w.empresa || "—"}</td>
+                      <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(w.end)}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontWeight: 700, color: w.diasAtraso > 30 ? "var(--crit)" : "var(--warn)" }}>{w.diasAtraso}d</td>
+                      <td style={{ minWidth: 220 }}>
+                        <ETextArea rows={1} value={w.planoAcao} onChange={(v) => updWp(i, "planoAcao", v)} />
+                      </td>
+                      <td style={{ minWidth: 130 }}>
+                        <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
+                          <input type="checkbox" checked={!!w.precisaMaterial} onChange={(e) => updWp(i, "precisaMaterial", e.target.checked)} />
+                          Sim
+                        </label>
+                        {(w.precisaMaterial) && (
+                          <input type="text" className="g-edit" placeholder="qual material..." value={w.materialNecessario || ""}
+                            onChange={(e) => updWp(i, "materialNecessario", e.target.value)}
+                            style={{ marginTop: 4, fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
+                        )}
+                        {materiaisPendentes.length > 0 && (
+                          <div style={{ marginTop: 4, fontSize: 10, color: "var(--warn)" }}>
+                            ⚠ {materiaisPendentes.length} material(is) vinculado(s) ainda pendente(s)
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <select value={w.impacto || "Baixo"} onChange={(e) => updWp(i, "impacto", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[w.impacto || "Baixo"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5 }}>
+                          {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ minWidth: 130 }}>
+                        <input type="date" value={w.novaDataPrevista || ""} onChange={(e) => updWp(i, "novaDataPrevista", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhuma manutenção em atraso encontrada com esses filtros — ótimo sinal!</div>}
+          </div>
+        </>
       )}
     </>
   );
