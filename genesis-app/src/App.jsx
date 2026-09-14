@@ -714,6 +714,21 @@ const ESelect = ({ value, onChange, options, style }) => (
     {options.map((o) => <option key={o} value={o}>{o}</option>)}
   </select>
 );
+/* KPI "cartão grande" compartilhado por todas as abas — versão única (antes estava duplicada
+   localmente em vários componentes, o que impedia componentes novos de usá-la) */
+const bigKpi = (label, value, color, Icon) => (
+  <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
+    <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+      <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
+      {Icon && (
+        <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Icon size={14} style={{ color: "#fff" }} />
+        </div>
+      )}
+    </div>
+    <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
+  </div>
+);
 const Pill = ({ status }) => (
   <span className="g-pill" style={{ background: "var(--panel-raised)", color: "var(--text)" }}>
     <span className="g-dot" style={{ background: statusColor(status) }} />{status}
@@ -2689,20 +2704,6 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
     });
   }, [filtered, concluidos, emAndamento, naoIniciados, cancelados, taxaConclusao, comDesvio, desvioMedio, setReportFn]);
 
-  const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
-      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
-        {Icon && (
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Icon size={14} style={{ color: "#fff" }} />
-          </div>
-        )}
-      </div>
-      <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
-    </div>
-  );
-
   return (
     <>
       {/* filtros locais — Portcall e Período agora são só desta aba, junto com Manutenção/Empresa/RC/Status */}
@@ -3370,20 +3371,6 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
     });
   }, [filtered, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
 
-  const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
-      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
-        {Icon && (
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Icon size={14} style={{ color: "#fff" }} />
-          </div>
-        )}
-      </div>
-      <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
-    </div>
-  );
-
   return (
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
@@ -3821,20 +3808,6 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
     });
   }, [activeRows, valorTotalSum, emAtraso, execPayVals, mdExecVals, totalDiasAberto, selectedIds, setReportFn]);
 
-  const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
-      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
-        {Icon && (
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Icon size={14} style={{ color: "#fff" }} />
-          </div>
-        )}
-      </div>
-      <div className="g-kpi-value" style={{ fontSize: 24, color: "var(--text)" }}>{value}</div>
-    </div>
-  );
-
   return (
     <>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
@@ -4271,20 +4244,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
   const pendentesPeriodo = allInPeriod.filter((r) => invoiceSituation(r) === "Pendente");
   const atrasadosPeriodo = allInPeriod.filter((r) => invoiceSituation(r) === "Atrasado");
   const sumVal = (arr) => arr.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
-
-  const bigKpi = (label, value, color, Icon) => (
-    <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
-      <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div className="g-kpi-label" style={{ fontSize: 11 }}>{label}</div>
-        {Icon && (
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Icon size={14} style={{ color: "#fff" }} />
-          </div>
-        )}
-      </div>
-      <div className="g-kpi-value" style={{ fontSize: 22, color: "var(--text)" }}>{value}</div>
-    </div>
-  );
 
   /* registra o gerador de PDF desta página — reflete exatamente o filtro/dados atuais da aba Custos,
      com cada parte do relatório bem separada (uma seção por página) */
