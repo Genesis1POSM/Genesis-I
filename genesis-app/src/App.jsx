@@ -4137,6 +4137,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
                   <th style={{ minWidth: 160 }}>Component</th>
                   <th style={{ minWidth: 220 }}>Job Name</th>
                   <th style={{ minWidth: 90 }}>Job Type</th>
+                  <th style={{ minWidth: 70 }}>Job N°</th>
                   <th style={{ minWidth: 110 }}>Department</th>
                   <th style={{ minWidth: 80 }}>Pri</th>
                   <th style={{ minWidth: 100 }}>Due</th>
@@ -4150,6 +4151,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
                     <td style={{ minWidth: 160, whiteSpace: "normal" }}>{d.component}</td>
                     <td style={{ minWidth: 220, whiteSpace: "normal" }}>{d.jobName}</td>
                     <td>{d.jobType}</td>
+                    <td style={{ fontFamily: "var(--mono)" }}>{d.jobNo}</td>
                     <td style={{ minWidth: 110 }}>{d.department}</td>
                     <td style={{ color: d.pri === "High" ? "var(--crit)" : d.pri === "Medium" ? "var(--warn)" : "var(--text-dim)", fontWeight: 600 }}>{d.pri}</td>
                     <td style={{ fontFamily: "var(--mono)" }}>{d.dueRaw}</td>
@@ -4240,6 +4242,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
                   <th style={{ minWidth: 160 }}>Component</th>
                   <th style={{ minWidth: 200 }}>Job Name</th>
                   <th style={{ minWidth: 90 }}>Job Type</th>
+                  <th style={{ minWidth: 70 }}>Job N°</th>
                   <th style={{ minWidth: 100 }}>Date Done</th>
                   <th style={{ minWidth: 130 }}>Done By</th>
                   <th style={{ minWidth: 110 }}>Departamento</th>
@@ -4252,6 +4255,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
                     <td style={{ minWidth: 160, whiteSpace: "normal" }}>{h.componentName}</td>
                     <td style={{ minWidth: 200, whiteSpace: "normal" }}>{h.jobName}</td>
                     <td>{h.jobType}</td>
+                    <td style={{ fontFamily: "var(--mono)" }}>{h.jobNo}</td>
                     <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(h.dateDone)}</td>
                     <td>{h.doneByName || "—"}</td>
                     <td style={{ minWidth: 110 }}>{deptOfHistory(h)}</td>
