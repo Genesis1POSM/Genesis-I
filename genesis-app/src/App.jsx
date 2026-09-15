@@ -558,6 +558,8 @@ const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado"
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
 const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
+const PLAN_STATUS = ["A Executar", "Em Andamento", "Concluído", "Cancelado"];
+const PLAN_STATUS_COLOR = { "A Executar": "#8D9BB5", "Em Andamento": "#3FC1C9", "Concluído": "#35D399", "Cancelado": "#6B7280" };
 /* categories + Orçado (USD) exactly as in the uploaded drill-down report */
 const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica", "CAPEX"];
 const CATEGORY_BUDGET_USD = {
@@ -1326,7 +1328,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     const id = uid("PLAN");
     setPlanningItems((r) => [...r, {
       id, nome: "Novo mapeamento", departamento: "", empresa: "",
-      descricaoProblema: "", planoAcao: "", rc: "", obs: "",
+      descricaoProblema: "", planoAcao: "", rc: "", obs: "", status: "A Executar",
       precisaMaterial: false, materialNecessario: "", poMaterial: "", impacto: "Baixo",
       dataExecucao: "", linkedServiceId: null,
     }]);
@@ -1353,6 +1355,11 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           if (s.startsWith("bai")) return "Baixo";
           return "Médio";
         };
+        const mapStatus = (s) => {
+          const v = norm(s);
+          if (v === "Realizado") return "Concluído";
+          return PLAN_STATUS.includes(v) ? v : "A Executar";
+        };
         const parsedRows = [];
         wb.SheetNames.forEach((sheetName) => {
           const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
@@ -1372,6 +1379,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
               materialNecessario: "",
               poMaterial: "",
               impacto: mapImpacto(row["Prioridade"]),
+              status: mapStatus(row["Status"]),
               dataExecucao: "",
             });
           });
@@ -3075,8 +3083,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
      Um item aqui só passa a existir também como um Serviço de verdade
      (no Gantt/Port Call) quando ganha uma Data de Execução.
      ======================================================== */
-  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos" });
-  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos";
+  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos", status: "Todos" });
+  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos" || mf.status !== "Todos";
   const filteredMapeados = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return planningItems.filter((p) => {
@@ -3084,7 +3092,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
       const inDep = !mf.departamento || norm(p.departamento).includes(norm(mf.departamento));
       const inEmpresa = !mf.empresa || norm(p.empresa).includes(norm(mf.empresa));
       const inImpacto = mf.impacto === "Todos" || (p.impacto || "Baixo") === mf.impacto;
-      return inBusca && inDep && inEmpresa && inImpacto;
+      const inStatus = mf.status === "Todos" || (p.status || "A Executar") === mf.status;
+      return inBusca && inDep && inEmpresa && inImpacto && inStatus;
     });
   }, [planningItems, mf]);
 
@@ -3138,7 +3147,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
           filteredMapeados.map((p) => [
             p.nome, p.departamento || "—", p.empresa || "—", p.impacto || "Baixo",
             p.precisaMaterial ? "Sim" : "Não", p.precisaMaterial ? (p.poMaterial || "—") : "—",
-            p.dataExecucao ? fmtDate(p.dataExecucao) : "—", p.linkedServiceId ? "Em execução" : "Mapeado",
+            p.dataExecucao ? fmtDate(p.dataExecucao) : "—", p.status || "A Executar",
           ])
         );
         pdfSave(doc, "relatorio-planejamento-mapeados");
@@ -3210,8 +3219,15 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
               </select>
             </div>
             <div className="g-field">
+              <label>Status</label>
+              <select value={mf.status} onChange={(e) => setMf((p) => ({ ...p, status: e.target.value }))}>
+                <option>Todos</option>
+                {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos" })}
+              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos", status: "Todos" })}
                 disabled={!hasActiveFilterMap} style={{ opacity: hasActiveFilterMap ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
@@ -3276,11 +3292,13 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                         <input type="date" value={p.dataExecucao || ""} onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
                           style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
                       </td>
-                      <td>
-                        {p.linkedServiceId ? (
-                          <span className="g-pill" style={{ background: "var(--panel-raised)" }}><span className="g-dot" style={{ background: "var(--ok)" }} />Em execução</span>
-                        ) : (
-                          <span className="g-pill" style={{ background: "var(--panel-raised)" }}><span className="g-dot" style={{ background: "var(--text-faint)" }} />Mapeado</span>
+                      <td style={{ minWidth: 140 }}>
+                        <select value={p.status || "A Executar"} onChange={(e) => updPlan(i, "status", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[p.status || "A Executar"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5, width: "100%" }}>
+                          {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        {p.linkedServiceId && (
+                          <div style={{ marginTop: 4, fontSize: 10, color: "var(--ok)" }}>🔗 Serviço criado</div>
                         )}
                       </td>
                       <td><span className="g-btn ghost danger" onClick={() => remPlan(i)}><Trash2 size={13} /></span></td>
