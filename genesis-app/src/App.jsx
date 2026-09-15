@@ -693,10 +693,25 @@ const EText = ({ value, onChange, mono, align }) => (
   <input className={`g-edit ${mono ? "mono" : ""}`} style={{ textAlign: align }} value={value}
     onChange={(e) => onChange(e.target.value)} />
 );
-const ETextArea = ({ value, onChange, rows = 2 }) => (
-  <textarea className="g-edit-wrap" rows={rows} value={value || ""}
-    onChange={(e) => onChange(e.target.value)} />
-);
+const ETextArea = ({ value, onChange, rows = 2 }) => {
+  const ref = useRef(null);
+  const autoSize = (el) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  };
+  React.useEffect(() => { autoSize(ref.current); }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="g-edit-wrap"
+      rows={rows}
+      value={value || ""}
+      onChange={(e) => { autoSize(e.target); onChange(e.target.value); }}
+      style={{ overflow: "hidden", resize: "none" }}
+    />
+  );
+};
 const ENum = ({ value, onChange }) => (
   <input type="number" className="g-edit num" value={value}
     onChange={(e) => onChange(Number(e.target.value))} />
