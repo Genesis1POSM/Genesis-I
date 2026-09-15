@@ -3234,7 +3234,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                   const i = planningItems.indexOf(p);
                   return (
                     <tr id={`row-${p.id}`} className={"g-row" + (newRowId === p.id ? " g-row-flash" : "")} key={p.id}>
-                      <td style={{ minWidth: 180, whiteSpace: "normal" }}><EText value={p.nome} onChange={(v) => updPlan(i, "nome", v)} /></td>
+                      <td style={{ minWidth: 180, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.nome} onChange={(v) => updPlan(i, "nome", v)} /></td>
                       <td style={{ minWidth: 120 }}><EText value={p.departamento} onChange={(v) => updPlan(i, "departamento", v)} /></td>
                       <td style={{ minWidth: 120 }}><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></td>
                       <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.descricaoProblema} onChange={(v) => updPlan(i, "descricaoProblema", v)} /></td>
