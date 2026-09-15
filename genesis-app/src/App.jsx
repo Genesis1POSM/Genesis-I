@@ -3831,6 +3831,10 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
 
   /* ---------- filtros: Due ---------- */
   const [duef, setDuef] = useState({ busca: "", department: "Todos", pri: "Todos", jobType: "Todos", situacao: "Todos" });
+  /* usado pelos gráficos da subaba Métricas: clicar numa barra já filtra e leva direto pra tabela
+     correspondente, em vez de só mostrar o número no gráfico */
+  const goToDueFiltered = (patch) => { setDuef((p) => ({ ...p, ...patch })); setTmSubTab("due"); };
+  const goToHistoryFiltered = (patch) => { setHistf((p) => ({ ...p, ...patch })); setTmSubTab("history"); };
   const dueDepartments = useMemo(() => [...new Set(tmDue.map((d) => d.department).filter(Boolean))].sort(), [tmDue]);
   const dueJobTypes = useMemo(() => [...new Set(tmDue.map((d) => d.jobType).filter(Boolean))].sort(), [tmDue]);
   const hasActiveFilterDue = duef.busca || duef.department !== "Todos" || duef.pri !== "Todos" || duef.jobType !== "Todos" || duef.situacao !== "Todos";
@@ -3850,42 +3854,79 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
   }, [tmDue, duef]);
 
   /* ---------- filtros: History ---------- */
-  const [histf, setHistf] = useState({ busca: "", jobType: "Todos", soPostergadas: false });
+  const [histf, setHistf] = useState({ busca: "", jobType: "Todos", department: "Todos", usuario: "Todos", soPostergadas: false });
   const histJobTypes = useMemo(() => [...new Set(tmHistory.map((h) => h.jobType).filter(Boolean))].sort(), [tmHistory]);
-  const hasActiveFilterHist = histf.busca || histf.jobType !== "Todos" || histf.soPostergadas;
+  const histDepartments = useMemo(() => [...new Set(tmHistory.map((h) => deptOfHistory(h)).filter(Boolean))].sort(), [tmHistory, codeToDept]);
+  const histUsuarios = useMemo(() => [...new Set(tmHistory.map((h) => h.doneByName).filter(Boolean))].sort(), [tmHistory]);
+  const hasActiveFilterHist = histf.busca || histf.jobType !== "Todos" || histf.department !== "Todos" || histf.usuario !== "Todos" || histf.soPostergadas;
   const filteredHistory = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return tmHistory.filter((h) => {
       const inBusca = !histf.busca || norm(h.jobName).includes(norm(histf.busca)) || norm(h.componentName).includes(norm(histf.busca)) || norm(h.doneByName).includes(norm(histf.busca));
       const inJobType = histf.jobType === "Todos" || h.jobType === histf.jobType;
+      const inDep = histf.department === "Todos" || deptOfHistory(h) === histf.department;
+      const inUsuario = histf.usuario === "Todos" || h.doneByName === histf.usuario;
       const inPost = !histf.soPostergadas || isPostergada(h);
-      return inBusca && inJobType && inPost;
+      return inBusca && inJobType && inDep && inUsuario && inPost;
     });
-  }, [tmHistory, histf]);
+  }, [tmHistory, histf, codeToDept]);
+
+  /* ---------- filtro de Mês/Ano específico da subaba Métricas — escopa todas as métricas abaixo
+     (Due pela data de vencimento, History pela data de fechamento) ---------- */
+  const [metricasFiltro, setMetricasFiltro] = useState({ mes: "Todos", ano: "Todos" });
+  const anosDisponiveis = useMemo(() => {
+    const anos = new Set();
+    tmDue.forEach((d) => { if (d.dueDate) anos.add(d.dueDate.slice(0, 4)); });
+    tmHistory.forEach((h) => { if (h.dateDone) anos.add(h.dateDone.slice(0, 4)); });
+    return [...anos].sort();
+  }, [tmDue, tmHistory]);
+  const hasActiveFiltroMetricas = metricasFiltro.mes !== "Todos" || metricasFiltro.ano !== "Todos";
+  const tmDueForMetrics = useMemo(() => {
+    if (!hasActiveFiltroMetricas) return tmDue;
+    return tmDue.filter((d) => {
+      if (!d.dueDate) return false; // sem data de vencimento não dá pra encaixar num mês/ano específico
+      const [y, m] = d.dueDate.split("-");
+      const inMes = metricasFiltro.mes === "Todos" || Number(m) === Number(metricasFiltro.mes);
+      const inAno = metricasFiltro.ano === "Todos" || y === metricasFiltro.ano;
+      return inMes && inAno;
+    });
+  }, [tmDue, metricasFiltro, hasActiveFiltroMetricas]);
+  const tmHistoryForMetrics = useMemo(() => {
+    if (!hasActiveFiltroMetricas) return tmHistory;
+    return tmHistory.filter((h) => {
+      if (!h.dateDone) return false;
+      const [y, m] = h.dateDone.split("-");
+      const inMes = metricasFiltro.mes === "Todos" || Number(m) === Number(metricasFiltro.mes);
+      const inAno = metricasFiltro.ano === "Todos" || y === metricasFiltro.ano;
+      return inMes && inAno;
+    });
+  }, [tmHistory, metricasFiltro, hasActiveFiltroMetricas]);
 
   /* ---------- métricas: Due ---------- */
-  const totalDue = tmDue.length;
-  const vencidas = tmDue.filter(isVencida);
-  const ateVencer40 = tmDue.filter(isAteVencer40);
-  const criticasVencidasOu40 = tmDue.filter((d) => isCritica(d) && isVencidaOuAte40(d));
-  const corretivasDue = tmDue.filter(isCorretiva);
+  const totalDue = tmDueForMetrics.length;
+  const vencidas = tmDueForMetrics.filter(isVencida);
+  const ateVencer40 = tmDueForMetrics.filter(isAteVencer40);
+  const criticasVencidasOu40 = tmDueForMetrics.filter((d) => isCritica(d) && isVencidaOuAte40(d));
+  const corretivasDue = tmDueForMetrics.filter(isCorretiva);
 
   const duePorMes = useMemo(() => {
     const map = {};
-    tmDue.forEach((d) => {
+    tmDueForMetrics.forEach((d) => {
       if (!d.dueDate) return;
       const key = d.dueDate.slice(0, 7);
       map[key] = (map[key] || 0) + 1;
     });
+    const totalComData = Object.values(map).reduce((s, v) => s + v, 0) || 1;
     return Object.keys(map).sort().map((k) => {
       const [y, m] = k.split("-");
-      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, count: map[k] };
+      const count = map[k];
+      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, mesKey: k, count, pct: Math.round((count / totalComData) * 100) };
     });
-  }, [tmDue]);
+  }, [tmDueForMetrics]);
 
   const urgenciaBuckets = useMemo(() => {
     const buckets = { "Vencida": 0, "0-10 dias": 0, "11-20 dias": 0, "21-30 dias": 0, "31-40 dias": 0 };
-    tmDue.forEach((d) => {
+    tmDueForMetrics.forEach((d) => {
       if (isVencida(d)) buckets["Vencida"]++;
       else if (d.diffUnit === "D" && d.diffValue !== null) {
         if (d.diffValue <= 10) buckets["0-10 dias"]++;
@@ -3896,72 +3937,74 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
     });
     const total = Object.values(buckets).reduce((s, v) => s + v, 0) || 1;
     return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count, pct: Math.round((count / total) * 100) }));
-  }, [tmDue]);
+  }, [tmDueForMetrics]);
 
   const duePorDepartamento = useMemo(() => {
     const map = {};
-    tmDue.forEach((d) => { map[d.department] = (map[d.department] || 0) + 1; });
+    tmDueForMetrics.forEach((d) => { map[d.department] = (map[d.department] || 0) + 1; });
     return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
-  }, [tmDue]);
+  }, [tmDueForMetrics]);
 
   const duePorComponente = useMemo(() => {
     const map = {};
-    tmDue.forEach((d) => { const k = d.component || "—"; map[k] = (map[k] || 0) + 1; });
+    tmDueForMetrics.forEach((d) => { const k = d.component || "—"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([componente, count]) => ({ componente, count })).sort((a, b) => b.count - a.count).slice(0, 15);
-  }, [tmDue]);
+  }, [tmDueForMetrics]);
 
   const vencidasPorJobType = useMemo(() => {
     const map = {};
     vencidas.forEach((d) => { const k = d.jobType || "—"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count).slice(0, 12);
-  }, [tmDue]);
+  }, [tmDueForMetrics]);
 
   const aVencerPorJobType = useMemo(() => {
     const map = {};
     ateVencer40.forEach((d) => { const k = d.jobType || "—"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count).slice(0, 12);
-  }, [tmDue]);
+  }, [tmDueForMetrics]);
 
   /* ---------- métricas: History ---------- */
-  const totalHistory = tmHistory.length;
-  const corretivasFechadas = tmHistory.filter(isCorretiva);
-  const postergadas = tmHistory.filter(isPostergada);
+  const totalHistory = tmHistoryForMetrics.length;
+  const corretivasFechadas = tmHistoryForMetrics.filter(isCorretiva);
+  const postergadas = tmHistoryForMetrics.filter(isPostergada);
 
   const historyPorMes = useMemo(() => {
     const map = {};
-    tmHistory.forEach((h) => {
+    tmHistoryForMetrics.forEach((h) => {
       if (!h.dateDone) return;
       const key = h.dateDone.slice(0, 7);
       map[key] = (map[key] || 0) + 1;
     });
+    const totalComData = Object.values(map).reduce((s, v) => s + v, 0) || 1;
     return Object.keys(map).sort().map((k) => {
       const [y, m] = k.split("-");
-      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, count: map[k] };
+      const count = map[k];
+      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, mesKey: k, count, pct: Math.round((count / totalComData) * 100) };
     });
-  }, [tmHistory]);
+  }, [tmHistoryForMetrics]);
 
   const historyPorDepartamento = useMemo(() => {
     const map = {};
-    tmHistory.forEach((h) => { const k = deptOfHistory(h); map[k] = (map[k] || 0) + 1; });
+    tmHistoryForMetrics.forEach((h) => { const k = deptOfHistory(h); map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
-  }, [tmHistory, codeToDept]);
+  }, [tmHistoryForMetrics, codeToDept]);
 
   const historyPorComponente = useMemo(() => {
     const map = {};
-    tmHistory.forEach((h) => { const k = h.componentName || "—"; map[k] = (map[k] || 0) + 1; });
+    tmHistoryForMetrics.forEach((h) => { const k = h.componentName || "—"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([componente, count]) => ({ componente, count })).sort((a, b) => b.count - a.count).slice(0, 15);
-  }, [tmHistory]);
+  }, [tmHistoryForMetrics]);
 
   const historyPorUsuario = useMemo(() => {
     const map = {};
-    tmHistory.forEach((h) => { const k = h.doneByName || "Não informado"; map[k] = (map[k] || 0) + 1; });
+    tmHistoryForMetrics.forEach((h) => { const k = h.doneByName || "Não informado"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([usuario, count]) => ({ usuario, count })).sort((a, b) => b.count - a.count).slice(0, 15);
-  }, [tmHistory]);
+  }, [tmHistoryForMetrics]);
 
   /* métrica extra: prazo médio de execução — compara Due date × Date signed. Positivo = feito
      antes do prazo; negativo = feito depois do prazo (atraso real na execução) */
   const prazoStats = useMemo(() => {
-    const diffs = tmHistory
+    const diffs = tmHistoryForMetrics
       .filter((h) => h.dueDate && h.dateSigned)
       .map((h) => Math.round((new Date(h.dueDate) - new Date(h.dateSigned)) / 86400000));
     if (diffs.length === 0) return { media: 0, noPrazo: 0, atrasado: 0, total: 0 };
@@ -3969,7 +4012,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
     const noPrazo = diffs.filter((v) => v >= 0).length;
     const atrasado = diffs.filter((v) => v < 0).length;
     return { media, noPrazo, atrasado, total: diffs.length };
-  }, [tmHistory]);
+  }, [tmHistoryForMetrics]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -4091,8 +4134,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
             <table className="g-table">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 220 }}>Job Name</th>
                   <th style={{ minWidth: 160 }}>Component</th>
+                  <th style={{ minWidth: 220 }}>Job Name</th>
                   <th style={{ minWidth: 90 }}>Job Type</th>
                   <th style={{ minWidth: 110 }}>Department</th>
                   <th style={{ minWidth: 80 }}>Pri</th>
@@ -4104,8 +4147,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
               <tbody>
                 {filteredDue.slice(0, 500).map((d) => (
                   <tr className="g-row" key={d.id} style={isVencida(d) ? { background: "rgba(224,72,62,0.06)" } : isAteVencer40(d) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
-                    <td style={{ minWidth: 220, whiteSpace: "normal" }}>{d.jobName}</td>
                     <td style={{ minWidth: 160, whiteSpace: "normal" }}>{d.component}</td>
+                    <td style={{ minWidth: 220, whiteSpace: "normal" }}>{d.jobName}</td>
                     <td>{d.jobType}</td>
                     <td style={{ minWidth: 110 }}>{d.department}</td>
                     <td style={{ color: d.pri === "High" ? "var(--crit)" : d.pri === "Medium" ? "var(--warn)" : "var(--text-dim)", fontWeight: 600 }}>{d.pri}</td>
@@ -4152,6 +4195,20 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
               </select>
             </div>
             <div className="g-field">
+              <label>Departamento</label>
+              <select value={histf.department} onChange={(e) => setHistf((p) => ({ ...p, department: e.target.value }))}>
+                <option>Todos</option>
+                {histDepartments.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Usuário</label>
+              <select value={histf.usuario} onChange={(e) => setHistf((p) => ({ ...p, usuario: e.target.value }))}>
+                <option>Todos</option>
+                {histUsuarios.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
               <label>&nbsp;</label>
               <label className="g-flex" style={{ gap: 6, fontSize: 12, cursor: "pointer", padding: "9px 0" }}>
                 <input type="checkbox" checked={histf.soPostergadas} onChange={(e) => setHistf((p) => ({ ...p, soPostergadas: e.target.checked }))} />
@@ -4160,7 +4217,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
             </div>
             <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setHistf({ busca: "", jobType: "Todos", soPostergadas: false })}
+              <button className="g-btn" onClick={() => setHistf({ busca: "", jobType: "Todos", department: "Todos", usuario: "Todos", soPostergadas: false })}
                 disabled={!hasActiveFilterHist} style={{ opacity: hasActiveFilterHist ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
@@ -4180,8 +4237,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
             <table className="g-table">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 200 }}>Job Name</th>
                   <th style={{ minWidth: 160 }}>Component</th>
+                  <th style={{ minWidth: 200 }}>Job Name</th>
                   <th style={{ minWidth: 90 }}>Job Type</th>
                   <th style={{ minWidth: 100 }}>Date Done</th>
                   <th style={{ minWidth: 130 }}>Done By</th>
@@ -4192,8 +4249,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
               <tbody>
                 {filteredHistory.slice(0, 500).map((h) => (
                   <tr className="g-row" key={h.jobHistoryNumber} style={isPostergada(h) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
-                    <td style={{ minWidth: 200, whiteSpace: "normal" }}>{h.jobName}</td>
                     <td style={{ minWidth: 160, whiteSpace: "normal" }}>{h.componentName}</td>
+                    <td style={{ minWidth: 200, whiteSpace: "normal" }}>{h.jobName}</td>
                     <td>{h.jobType}</td>
                     <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(h.dateDone)}</td>
                     <td>{h.doneByName || "—"}</td>
@@ -4212,6 +4269,36 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
 
       {tmSubTab === "metricas" && (
         <>
+          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+            <div className="g-field">
+              <label>Mês</label>
+              <select value={metricasFiltro.mes} onChange={(e) => setMetricasFiltro((p) => ({ ...p, mes: e.target.value }))}>
+                <option value="Todos">Todos</option>
+                {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Ano</label>
+              <select value={metricasFiltro.ano} onChange={(e) => setMetricasFiltro((p) => ({ ...p, ano: e.target.value }))}>
+                <option value="Todos">Todos</option>
+                {anosDisponiveis.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <button className="g-btn" onClick={() => setMetricasFiltro({ mes: "Todos", ano: "Todos" })}
+                disabled={!hasActiveFiltroMetricas} style={{ opacity: hasActiveFiltroMetricas ? 1 : 0.5 }}>
+                <X size={13} />Ver todos os meses
+              </button>
+            </div>
+            <div className="g-filter-spacer" />
+            <div className="g-filter-summary">
+              {hasActiveFiltroMetricas
+                ? "Escopo: Due pela data de vencimento · History pela data de fechamento. Itens sem data de calendário (baseados em horas de máquina) ficam de fora quando um mês/ano é selecionado."
+                : "Mostrando todos os períodos. Selecione um mês e/ou ano pra focar as métricas nele."}
+            </div>
+          </div>
+
           {tmDueSnapshots.length > 1 && (
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">Tendência do backlog — evolução semana a semana</span></div>
@@ -4247,17 +4334,20 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
           <div className="g-grid-2">
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">Aderência por mês — itens a vencer</span></div>
-              <div style={{ width: "100%", height: 220 }}>
+              <div style={{ width: "100%", height: 240 }}>
                 <ResponsiveContainer>
-                  <BarChart data={duePorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <BarChart data={duePorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v, n, p) => [`${v} (${p.payload.pct}%)`, "Itens"]} />
+                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]} fill="var(--accent)">
+                      <LabelList dataKey="count" position="top" formatter={(v, entry) => `${v}`} style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>% indica a fatia de cada mês sobre o total de itens com data de vencimento definida.</div>
             </div>
 
             <div className="g-panel">
@@ -4269,13 +4359,15 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
                     <XAxis dataKey="bucket" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-15} textAnchor="end" height={45} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v, n, p) => [`${v} (${p.payload.pct}%)`, "Itens"]} />
-                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]}>
+                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]} cursor="pointer"
+                      onClick={(data) => goToDueFiltered({ situacao: data.bucket === "Vencida" ? "Vencida" : "Até 40 dias" })}>
                       <LabelList dataKey="pct" position="top" formatter={(v) => `${v}%`} style={{ fill: "var(--text-dim)", fontSize: 10 }} />
                       <Cell fill="var(--crit)" /><Cell fill="var(--warn)" /><Cell fill="var(--warn)" /><Cell fill="var(--teal)" /><Cell fill="var(--teal)" />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>Clique numa barra pra ver os itens correspondentes na tabela Due.</div>
             </div>
           </div>
 
@@ -4284,15 +4376,18 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
               <div className="g-panel-head"><span className="g-panel-title">Por departamento</span></div>
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
-                  <BarChart data={duePorDepartamento} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                  <BarChart data={duePorDepartamento} layout="vertical" margin={{ left: 0, right: 24, top: 4, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis type="category" dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                    <Bar dataKey="count" name="Itens" radius={[0, 3, 3, 0]} fill="var(--teal)" />
+                    <Bar dataKey="count" name="Itens" radius={[0, 3, 3, 0]} fill="var(--teal)" cursor="pointer" onClick={(data) => goToDueFiltered({ department: data.departamento })}>
+                      <LabelList dataKey="count" position="right" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>Clique numa barra pra ver os itens desse departamento.</div>
             </div>
 
             <div className="g-panel">
@@ -4313,32 +4408,40 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
           <div className="g-grid-2">
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">Vencidas por Job Type</span></div>
-              <div style={{ width: "100%", height: 220 }}>
+              <div style={{ width: "100%", height: 240 }}>
                 <ResponsiveContainer>
-                  <BarChart data={vencidasPorJobType} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <BarChart data={vencidasPorJobType} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="tipo" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                    <Bar dataKey="count" name="Vencidas" radius={[3, 3, 0, 0]} fill="var(--crit)" />
+                    <Bar dataKey="count" name="Vencidas" radius={[3, 3, 0, 0]} fill="var(--crit)" cursor="pointer"
+                      onClick={(data) => goToDueFiltered({ jobType: data.tipo, situacao: "Vencida" })}>
+                      <LabelList dataKey="count" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>Clique numa barra pra filtrar a tabela Due.</div>
             </div>
 
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">A vencer (até 40 dias) por Job Type</span></div>
-              <div style={{ width: "100%", height: 220 }}>
+              <div style={{ width: "100%", height: 240 }}>
                 <ResponsiveContainer>
-                  <BarChart data={aVencerPorJobType} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <BarChart data={aVencerPorJobType} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                     <XAxis dataKey="tipo" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                     <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                    <Bar dataKey="count" name="A vencer" radius={[3, 3, 0, 0]} fill="var(--warn)" />
+                    <Bar dataKey="count" name="A vencer" radius={[3, 3, 0, 0]} fill="var(--warn)" cursor="pointer"
+                      onClick={(data) => goToDueFiltered({ jobType: data.tipo, situacao: "Até 40 dias" })}>
+                      <LabelList dataKey="count" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>Clique numa barra pra filtrar a tabela Due.</div>
             </div>
           </div>
 
@@ -4352,17 +4455,20 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Aderência — jobs fechados por mês</span></div>
-            <div style={{ width: "100%", height: 220 }}>
+            <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer>
-                <BarChart data={historyPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                <BarChart data={historyPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                   <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                   <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                  <Bar dataKey="count" name="Fechados" radius={[3, 3, 0, 0]} fill="var(--ok)" />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v, n, p) => [`${v} (${p.payload.pct}%)`, "Fechados"]} />
+                  <Bar dataKey="count" name="Fechados" radius={[3, 3, 0, 0]} fill="var(--ok)">
+                    <LabelList dataKey="count" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>% indica a fatia de cada mês sobre o total fechado no ano.</div>
           </div>
 
           <div className="g-grid-2">
@@ -4370,16 +4476,18 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
               <div className="g-panel-head"><span className="g-panel-title">Fechados por departamento</span></div>
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
-                  <BarChart data={historyPorDepartamento} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                  <BarChart data={historyPorDepartamento} layout="vertical" margin={{ left: 0, right: 24, top: 4, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                     <YAxis type="category" dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={100} />
                     <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                    <Bar dataKey="count" name="Fechados" radius={[0, 3, 3, 0]} fill="var(--accent)" />
+                    <Bar dataKey="count" name="Fechados" radius={[0, 3, 3, 0]} fill="var(--accent)" cursor="pointer" onClick={(data) => goToHistoryFiltered({ department: data.departamento })}>
+                      <LabelList dataKey="count" position="right" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6 }}>Departamento identificado cruzando o código do componente com a planilha Due — itens sem correspondência aparecem como "Não identificado".</div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6 }}>Departamento identificado cruzando o código do componente com a planilha Due — itens sem correspondência aparecem como "Não identificado". Clique numa barra pra filtrar a tabela.</div>
             </div>
 
             <div className="g-panel">
@@ -4401,15 +4509,18 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
             <div className="g-panel-head"><span className="g-panel-title">Top 15 usuários com mais jobs fechados</span></div>
             <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer>
-                <BarChart data={historyPorUsuario} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                <BarChart data={historyPorUsuario} layout="vertical" margin={{ left: 0, right: 24, top: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
                   <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                   <YAxis type="category" dataKey="usuario" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={120} />
                   <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                  <Bar dataKey="count" name="Jobs fechados" radius={[0, 3, 3, 0]} fill="var(--teal)" />
+                  <Bar dataKey="count" name="Jobs fechados" radius={[0, 3, 3, 0]} fill="var(--teal)" cursor="pointer" onClick={(data) => goToHistoryFiltered({ usuario: data.usuario })}>
+                    <LabelList dataKey="count" position="right" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6 }}>Clique numa barra pra filtrar a tabela por esse usuário.</div>
           </div>
 
           <div className="g-panel">
