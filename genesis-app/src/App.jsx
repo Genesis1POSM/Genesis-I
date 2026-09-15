@@ -1191,6 +1191,14 @@ const INITIAL_EXCHANGE_RATE = 5.30;
 const INITIAL_PLANNING_ITEMS = [];
 /* Docagem — itens de Machinery Items da DNV que precisam ser vistoriados/feitos durante a docagem */
 const INITIAL_DOCAGEM_ITEMS = [];
+/* TM Master — importado semanalmente do sistema de manutenção. "Due" é sempre substituído por
+   completo a cada importação (é uma fotografia do que está em aberto agora); "History" é mesclado
+   por "Job History Number" (é um histórico cumulativo desde o início do ano) */
+const INITIAL_TM_DUE = [];
+const INITIAL_TM_HISTORY = [];
+/* histórico de "fotografias" do tamanho do backlog Due a cada importação semanal — permite ver a
+   tendência (o backlog está crescendo ou diminuindo semana a semana) */
+const INITIAL_TM_DUE_SNAPSHOTS = [];
 
 export default function Root() {
   const [loaded, setLoaded] = useState(false);
@@ -1208,6 +1216,9 @@ export default function Root() {
   const [exchangeRate, setExchangeRate] = useState(INITIAL_EXCHANGE_RATE);
   const [planningItems, setPlanningItems] = useState(INITIAL_PLANNING_ITEMS);
   const [docagemItems, setDocagemItems] = useState(INITIAL_DOCAGEM_ITEMS);
+  const [tmDue, setTmDue] = useState(INITIAL_TM_DUE);
+  const [tmHistory, setTmHistory] = useState(INITIAL_TM_HISTORY);
+  const [tmDueSnapshots, setTmDueSnapshots] = useState(INITIAL_TM_DUE_SNAPSHOTS);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar */
   React.useEffect(() => {
@@ -1226,6 +1237,9 @@ export default function Root() {
           if (typeof d.exchangeRate === "number") setExchangeRate(d.exchangeRate);
           if (d.planningItems) setPlanningItems(d.planningItems);
           if (d.docagemItems) setDocagemItems(d.docagemItems);
+          if (d.tmDue) setTmDue(d.tmDue);
+          if (d.tmHistory) setTmHistory(d.tmHistory);
+          if (d.tmDueSnapshots) setTmDueSnapshots(d.tmDueSnapshots);
         }
         setLoaded(true);
       })
@@ -1242,12 +1256,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems]);
+  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
 
   if (!loaded) {
     return (
@@ -1273,6 +1287,8 @@ export default function Root() {
       exchangeRate={exchangeRate} setExchangeRate={setExchangeRate}
       planningItems={planningItems} setPlanningItems={setPlanningItems}
       docagemItems={docagemItems} setDocagemItems={setDocagemItems}
+      tmDue={tmDue} setTmDue={setTmDue} tmHistory={tmHistory} setTmHistory={setTmHistory}
+      tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={setTmDueSnapshots}
       loadError={loadError}
     />
   );
@@ -1285,7 +1301,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
-  planningItems, setPlanningItems, docagemItems, setDocagemItems, loadError }) {
+  planningItems, setPlanningItems, docagemItems, setDocagemItems,
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, loadError }) {
   const [tab, setTab] = useState("dashboard");
   const [newRowId, setNewRowId] = useState(null);
   /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
@@ -1330,6 +1347,138 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const updInv = upd(setServiceInvoices), remInv = rem(setServiceInvoices);
   const updPlan = upd(setPlanningItems), remPlan = rem(setPlanningItems);
   const updDocagem = upd(setDocagemItems), remDocagem = rem(setDocagemItems);
+  const updTmDue = upd(setTmDue), remTmDue = rem(setTmDue);
+  const updTmHistory = upd(setTmHistory), remTmHistory = rem(setTmHistory);
+
+
+  /* ---------- TM Master: parsing helpers ---------- */
+  const parseTmDiff = (diff) => {
+    const s = (diff || "").toString().trim();
+    const m = s.match(/^(-?\d+(?:\.\d+)?)\s*([DH])$/i);
+    if (!m) return { value: null, unit: null };
+    return { value: parseFloat(m[1]), unit: m[2].toUpperCase() };
+  };
+  const parseTmDate = (v) => {
+    if (!v) return "";
+    if (v instanceof Date) return `${v.getFullYear()}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}`;
+    const s = v.toString().trim();
+    const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return ""; // valores baseados em horas de máquina (ex.: "43000H") não são uma data de calendário
+  };
+
+  /* "Due" é uma fotografia do que está em aberto agora — cada importação SUBSTITUI a lista inteira,
+     senão itens já resolvidos ficariam presos pra sempre */
+  const handleImportTmDue = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const rows = json.map((row) => {
+          const diffRaw = row["Diff"];
+          const { value: diffValue, unit: diffUnit } = parseTmDiff(diffRaw);
+          const dueRaw = row["Due"];
+          return {
+            id: uid("TMD"),
+            code: (row["Code"] || "").toString(),
+            component: (row["Component"] || "").toString(),
+            jobType: (row["Job type"] || "").toString().trim(),
+            jobNo: row["Job no"],
+            status: (row["Status"] || "").toString(),
+            jobName: (row["Job name"] || "").toString(),
+            interval: (row["Int"] || "").toString(),
+            hours: row["Hours"],
+            dueRaw: dueRaw ? dueRaw.toString() : "",
+            dueDate: parseTmDate(dueRaw),
+            diffRaw: diffRaw ? diffRaw.toString() : "",
+            diffValue, diffUnit,
+            pri: (row["Pri"] || "").toString().trim() || "Não definida",
+            department: (row["Department"] || "").toString().trim() || "Não definido",
+            estimatedDue: parseTmDate(row["EstimatedDue"]),
+            lastDoneDate: parseTmDate(row["LastDoneDate"]),
+            lastDoneHours: row["LastDoneHours"],
+          };
+        }).filter((r) => r.code || r.jobName);
+        setTmDue(rows);
+        const vencidasCount = rows.filter((r) => r.diffValue !== null && r.diffValue < 0).length;
+        const ateVencer40Count = rows.filter((r) => r.diffUnit === "D" && r.diffValue !== null && r.diffValue >= 0 && r.diffValue <= 40).length;
+        setTmDueSnapshots((prev) => {
+          const today = todayISO();
+          /* uma fotografia por dia — se importar mais de uma vez no mesmo dia, atualiza a mesma entrada
+             em vez de acumular várias fotografias do mesmo dia */
+          const withoutToday = prev.filter((s) => s.date !== today);
+          return [...withoutToday, { date: today, total: rows.length, vencidas: vencidasCount, ateVencer40: ateVencer40Count }].sort((a, b) => a.date.localeCompare(b.date));
+        });
+        setImportMsg(`TM Master - Due importado: ${rows.length} itens (lista substituída pela mais recente).`);
+      } catch (err) {
+        setImportMsg("Erro ao ler a planilha TM Master - Due. Confira se as colunas seguem o padrão esperado.");
+      }
+      setTimeout(() => setImportMsg(null), 6000);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  /* "History" é cumulativo desde o início do ano — mescla por "Job History Number" (chave única de
+     cada job concluído), então reimportar a planilha atualizada só adiciona o que é novo */
+  const handleImportTmHistory = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const parsedRows = json.map((row) => ({
+          jobHistoryNumber: (row["Job History Number"] || "").toString().trim(),
+          componentCode: (row["ComponentCode"] || "").toString(),
+          componentName: (row["ComponentName"] || "").toString(),
+          dateDone: parseTmDate(row["DateDone"]),
+          jobType: (row["JobType"] || "").toString().trim(),
+          jobNo: row["JobNo"],
+          jobName: (row["JobName"] || "").toString(),
+          doneByName: (row["DoneByName"] || "").toString(),
+          serviceReport: (row["ServiceReport"] || "").toString(),
+          remarks: (row["Remarks"] || "").toString(),
+          reason: (row["Reason"] || "").toString(),
+          jobPriority: (row["JobPriority"] || "").toString(),
+          dateSigned: parseTmDate(row["Date signed"]),
+          hoursDone: row["Hours done"],
+          dueHours: row["Due hours"],
+          dueDate: parseTmDate(row["Due date"]),
+          interval: (row["Interval"] || "").toString(),
+          signedBy: (row["Signed by"] || "").toString(),
+        })).filter((r) => r.jobHistoryNumber);
+
+        setTmHistory((prev) => {
+          const byKey = new Map(prev.map((h, idx) => [h.jobHistoryNumber, idx]));
+          const next = [...prev];
+          let added = 0, updated = 0;
+          parsedRows.forEach((row) => {
+            if (byKey.has(row.jobHistoryNumber)) {
+              const idx = byKey.get(row.jobHistoryNumber);
+              next[idx] = { ...next[idx], ...row };
+              updated++;
+            } else {
+              next.push(row);
+              added++;
+            }
+          });
+          setImportMsg(`TM Master - History importado: ${added} novo(s), ${updated} atualizado(s).`);
+          return next;
+        });
+      } catch (err) {
+        setImportMsg("Erro ao ler a planilha TM Master - History. Confira se as colunas seguem o padrão esperado.");
+      }
+      setTimeout(() => setImportMsg(null), 6000);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
   const addDocagemItem = () => {
     const id = uid("DOC");
     setDocagemItems((r) => [...r, {
@@ -2035,6 +2184,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     { key: "gantt", label: "Port Call", icon: Ship },
     { key: "services", label: "Serviços", icon: Wrench },
     { key: "planejamento", label: "Planejamento", icon: ClipboardList },
+    { key: "tmmaster", label: "TM Master", icon: Clock },
     { key: "materials", label: "Materiais", icon: Package },
     { key: "payments", label: "Pagamentos", icon: Wallet },
     { key: "costs", label: "Custos", icon: Calculator },
@@ -2179,6 +2329,11 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
             handleImportDocagem={handleImportDocagem}
             newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
+        )}
+
+        {tab === "tmmaster" && (
+          <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn}
+            handleImportTmDue={handleImportTmDue} handleImportTmHistory={handleImportTmHistory} />
         )}
 
         {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
@@ -3642,6 +3797,631 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                 </div>
               </div>
             ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ============================================================
+   TM MASTER — importação semanal do sistema de manutenção: "Due" (tudo em aberto,
+   vencido ou a vencer) e "History" (tudo que já foi fechado desde o início do ano)
+   ============================================================ */
+function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImportTmDue, handleImportTmHistory }) {
+  const [tmSubTab, setTmSubTab] = useState("due"); // "due" | "history" | "metricas"
+  const dueFileRef = useRef(null);
+  const historyFileRef = useRef(null);
+
+  const isVencida = (r) => r.diffValue !== null && r.diffValue < 0;
+  const isAteVencer40 = (r) => r.diffUnit === "D" && r.diffValue !== null && r.diffValue >= 0 && r.diffValue <= 40;
+  const isVencidaOuAte40 = (r) => isVencida(r) || isAteVencer40(r);
+  const isCritica = (r) => r.pri === "High";
+  const isCorretiva = (r) => (r.jobType || "").toUpperCase() === "ONE";
+  const isPostergada = (h) => (h.remarks || "").toLowerCase().includes("postpon");
+
+  /* mapa Código → Departamento, construído a partir do Due, usado pra descobrir o departamento
+     de itens do History (que não tem essa coluna) cruzando pelo código do componente */
+  const codeToDept = useMemo(() => {
+    const map = new Map();
+    tmDue.forEach((d) => { if (d.code && d.department) map.set(d.code, d.department); });
+    return map;
+  }, [tmDue]);
+  const deptOfHistory = (h) => codeToDept.get(h.componentCode) || "Não identificado";
+
+  /* ---------- filtros: Due ---------- */
+  const [duef, setDuef] = useState({ busca: "", department: "Todos", pri: "Todos", jobType: "Todos", situacao: "Todos" });
+  const dueDepartments = useMemo(() => [...new Set(tmDue.map((d) => d.department).filter(Boolean))].sort(), [tmDue]);
+  const dueJobTypes = useMemo(() => [...new Set(tmDue.map((d) => d.jobType).filter(Boolean))].sort(), [tmDue]);
+  const hasActiveFilterDue = duef.busca || duef.department !== "Todos" || duef.pri !== "Todos" || duef.jobType !== "Todos" || duef.situacao !== "Todos";
+  const filteredDue = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return tmDue.filter((d) => {
+      const inBusca = !duef.busca || norm(d.jobName).includes(norm(duef.busca)) || norm(d.component).includes(norm(duef.busca)) || norm(d.code).includes(norm(duef.busca));
+      const inDep = duef.department === "Todos" || d.department === duef.department;
+      const inPri = duef.pri === "Todos" || d.pri === duef.pri;
+      const inJobType = duef.jobType === "Todos" || d.jobType === duef.jobType;
+      const inSituacao = duef.situacao === "Todos"
+        || (duef.situacao === "Vencida" && isVencida(d))
+        || (duef.situacao === "Até 40 dias" && isAteVencer40(d))
+        || (duef.situacao === "Normal" && !isVencidaOuAte40(d));
+      return inBusca && inDep && inPri && inJobType && inSituacao;
+    });
+  }, [tmDue, duef]);
+
+  /* ---------- filtros: History ---------- */
+  const [histf, setHistf] = useState({ busca: "", jobType: "Todos", soPostergadas: false });
+  const histJobTypes = useMemo(() => [...new Set(tmHistory.map((h) => h.jobType).filter(Boolean))].sort(), [tmHistory]);
+  const hasActiveFilterHist = histf.busca || histf.jobType !== "Todos" || histf.soPostergadas;
+  const filteredHistory = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return tmHistory.filter((h) => {
+      const inBusca = !histf.busca || norm(h.jobName).includes(norm(histf.busca)) || norm(h.componentName).includes(norm(histf.busca)) || norm(h.doneByName).includes(norm(histf.busca));
+      const inJobType = histf.jobType === "Todos" || h.jobType === histf.jobType;
+      const inPost = !histf.soPostergadas || isPostergada(h);
+      return inBusca && inJobType && inPost;
+    });
+  }, [tmHistory, histf]);
+
+  /* ---------- métricas: Due ---------- */
+  const totalDue = tmDue.length;
+  const vencidas = tmDue.filter(isVencida);
+  const ateVencer40 = tmDue.filter(isAteVencer40);
+  const criticasVencidasOu40 = tmDue.filter((d) => isCritica(d) && isVencidaOuAte40(d));
+  const corretivasDue = tmDue.filter(isCorretiva);
+
+  const duePorMes = useMemo(() => {
+    const map = {};
+    tmDue.forEach((d) => {
+      if (!d.dueDate) return;
+      const key = d.dueDate.slice(0, 7);
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.keys(map).sort().map((k) => {
+      const [y, m] = k.split("-");
+      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, count: map[k] };
+    });
+  }, [tmDue]);
+
+  const urgenciaBuckets = useMemo(() => {
+    const buckets = { "Vencida": 0, "0-10 dias": 0, "11-20 dias": 0, "21-30 dias": 0, "31-40 dias": 0 };
+    tmDue.forEach((d) => {
+      if (isVencida(d)) buckets["Vencida"]++;
+      else if (d.diffUnit === "D" && d.diffValue !== null) {
+        if (d.diffValue <= 10) buckets["0-10 dias"]++;
+        else if (d.diffValue <= 20) buckets["11-20 dias"]++;
+        else if (d.diffValue <= 30) buckets["21-30 dias"]++;
+        else if (d.diffValue <= 40) buckets["31-40 dias"]++;
+      }
+    });
+    const total = Object.values(buckets).reduce((s, v) => s + v, 0) || 1;
+    return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count, pct: Math.round((count / total) * 100) }));
+  }, [tmDue]);
+
+  const duePorDepartamento = useMemo(() => {
+    const map = {};
+    tmDue.forEach((d) => { map[d.department] = (map[d.department] || 0) + 1; });
+    return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
+  }, [tmDue]);
+
+  const duePorComponente = useMemo(() => {
+    const map = {};
+    tmDue.forEach((d) => { const k = d.component || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([componente, count]) => ({ componente, count })).sort((a, b) => b.count - a.count).slice(0, 15);
+  }, [tmDue]);
+
+  const vencidasPorJobType = useMemo(() => {
+    const map = {};
+    vencidas.forEach((d) => { const k = d.jobType || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count).slice(0, 12);
+  }, [tmDue]);
+
+  const aVencerPorJobType = useMemo(() => {
+    const map = {};
+    ateVencer40.forEach((d) => { const k = d.jobType || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count).slice(0, 12);
+  }, [tmDue]);
+
+  /* ---------- métricas: History ---------- */
+  const totalHistory = tmHistory.length;
+  const corretivasFechadas = tmHistory.filter(isCorretiva);
+  const postergadas = tmHistory.filter(isPostergada);
+
+  const historyPorMes = useMemo(() => {
+    const map = {};
+    tmHistory.forEach((h) => {
+      if (!h.dateDone) return;
+      const key = h.dateDone.slice(0, 7);
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.keys(map).sort().map((k) => {
+      const [y, m] = k.split("-");
+      return { mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}`, count: map[k] };
+    });
+  }, [tmHistory]);
+
+  const historyPorDepartamento = useMemo(() => {
+    const map = {};
+    tmHistory.forEach((h) => { const k = deptOfHistory(h); map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
+  }, [tmHistory, codeToDept]);
+
+  const historyPorComponente = useMemo(() => {
+    const map = {};
+    tmHistory.forEach((h) => { const k = h.componentName || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([componente, count]) => ({ componente, count })).sort((a, b) => b.count - a.count).slice(0, 15);
+  }, [tmHistory]);
+
+  const historyPorUsuario = useMemo(() => {
+    const map = {};
+    tmHistory.forEach((h) => { const k = h.doneByName || "Não informado"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([usuario, count]) => ({ usuario, count })).sort((a, b) => b.count - a.count).slice(0, 15);
+  }, [tmHistory]);
+
+  /* métrica extra: prazo médio de execução — compara Due date × Date signed. Positivo = feito
+     antes do prazo; negativo = feito depois do prazo (atraso real na execução) */
+  const prazoStats = useMemo(() => {
+    const diffs = tmHistory
+      .filter((h) => h.dueDate && h.dateSigned)
+      .map((h) => Math.round((new Date(h.dueDate) - new Date(h.dateSigned)) / 86400000));
+    if (diffs.length === 0) return { media: 0, noPrazo: 0, atrasado: 0, total: 0 };
+    const media = Math.round(diffs.reduce((s, v) => s + v, 0) / diffs.length);
+    const noPrazo = diffs.filter((v) => v >= 0).length;
+    const atrasado = diffs.filter((v) => v < 0).length;
+    return { media, noPrazo, atrasado, total: diffs.length };
+  }, [tmHistory]);
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      if (tmSubTab === "due" || tmSubTab === "metricas") {
+        let y = pdfHeader(doc, "TM Master — Due (em aberto)",
+          `${filteredDue.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Total em Aberto", value: totalDue },
+          { label: "Vencidas", value: vencidas.length },
+          { label: "A Vencer em 40 dias", value: ateVencer40.length },
+          { label: "Críticas Vencidas/≤40d", value: criticasVencidasOu40.length },
+          { label: "Corretivas (ONE)", value: corretivasDue.length },
+        ]);
+        y = pdfSectionTitle(doc, y, "Por departamento");
+        y = pdfTable(doc, y, ["Departamento", "Quantidade"], duePorDepartamento.map((d) => [d.departamento, d.count]));
+        y = pdfSectionTitle(doc, y, "Vencidas por tipo de serviço");
+        y = pdfTable(doc, y, ["Tipo", "Quantidade"], vencidasPorJobType.map((d) => [d.tipo, d.count]));
+        y = pdfSectionTitle(doc, y, "A vencer (até 40 dias) por tipo de serviço");
+        y = pdfTable(doc, y, ["Tipo", "Quantidade"], aVencerPorJobType.map((d) => [d.tipo, d.count]));
+        pdfSave(doc, "relatorio-tm-master-due");
+      }
+      if (tmSubTab === "history") {
+        let y = pdfHeader(doc, "TM Master — History (fechados)",
+          `${filteredHistory.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Total Fechado (ano)", value: totalHistory },
+          { label: "Corretivas Fechadas", value: corretivasFechadas.length },
+          { label: "Postergadas", value: postergadas.length },
+          { label: "Prazo Médio (dias)", value: `${prazoStats.media}d` },
+        ]);
+        y = pdfSectionTitle(doc, y, "Por departamento");
+        y = pdfTable(doc, y, ["Departamento", "Quantidade"], historyPorDepartamento.map((d) => [d.departamento, d.count]));
+        y = pdfSectionTitle(doc, y, "Fechados por usuário");
+        y = pdfTable(doc, y, ["Usuário", "Quantidade"], historyPorUsuario.map((d) => [d.usuario, d.count]));
+        pdfSave(doc, "relatorio-tm-master-history");
+      }
+    });
+  }, [tmSubTab, filteredDue, totalDue, vencidas, ateVencer40, criticasVencidasOu40, corretivasDue, duePorDepartamento,
+      vencidasPorJobType, aVencerPorJobType, filteredHistory, totalHistory, corretivasFechadas, postergadas, prazoStats,
+      historyPorDepartamento, historyPorUsuario, setReportFn]);
+
+  return (
+    <>
+      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+        <button className={tmSubTab === "due" ? "active" : ""} onClick={() => setTmSubTab("due")}>Due (Em Aberto)</button>
+        <button className={tmSubTab === "history" ? "active" : ""} onClick={() => setTmSubTab("history")}>History (Fechados)</button>
+        <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Métricas</button>
+      </div>
+
+      {tmSubTab === "due" && (
+        <>
+          <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div className="g-panel-title" style={{ marginBottom: 4 }}>Importar TM Master — Due</div>
+              <div className="g-muted" style={{ fontSize: 11.5 }}>
+                Suba a planilha semanalmente. Cada importação <strong>substitui por completo</strong> a lista de itens em aberto
+                (é uma fotografia do momento — o que já foi resolvido não aparece mais na nova planilha).
+              </div>
+            </div>
+            <div>
+              <input ref={dueFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportTmDue} />
+              <button className="g-btn primary" onClick={() => dueFileRef.current?.click()}><Upload size={14} />Importar planilha Due</button>
+            </div>
+          </div>
+
+          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+            <div className="g-field">
+              <label>Buscar</label>
+              <input type="text" value={duef.busca} onChange={(e) => setDuef((p) => ({ ...p, busca: e.target.value }))} placeholder="job, componente, código..." style={{ minWidth: 180 }} />
+            </div>
+            <div className="g-field">
+              <label>Departamento</label>
+              <select value={duef.department} onChange={(e) => setDuef((p) => ({ ...p, department: e.target.value }))}>
+                <option>Todos</option>
+                {dueDepartments.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Prioridade</label>
+              <select value={duef.pri} onChange={(e) => setDuef((p) => ({ ...p, pri: e.target.value }))}>
+                <option>Todos</option><option>High</option><option>Medium</option><option>Low</option><option>Req</option>
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Job Type</label>
+              <select value={duef.jobType} onChange={(e) => setDuef((p) => ({ ...p, jobType: e.target.value }))}>
+                <option>Todos</option>
+                {dueJobTypes.map((j) => <option key={j} value={j}>{j}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Situação</label>
+              <select value={duef.situacao} onChange={(e) => setDuef((p) => ({ ...p, situacao: e.target.value }))}>
+                <option>Todos</option><option>Vencida</option><option>Até 40 dias</option><option>Normal</option>
+              </select>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <button className="g-btn" onClick={() => setDuef({ busca: "", department: "Todos", pri: "Todos", jobType: "Todos", situacao: "Todos" })}
+                disabled={!hasActiveFilterDue} style={{ opacity: hasActiveFilterDue ? 1 : 0.5 }}>
+                <X size={13} />Limpar filtro
+              </button>
+            </div>
+          </div>
+
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+            {bigKpi("Total em Aberto", totalDue, "var(--teal)", ClipboardList)}
+            {bigKpi("Vencidas", vencidas.length, "var(--crit)", AlertTriangle)}
+            {bigKpi("A Vencer em 40 dias", ateVencer40.length, "var(--warn)", Clock)}
+            {bigKpi("Críticas Vencidas/≤40d", criticasVencidasOu40.length, "var(--crit)", AlertTriangle)}
+            {bigKpi("Corretivas (ONE)", corretivasDue.length, "var(--text-dim)", Wrench)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Itens em aberto ({filteredDue.length})</span></div>
+            <div className="g-table-wrap">
+            <table className="g-table">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 220 }}>Job Name</th>
+                  <th style={{ minWidth: 160 }}>Component</th>
+                  <th style={{ minWidth: 90 }}>Job Type</th>
+                  <th style={{ minWidth: 110 }}>Department</th>
+                  <th style={{ minWidth: 80 }}>Pri</th>
+                  <th style={{ minWidth: 100 }}>Due</th>
+                  <th style={{ minWidth: 80 }}>Diff</th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDue.slice(0, 500).map((d) => (
+                  <tr className="g-row" key={d.id} style={isVencida(d) ? { background: "rgba(224,72,62,0.06)" } : isAteVencer40(d) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
+                    <td style={{ minWidth: 220, whiteSpace: "normal" }}>{d.jobName}</td>
+                    <td style={{ minWidth: 160, whiteSpace: "normal" }}>{d.component}</td>
+                    <td>{d.jobType}</td>
+                    <td style={{ minWidth: 110 }}>{d.department}</td>
+                    <td style={{ color: d.pri === "High" ? "var(--crit)" : d.pri === "Medium" ? "var(--warn)" : "var(--text-dim)", fontWeight: 600 }}>{d.pri}</td>
+                    <td style={{ fontFamily: "var(--mono)" }}>{d.dueRaw}</td>
+                    <td style={{ fontFamily: "var(--mono)", fontWeight: 700, color: isVencida(d) ? "var(--crit)" : isAteVencer40(d) ? "var(--warn)" : "var(--text-dim)" }}>{d.diffRaw}</td>
+                    <td>{d.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+            {filteredDue.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item encontrado — importe a planilha Due acima.</div>}
+            {filteredDue.length > 500 && <div className="g-muted" style={{ marginTop: 10 }}>Mostrando os primeiros 500 de {filteredDue.length} — refine o filtro pra ver outros.</div>}
+          </div>
+        </>
+      )}
+
+      {tmSubTab === "history" && (
+        <>
+          <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div className="g-panel-title" style={{ marginBottom: 4 }}>Importar TM Master — History</div>
+              <div className="g-muted" style={{ fontSize: 11.5 }}>
+                Suba a planilha semanalmente. É uma lista cumulativa desde o início do ano — a importação
+                <strong> mescla por número do histórico</strong>, então nada é duplicado.
+              </div>
+            </div>
+            <div>
+              <input ref={historyFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportTmHistory} />
+              <button className="g-btn primary" onClick={() => historyFileRef.current?.click()}><Upload size={14} />Importar planilha History</button>
+            </div>
+          </div>
+
+          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+            <div className="g-field">
+              <label>Buscar</label>
+              <input type="text" value={histf.busca} onChange={(e) => setHistf((p) => ({ ...p, busca: e.target.value }))} placeholder="job, componente, responsável..." style={{ minWidth: 200 }} />
+            </div>
+            <div className="g-field">
+              <label>Job Type</label>
+              <select value={histf.jobType} onChange={(e) => setHistf((p) => ({ ...p, jobType: e.target.value }))}>
+                <option>Todos</option>
+                {histJobTypes.map((j) => <option key={j} value={j}>{j}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <label className="g-flex" style={{ gap: 6, fontSize: 12, cursor: "pointer", padding: "9px 0" }}>
+                <input type="checkbox" checked={histf.soPostergadas} onChange={(e) => setHistf((p) => ({ ...p, soPostergadas: e.target.checked }))} />
+                Só postergadas
+              </label>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <button className="g-btn" onClick={() => setHistf({ busca: "", jobType: "Todos", soPostergadas: false })}
+                disabled={!hasActiveFilterHist} style={{ opacity: hasActiveFilterHist ? 1 : 0.5 }}>
+                <X size={13} />Limpar filtro
+              </button>
+            </div>
+          </div>
+
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Total Fechado (ano)", totalHistory, "var(--ok)", ClipboardList)}
+            {bigKpi("Corretivas Fechadas", corretivasFechadas.length, "var(--text-dim)", Wrench)}
+            {bigKpi("Postergadas", postergadas.length, "var(--warn)", AlertTriangle)}
+            {bigKpi("Prazo Médio (dias)", `${prazoStats.media}d`, prazoStats.media < 0 ? "var(--crit)" : "var(--ok)", Clock)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Jobs fechados ({filteredHistory.length})</span></div>
+            <div className="g-table-wrap">
+            <table className="g-table">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 200 }}>Job Name</th>
+                  <th style={{ minWidth: 160 }}>Component</th>
+                  <th style={{ minWidth: 90 }}>Job Type</th>
+                  <th style={{ minWidth: 100 }}>Date Done</th>
+                  <th style={{ minWidth: 130 }}>Done By</th>
+                  <th style={{ minWidth: 110 }}>Departamento</th>
+                  <th style={{ minWidth: 140 }}>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredHistory.slice(0, 500).map((h) => (
+                  <tr className="g-row" key={h.jobHistoryNumber} style={isPostergada(h) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
+                    <td style={{ minWidth: 200, whiteSpace: "normal" }}>{h.jobName}</td>
+                    <td style={{ minWidth: 160, whiteSpace: "normal" }}>{h.componentName}</td>
+                    <td>{h.jobType}</td>
+                    <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(h.dateDone)}</td>
+                    <td>{h.doneByName || "—"}</td>
+                    <td style={{ minWidth: 110 }}>{deptOfHistory(h)}</td>
+                    <td style={{ minWidth: 140, whiteSpace: "normal" }}>{h.remarks || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+            {filteredHistory.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item encontrado — importe a planilha History acima.</div>}
+            {filteredHistory.length > 500 && <div className="g-muted" style={{ marginTop: 10 }}>Mostrando os primeiros 500 de {filteredHistory.length} — refine o filtro pra ver outros.</div>}
+          </div>
+        </>
+      )}
+
+      {tmSubTab === "metricas" && (
+        <>
+          {tmDueSnapshots.length > 1 && (
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Tendência do backlog — evolução semana a semana</span></div>
+              <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+                Uma fotografia é registrada automaticamente a cada vez que você importa a planilha Due — isso mostra se o
+                backlog de manutenção está crescendo ou diminuindo ao longo das semanas.
+              </div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={tmDueSnapshots.map((s) => ({ ...s, dataLabel: fmtDate(s.date) }))} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="dataLabel" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="total" name="Total em Aberto" radius={[3, 3, 0, 0]} fill="var(--text-faint)" />
+                    <Bar dataKey="vencidas" name="Vencidas" radius={[3, 3, 0, 0]} fill="var(--crit)" />
+                    <Bar dataKey="ateVencer40" name="A Vencer ≤40d" radius={[3, 3, 0, 0]} fill="var(--warn)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          <div className="g-section-label">Due — o que está em aberto</div>
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+            {bigKpi("Total em Aberto", totalDue, "var(--teal)", ClipboardList)}
+            {bigKpi("Vencidas", vencidas.length, "var(--crit)", AlertTriangle)}
+            {bigKpi("A Vencer em 40 dias", ateVencer40.length, "var(--warn)", Clock)}
+            {bigKpi("Críticas Vencidas/≤40d", criticasVencidasOu40.length, "var(--crit)", AlertTriangle)}
+            {bigKpi("Corretivas (ONE)", corretivasDue.length, "var(--text-dim)", Wrench)}
+          </div>
+
+          <div className="g-grid-2">
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Aderência por mês — itens a vencer</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={duePorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Urgência — vencidas ou a vencer em 40 dias (%)</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={urgenciaBuckets} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="bucket" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-15} textAnchor="end" height={45} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v, n, p) => [`${v} (${p.payload.pct}%)`, "Itens"]} />
+                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]}>
+                      <LabelList dataKey="pct" position="top" formatter={(v) => `${v}%`} style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                      <Cell fill="var(--crit)" /><Cell fill="var(--warn)" /><Cell fill="var(--warn)" /><Cell fill="var(--teal)" /><Cell fill="var(--teal)" />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="g-grid-2">
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Por departamento</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={duePorDepartamento} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis type="category" dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
+                    <Bar dataKey="count" name="Itens" radius={[0, 3, 3, 0]} fill="var(--teal)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Top 15 equipamentos com mais itens em aberto</span></div>
+              <div className="g-table-wrap" style={{ maxHeight: 240, overflowY: "auto" }}>
+                <table className="g-table">
+                  <thead><tr><th>Equipamento</th><th>Qtd</th></tr></thead>
+                  <tbody>
+                    {duePorComponente.map((d) => (
+                      <tr key={d.componente}><td style={{ whiteSpace: "normal" }}>{d.componente}</td><td style={{ fontFamily: "var(--mono)" }}>{d.count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="g-grid-2">
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Vencidas por Job Type</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={vencidasPorJobType} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="tipo" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="count" name="Vencidas" radius={[3, 3, 0, 0]} fill="var(--crit)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">A vencer (até 40 dias) por Job Type</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={aVencerPorJobType} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="tipo" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="count" name="A vencer" radius={[3, 3, 0, 0]} fill="var(--warn)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="g-section-label">History — o que já foi fechado</div>
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Total Fechado (ano)", totalHistory, "var(--ok)", ClipboardList)}
+            {bigKpi("Corretivas Fechadas", corretivasFechadas.length, "var(--text-dim)", Wrench)}
+            {bigKpi("Postergadas", postergadas.length, "var(--warn)", AlertTriangle)}
+            {bigKpi("Prazo Médio de Execução", `${prazoStats.media}d`, prazoStats.media < 0 ? "var(--crit)" : "var(--ok)", Clock)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Aderência — jobs fechados por mês</span></div>
+            <div style={{ width: "100%", height: 220 }}>
+              <ResponsiveContainer>
+                <BarChart data={historyPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                  <Bar dataKey="count" name="Fechados" radius={[3, 3, 0, 0]} fill="var(--ok)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="g-grid-2">
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Fechados por departamento</span></div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={historyPorDepartamento} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis type="category" dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={100} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
+                    <Bar dataKey="count" name="Fechados" radius={[0, 3, 3, 0]} fill="var(--accent)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6 }}>Departamento identificado cruzando o código do componente com a planilha Due — itens sem correspondência aparecem como "Não identificado".</div>
+            </div>
+
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Top 15 equipamentos fechados</span></div>
+              <div className="g-table-wrap" style={{ maxHeight: 240, overflowY: "auto" }}>
+                <table className="g-table">
+                  <thead><tr><th>Equipamento</th><th>Qtd</th></tr></thead>
+                  <tbody>
+                    {historyPorComponente.map((d) => (
+                      <tr key={d.componente}><td style={{ whiteSpace: "normal" }}>{d.componente}</td><td style={{ fontFamily: "var(--mono)" }}>{d.count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Top 15 usuários com mais jobs fechados</span></div>
+            <div style={{ width: "100%", height: 240 }}>
+              <ResponsiveContainer>
+                <BarChart data={historyPorUsuario} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis type="category" dataKey="usuario" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={120} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
+                  <Bar dataKey="count" name="Jobs fechados" radius={[0, 3, 3, 0]} fill="var(--teal)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Cumprimento de prazo — Due date × Data assinada</span></div>
+            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
+              Considera só os {prazoStats.total} jobs do History que têm Due date e Data assinada preenchidas.
+              Prazo médio de {prazoStats.media} dia(s) {prazoStats.media >= 0 ? "de antecedência" : "de atraso"} em relação ao prazo.
+            </div>
+            <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+              {bigKpi("Feitos no Prazo ou Antes", prazoStats.noPrazo, "var(--ok)", ClipboardList)}
+              {bigKpi("Feitos Após o Prazo", prazoStats.atrasado, "var(--crit)", AlertTriangle)}
+            </div>
           </div>
         </>
       )}
