@@ -1333,9 +1333,9 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const addDocagemItem = () => {
     const id = uid("DOC");
     setDocagemItems((r) => [...r, {
-      id, nome: "Novo item", localizacao: "", tipoPeriodo: "", planoAcao: "",
+      id, nome: "Novo item", localizacao: "", tipoPeriodo: "", empresa: "", planoAcao: "",
       necessitaMaterial: false, poRelacionada: "", previsaoExecucao: "", dataConclusao: "",
-      status: "A Executar",
+      status: "A Executar", linkedServiceId: null,
     }]);
     flashNewRow(id);
   };
@@ -1378,8 +1378,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
               updated++;
             } else {
               next.push({
-                id: uid("DOC"), ...row, planoAcao: "", necessitaMaterial: false,
-                poRelacionada: "", previsaoExecucao: "", dataConclusao: "", status: "A Executar",
+                id: uid("DOC"), ...row, empresa: "", planoAcao: "", necessitaMaterial: false,
+                poRelacionada: "", previsaoExecucao: "", dataConclusao: "", status: "A Executar", linkedServiceId: null,
               });
               added++;
             }
@@ -1507,6 +1507,30 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     setWorkPackages((prev) => [...prev, ...novosServicos]);
     setPlanningItems((prev) => prev.map((p) => (linkByPlanId[p.id] ? { ...p, linkedServiceId: linkByPlanId[p.id] } : p)));
   }, [planningItems]);
+
+  /* mesma lógica de graduação automática, agora pros itens de Docagem (Machinery Items DNV) — usa
+     a Previsão de Execução como gatilho (não a Data de Conclusão, que só é preenchida depois) */
+  React.useEffect(() => {
+    const paraGraduar = docagemItems.filter((d) => d.previsaoExecucao && !d.linkedServiceId);
+    if (paraGraduar.length === 0) return;
+    const linkByDocId = {};
+    const novosServicos = paraGraduar.map((d) => {
+      const serviceId = uid("PC-2026-08");
+      linkByDocId[d.id] = serviceId;
+      const start = `${d.previsaoExecucao}T08:00`;
+      const end = `${d.previsaoExecucao}T17:00`;
+      return {
+        id: serviceId, name: d.nome, discipline: "Marine", group: "Sem categoria",
+        ganttCategory: "Manutenção", empresa: d.empresa || "", md: "Não", rc: "", obs: "",
+        budget: 0, committed: 0, actual: 0, forecast: 0, start, end,
+        status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
+        planoAcao: d.planoAcao || "", precisaMaterial: d.necessitaMaterial || false,
+        materialNecessario: "", impacto: "Baixo",
+      };
+    });
+    setWorkPackages((prev) => [...prev, ...novosServicos]);
+    setDocagemItems((prev) => prev.map((d) => (linkByDocId[d.id] ? { ...d, linkedServiceId: linkByDocId[d.id] } : d)));
+  }, [docagemItems]);
 
   const addWp = () => {
     const id = uid("PC-2026-08");
@@ -3257,9 +3281,9 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
         ]);
         y = pdfSectionTitle(doc, y, "Itens de Docagem");
         pdfTable(doc, y,
-          ["Nome", "Localização", "Tipo", "Plano de Ação", "Necessita Material", "PO", "Previsão Execução", "Data Conclusão", "Status"],
+          ["Nome", "Localização", "Tipo", "Empresa", "Plano de Ação", "Necessita Material", "PO", "Previsão Execução", "Data Conclusão", "Status"],
           filteredDocagem.map((d) => [
-            d.nome, d.localizacao || "—", d.tipoPeriodo || "—", d.planoAcao || "—",
+            d.nome, d.localizacao || "—", d.tipoPeriodo || "—", d.empresa || "—", d.planoAcao || "—",
             d.necessitaMaterial ? "Sim" : "Não", d.necessitaMaterial ? (d.poRelacionada || "—") : "—",
             d.previsaoExecucao ? fmtDate(d.previsaoExecucao) : "—", d.dataConclusao ? fmtDate(d.dataConclusao) : "—",
             d.status || "A Executar",
@@ -3502,6 +3526,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                   <th style={{ minWidth: 220 }}>Nome</th>
                   <th style={{ minWidth: 120 }}>Localização</th>
                   <th style={{ minWidth: 100 }}>Tipo</th>
+                  <th style={{ minWidth: 120 }}>Empresa</th>
                   <th style={{ minWidth: 200 }}>Plano de Ação</th>
                   <th style={{ minWidth: 110 }}>Necessita de Material</th>
                   <th style={{ minWidth: 100 }}>PO Relacionada</th>
@@ -3519,6 +3544,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                       <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={d.nome} onChange={(v) => updDocagem(i, "nome", v)} /></td>
                       <td style={{ minWidth: 120 }}><EText value={d.localizacao} onChange={(v) => updDocagem(i, "localizacao", v)} /></td>
                       <td style={{ minWidth: 100 }}><EText value={d.tipoPeriodo} onChange={(v) => updDocagem(i, "tipoPeriodo", v)} /></td>
+                      <td style={{ minWidth: 120 }}><EText value={d.empresa} onChange={(v) => updDocagem(i, "empresa", v)} /></td>
                       <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={d.planoAcao} onChange={(v) => updDocagem(i, "planoAcao", v)} /></td>
                       <td style={{ minWidth: 110 }}>
                         <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
@@ -3545,6 +3571,9 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
                           style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[d.status || "A Executar"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5, width: "100%" }}>
                           {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
+                        {d.linkedServiceId && (
+                          <div style={{ marginTop: 4, fontSize: 10, color: "var(--ok)" }}>🔗 Serviço criado</div>
+                        )}
                       </td>
                       <td><span className="g-btn ghost danger" onClick={() => remDocagem(i)}><Trash2 size={13} /></span></td>
                     </tr>
