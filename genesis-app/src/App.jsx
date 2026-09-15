@@ -1189,6 +1189,8 @@ const INITIAL_EXCHANGE_RATE = 5.30;
    ainda, e só passa a existir também como um Serviço de verdade (na aba Serviços/Gantt) quando
    ganhar uma data de execução */
 const INITIAL_PLANNING_ITEMS = [];
+/* Docagem — itens de Machinery Items da DNV que precisam ser vistoriados/feitos durante a docagem */
+const INITIAL_DOCAGEM_ITEMS = [];
 
 export default function Root() {
   const [loaded, setLoaded] = useState(false);
@@ -1205,6 +1207,7 @@ export default function Root() {
   const [opCategories, setOpCategories] = useState(INITIAL_OP_CATEGORIES);
   const [exchangeRate, setExchangeRate] = useState(INITIAL_EXCHANGE_RATE);
   const [planningItems, setPlanningItems] = useState(INITIAL_PLANNING_ITEMS);
+  const [docagemItems, setDocagemItems] = useState(INITIAL_DOCAGEM_ITEMS);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar */
   React.useEffect(() => {
@@ -1222,6 +1225,7 @@ export default function Root() {
           if (d.opCategories) setOpCategories(d.opCategories);
           if (typeof d.exchangeRate === "number") setExchangeRate(d.exchangeRate);
           if (d.planningItems) setPlanningItems(d.planningItems);
+          if (d.docagemItems) setDocagemItems(d.docagemItems);
         }
         setLoaded(true);
       })
@@ -1238,12 +1242,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems]);
+  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems]);
 
   if (!loaded) {
     return (
@@ -1268,6 +1272,7 @@ export default function Root() {
       opCategories={opCategories} setOpCategories={setOpCategories}
       exchangeRate={exchangeRate} setExchangeRate={setExchangeRate}
       planningItems={planningItems} setPlanningItems={setPlanningItems}
+      docagemItems={docagemItems} setDocagemItems={setDocagemItems}
       loadError={loadError}
     />
   );
@@ -1280,7 +1285,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
-  planningItems, setPlanningItems, loadError }) {
+  planningItems, setPlanningItems, docagemItems, setDocagemItems, loadError }) {
   const [tab, setTab] = useState("dashboard");
   const [newRowId, setNewRowId] = useState(null);
   /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
@@ -1324,6 +1329,72 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const updPay = upd(setPayments), remPay = rem(setPayments);
   const updInv = upd(setServiceInvoices), remInv = rem(setServiceInvoices);
   const updPlan = upd(setPlanningItems), remPlan = rem(setPlanningItems);
+  const updDocagem = upd(setDocagemItems), remDocagem = rem(setDocagemItems);
+  const addDocagemItem = () => {
+    const id = uid("DOC");
+    setDocagemItems((r) => [...r, {
+      id, nome: "Novo item", localizacao: "", tipoPeriodo: "", planoAcao: "",
+      necessitaMaterial: false, poRelacionada: "", previsaoExecucao: "", dataConclusao: "",
+      status: "A Executar",
+    }]);
+    flashNewRow(id);
+  };
+
+  /* Importação da planilha de Machinery Items da DNV (colunas: Name, ItemLocation, PeriodType) —
+     mescla por Nome, então reimportar a lista atualizada do site da DNV não duplica itens já
+     cadastrados (só atualiza localização/tipo se tiverem mudado, preservando o que já foi preenchido
+     manualmente: plano de ação, material, PO, datas e status) */
+  const handleImportDocagem = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const norm = (s) => (s || "").toString().trim();
+        const parsedRows = [];
+        wb.SheetNames.forEach((sheetName) => {
+          const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+          json.forEach((row) => {
+            const nome = norm(row["Name"] || row["Nome"]);
+            if (!nome) return;
+            parsedRows.push({
+              nome,
+              localizacao: norm(row["ItemLocation"] || row["Localização"]),
+              tipoPeriodo: norm(row["PeriodType"] || row["Tipo"]),
+            });
+          });
+        });
+
+        setDocagemItems((prev) => {
+          const byNome = new Map(prev.map((d, idx) => [d.nome.toLowerCase(), idx]));
+          const next = [...prev];
+          let added = 0, updated = 0;
+          parsedRows.forEach((row) => {
+            const key = row.nome.toLowerCase();
+            if (byNome.has(key)) {
+              const idx = byNome.get(key);
+              next[idx] = { ...next[idx], localizacao: row.localizacao, tipoPeriodo: row.tipoPeriodo };
+              updated++;
+            } else {
+              next.push({
+                id: uid("DOC"), ...row, planoAcao: "", necessitaMaterial: false,
+                poRelacionada: "", previsaoExecucao: "", dataConclusao: "", status: "A Executar",
+              });
+              added++;
+            }
+          });
+          setImportMsg(`Docagem importada: ${added} novo(s), ${updated} atualizado(s).`);
+          return next;
+        });
+      } catch (err) {
+        setImportMsg("Erro ao ler a planilha de Docagem. Confira se as colunas seguem o padrão esperado (Name/ItemLocation/PeriodType).");
+      }
+      setTimeout(() => setImportMsg(null), 6000);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
   const addPlanningItem = () => {
     const id = uid("PLAN");
     setPlanningItems((r) => [...r, {
@@ -2081,6 +2152,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           <PlanejamentoView workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
+            docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
+            handleImportDocagem={handleImportDocagem}
             newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
         )}
 
@@ -3062,11 +3135,13 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    concluir, necessidade de material, e impacto de cada atraso
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPortCallDates, portCallLabel, addWpOnDate,
-  planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento }) {
-  const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "board"
+  planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem }) {
+  const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "board" | "docagem"
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
+  const docagemFileRef = useRef(null);
   const todayKey = todayISO();
 
   const dateKeyOf = (dt) => (dt ? dt.slice(0, 10) : null);
@@ -3128,6 +3203,26 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
     updWp(i, "end", toLocal(newEnd));
   };
 
+  /* ========================================================
+     DOCAGEM — Itens de Machinery Items (DNV) que precisam ser vistoriados/feitos na docagem
+     ======================================================== */
+  const [df, setDf] = useState({ busca: "", localizacao: "", necessitaMaterial: "Todos", status: "Todos" });
+  const hasActiveFilterDoc = df.busca || df.localizacao || df.necessitaMaterial !== "Todos" || df.status !== "Todos";
+  const filteredDocagem = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    return docagemItems.filter((d) => {
+      const inBusca = !df.busca || norm(d.nome).includes(norm(df.busca));
+      const inLoc = !df.localizacao || norm(d.localizacao).includes(norm(df.localizacao));
+      const inMat = df.necessitaMaterial === "Todos" || (df.necessitaMaterial === "Sim" ? d.necessitaMaterial : !d.necessitaMaterial);
+      const inStatus = df.status === "Todos" || (d.status || "A Executar") === df.status;
+      return inBusca && inLoc && inMat && inStatus;
+    });
+  }, [docagemItems, df]);
+  const totalDocagem = docagemItems.length;
+  const necessitamMaterialDoc = docagemItems.filter((d) => d.necessitaMaterial).length;
+  const concluidosDoc = docagemItems.filter((d) => d.status === "Concluído").length;
+  const pendentesDoc = docagemItems.filter((d) => d.status !== "Concluído" && d.status !== "Cancelado").length;
+
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
@@ -3151,6 +3246,26 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
           ])
         );
         pdfSave(doc, "relatorio-planejamento-mapeados");
+      } else if (planSubTab === "docagem") {
+        let y = pdfHeader(doc, "Relatório de Docagem — Machinery Items (DNV)",
+          `${filteredDocagem.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Total de Itens", value: totalDocagem },
+          { label: "Necessitam de Material", value: necessitamMaterialDoc },
+          { label: "Pendentes", value: pendentesDoc },
+          { label: "Concluídos", value: concluidosDoc },
+        ]);
+        y = pdfSectionTitle(doc, y, "Itens de Docagem");
+        pdfTable(doc, y,
+          ["Nome", "Localização", "Tipo", "Plano de Ação", "Necessita Material", "PO", "Previsão Execução", "Data Conclusão", "Status"],
+          filteredDocagem.map((d) => [
+            d.nome, d.localizacao || "—", d.tipoPeriodo || "—", d.planoAcao || "—",
+            d.necessitaMaterial ? "Sim" : "Não", d.necessitaMaterial ? (d.poRelacionada || "—") : "—",
+            d.previsaoExecucao ? fmtDate(d.previsaoExecucao) : "—", d.dataConclusao ? fmtDate(d.dataConclusao) : "—",
+            d.status || "A Executar",
+          ])
+        );
+        pdfSave(doc, "relatorio-docagem");
       } else {
         let y = pdfHeader(doc, "Relatório de Planejamento — Quadro por Port Call",
           `${pendentes.length} serviço(s) pendente(s) · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
@@ -3165,12 +3280,14 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
         pdfSave(doc, "relatorio-planejamento-quadro");
       }
     });
-  }, [planSubTab, filteredMapeados, totalMapeados, semDataExecucao, jaExecutando, precisamMaterialMap, colunas, pendentes, setReportFn]);
+  }, [planSubTab, filteredMapeados, totalMapeados, semDataExecucao, jaExecutando, precisamMaterialMap, colunas, pendentes,
+      filteredDocagem, totalDocagem, necessitamMaterialDoc, pendentesDoc, concluidosDoc, setReportFn]);
 
   return (
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
+        <button className={planSubTab === "docagem" ? "active" : ""} onClick={() => setPlanSubTab("docagem")}>Docagem (Machinery Items - DNV)</button>
         <button className={planSubTab === "board" ? "active" : ""} onClick={() => setPlanSubTab("board")}>Quadro por Port Call</button>
       </div>
 
@@ -3309,6 +3426,134 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, allPort
             </table>
             </div>
             {filteredMapeados.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item mapeado ainda — use o botão "Novo mapeamento" no topo da página.</div>}
+          </div>
+        </>
+      ) : planSubTab === "docagem" ? (
+        <>
+          <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div className="g-panel-title" style={{ marginBottom: 4 }}>Importar planilha de Machinery Items (DNV)</div>
+              <div className="g-muted" style={{ fontSize: 11.5 }}>
+                Aceita o arquivo exportado do site da DNV, no padrão Name/ItemLocation/PeriodType. Mescla por Nome —
+                reimportar a lista atualizada não duplica, só atualiza localização/tipo dos itens já cadastrados.
+              </div>
+            </div>
+            <div className="g-flex" style={{ gap: 8 }}>
+              <input ref={docagemFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportDocagem} />
+              <button className="g-btn" onClick={() => docagemFileRef.current?.click()}>
+                <Upload size={14} />Importar planilha DNV
+              </button>
+              <button className="g-btn primary" onClick={addDocagemItem}>
+                <Plus size={14} />Novo item
+              </button>
+            </div>
+          </div>
+
+          <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
+            Itens classificados como <strong>Machinery Items</strong> pela DNV que precisam ser vistoriados e/ou feitos
+            durante a docagem. Preencha o plano de ação, se precisa de material, PO relacionada, previsão de execução,
+            data de conclusão e o status de cada item.
+          </div>
+
+          <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+            <div className="g-field">
+              <label>Nome</label>
+              <input type="text" value={df.busca} onChange={(e) => setDf((p) => ({ ...p, busca: e.target.value }))} placeholder="digitar..." style={{ minWidth: 160 }} />
+            </div>
+            <div className="g-field">
+              <label>Localização</label>
+              <input type="text" value={df.localizacao} onChange={(e) => setDf((p) => ({ ...p, localizacao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 140 }} />
+            </div>
+            <div className="g-field">
+              <label>Necessita de Material</label>
+              <select value={df.necessitaMaterial} onChange={(e) => setDf((p) => ({ ...p, necessitaMaterial: e.target.value }))}>
+                <option>Todos</option><option>Sim</option><option>Não</option>
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Status</label>
+              <select value={df.status} onChange={(e) => setDf((p) => ({ ...p, status: e.target.value }))}>
+                <option>Todos</option>
+                {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="g-field">
+              <label>&nbsp;</label>
+              <button className="g-btn" onClick={() => setDf({ busca: "", localizacao: "", necessitaMaterial: "Todos", status: "Todos" })}
+                disabled={!hasActiveFilterDoc} style={{ opacity: hasActiveFilterDoc ? 1 : 0.5 }}>
+                <X size={13} />Limpar filtro
+              </button>
+            </div>
+          </div>
+
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            {bigKpi("Total de Itens", totalDocagem, "var(--teal)", ClipboardList)}
+            {bigKpi("Necessitam de Material", necessitamMaterialDoc, "var(--warn)", Package)}
+            {bigKpi("Pendentes", pendentesDoc, "var(--crit)", AlertTriangle)}
+            {bigKpi("Concluídos", concluidosDoc, "var(--ok)", ClipboardList)}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Itens de Docagem — Machinery Items DNV ({filteredDocagem.length})</span></div>
+            <div className="g-table-wrap">
+            <table className="g-table">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 220 }}>Nome</th>
+                  <th style={{ minWidth: 120 }}>Localização</th>
+                  <th style={{ minWidth: 100 }}>Tipo</th>
+                  <th style={{ minWidth: 200 }}>Plano de Ação</th>
+                  <th style={{ minWidth: 110 }}>Necessita de Material</th>
+                  <th style={{ minWidth: 100 }}>PO Relacionada</th>
+                  <th style={{ minWidth: 130 }}>Previsão de Execução</th>
+                  <th style={{ minWidth: 130 }}>Data de Conclusão</th>
+                  <th style={{ minWidth: 140 }}>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDocagem.map((d) => {
+                  const i = docagemItems.indexOf(d);
+                  return (
+                    <tr id={`row-${d.id}`} className={"g-row" + (newRowId === d.id ? " g-row-flash" : "")} key={d.id}>
+                      <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={d.nome} onChange={(v) => updDocagem(i, "nome", v)} /></td>
+                      <td style={{ minWidth: 120 }}><EText value={d.localizacao} onChange={(v) => updDocagem(i, "localizacao", v)} /></td>
+                      <td style={{ minWidth: 100 }}><EText value={d.tipoPeriodo} onChange={(v) => updDocagem(i, "tipoPeriodo", v)} /></td>
+                      <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={d.planoAcao} onChange={(v) => updDocagem(i, "planoAcao", v)} /></td>
+                      <td style={{ minWidth: 110 }}>
+                        <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
+                          <input type="checkbox" checked={!!d.necessitaMaterial} onChange={(e) => updDocagem(i, "necessitaMaterial", e.target.checked)} />
+                          Sim
+                        </label>
+                      </td>
+                      <td style={{ minWidth: 100 }}>
+                        {d.necessitaMaterial ? (
+                          <input type="text" className="g-edit" placeholder="nº da PO..." value={d.poRelacionada || ""} onChange={(e) => updDocagem(i, "poRelacionada", e.target.value)}
+                            style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
+                        ) : <span className="g-muted">—</span>}
+                      </td>
+                      <td style={{ minWidth: 130 }}>
+                        <input type="date" value={d.previsaoExecucao || ""} onChange={(e) => updDocagem(i, "previsaoExecucao", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
+                      </td>
+                      <td style={{ minWidth: 130 }}>
+                        <input type="date" value={d.dataConclusao || ""} onChange={(e) => updDocagem(i, "dataConclusao", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
+                      </td>
+                      <td style={{ minWidth: 140 }}>
+                        <select value={d.status || "A Executar"} onChange={(e) => updDocagem(i, "status", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[d.status || "A Executar"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5, width: "100%" }}>
+                          {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                      <td><span className="g-btn ghost danger" onClick={() => remDocagem(i)}><Trash2 size={13} /></span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            {filteredDocagem.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item de docagem ainda — importe a planilha da DNV ou use "Novo item".</div>}
           </div>
         </>
       ) : (
