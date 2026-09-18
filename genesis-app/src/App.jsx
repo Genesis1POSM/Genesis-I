@@ -4094,6 +4094,28 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
     });
   }, [tmDueForMetrics, tmHistoryForMetrics]);
 
+  /* mesma comparação mensal acima, mas restrita só às CORRETIVAS (Job type = ONE): itens do Due
+     vencidos/a vencer agrupados pelo mês de vencimento x itens do History fechados naquele mês */
+  const corretivasPorMes = useMemo(() => {
+    const map = {};
+    tmDueForMetrics.forEach((d) => {
+      if (!isCorretiva(d) || !d.dueDate || !isVencidaOuAte40(d)) return;
+      const key = d.dueDate.slice(0, 7);
+      if (!map[key]) map[key] = { mesKey: key, vencidasOuAVencer: 0, fechadas: 0 };
+      map[key].vencidasOuAVencer++;
+    });
+    tmHistoryForMetrics.forEach((h) => {
+      if (!isCorretiva(h) || !h.dateDone) return;
+      const key = h.dateDone.slice(0, 7);
+      if (!map[key]) map[key] = { mesKey: key, vencidasOuAVencer: 0, fechadas: 0 };
+      map[key].fechadas++;
+    });
+    return Object.values(map).sort((a, b) => a.mesKey.localeCompare(b.mesKey)).map((r) => {
+      const [y, m] = r.mesKey.split("-");
+      return { ...r, mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}` };
+    });
+  }, [tmDueForMetrics, tmHistoryForMetrics]);
+
   /* ---------- métricas: History ---------- */
   const totalHistory = tmHistoryForMetrics.length;
   const corretivasFechadas = tmHistoryForMetrics.filter(isCorretiva);
@@ -4526,6 +4548,31 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
               </ResponsiveContainer>
             </div>
             {abertosVsFechadosPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Sem dados suficientes com data de vencimento/fechamento no filtro atual.</div>}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Corretivas — vencidas/a vencer x fechadas por mês (Job type = ONE)</span></div>
+            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+              Mesma comparação acima, restrita só às manutenções corretivas (Job type ONE). Barra vermelha: corretivas
+              vencidas ou a vencer, agrupadas pelo mês de vencimento. Barra verde: corretivas fechadas naquele mês.
+            </div>
+            <div style={{ width: "100%", height: 240 }}>
+              <ResponsiveContainer>
+                <BarChart data={corretivasPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                  <Bar dataKey="vencidasOuAVencer" name="Vencidas / A Vencer" radius={[3, 3, 0, 0]} fill="var(--crit)">
+                    <LabelList dataKey="vencidasOuAVencer" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                  <Bar dataKey="fechadas" name="Fechadas" radius={[3, 3, 0, 0]} fill="var(--ok)">
+                    <LabelList dataKey="fechadas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {corretivasPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhuma corretiva (Job type ONE) com data de vencimento/fechamento no filtro atual.</div>}
           </div>
 
           <div className="g-section-label">Due — o que está em aberto</div>
