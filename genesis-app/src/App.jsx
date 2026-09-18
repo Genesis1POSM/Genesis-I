@@ -4628,7 +4628,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
                   <Bar dataKey="vencidasOuAVencer" name="Vencidas / A Vencer" radius={[3, 3, 0, 0]} fill="var(--crit)">
                     <LabelList dataKey="vencidasOuAVencer" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
                   </Bar>
-                  <Bar dataKey="fechadas" name="Fechadas" radius={[3, 3, 0, 0]} fill="var(--ok)">
+                  <Bar dataKey="fechadas" name="Fechadas" radius={[3, 3, 0, 0]} fill="var(--accent)">
                     <LabelList dataKey="fechadas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
                   </Bar>
                 </BarChart>
