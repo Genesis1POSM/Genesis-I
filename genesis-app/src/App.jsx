@@ -2234,10 +2234,32 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         }
         if (wb.SheetNames.includes("StatusPagamentos")) {
           const json = XLSX.utils.sheet_to_json(wb.Sheets["StatusPagamentos"], { defval: "" });
-          setServiceInvoices(sheetToRows(json, INV_COLS));
+          const invoiceRows = sheetToRows(json, INV_COLS);
+          /* aba opcional "Alocacoes" — permite reconstruir o rateio por categoria (Custos) junto
+             com a importação, casando pelo par Serviço (assunto) + Empresa. Sem essa aba, o
+             rateio simplesmente fica vazio (do jeito que já era antes). Colunas esperadas:
+             Serviço, Empresa, Categoria, Valor. */
+          if (wb.SheetNames.includes("Alocacoes")) {
+            const allocJson = XLSX.utils.sheet_to_json(wb.Sheets["Alocacoes"], { defval: "" });
+            const norm = (s) => (s || "").toString().trim().toLowerCase();
+            allocJson.forEach((row) => {
+              const servico = norm(row["Serviço"] ?? row["Servico"]);
+              const empresa = norm(row["Empresa"]);
+              const categoria = (row["Categoria"] || "").toString().trim();
+              const valor = Number(row["Valor"]) || 0;
+              if (!servico || !categoria) return;
+              const inv = invoiceRows.find((r) => norm(r.assunto) === servico && norm(r.empresa) === empresa);
+              if (inv) {
+                if (!Array.isArray(inv.allocations)) inv.allocations = [];
+                inv.allocations.push({ category: categoria, valor });
+              }
+            });
+            imported.push(`${allocJson.length} alocação(ões) de rateio`);
+          }
+          setServiceInvoices(invoiceRows);
           imported.push(`${json.length} status de pagamento`);
         }
-        setImportMsg(imported.length ? `Importado: ${imported.join(", ")}.` : "Nenhuma aba reconhecida (esperado: Servicos, Materiais, Pagamentos, StatusPagamentos).");
+        setImportMsg(imported.length ? `Importado: ${imported.join(", ")}.` : "Nenhuma aba reconhecida (esperado: Servicos, Materiais, Pagamentos, StatusPagamentos, Alocacoes).");
       } catch (err) {
         setImportMsg("Erro ao ler o arquivo. Confira se é um .xlsx exportado por este sistema.");
       }
