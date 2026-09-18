@@ -635,6 +635,19 @@ const PAY_COLS = [
   ["id", "ID"], ["service", "Serviço"], ["po", "PO"], ["poValue", "Valor PO"],
   ["nf", "NF"], ["nfValue", "Valor NF"], ["issue", "Emissão"], ["due", "Vencimento"], ["status", "Status"],
 ];
+const TM_DUE_COLS = [
+  ["code", "Code"], ["component", "Component"], ["jobType", "Job type"], ["jobNo", "Job no"], ["status", "Status"],
+  ["jobName", "Job name"], ["interval", "Int"], ["hours", "Hours"], ["dueRaw", "Due"], ["diffRaw", "Diff"],
+  ["pri", "Pri"], ["department", "Department"], ["estimatedDue", "EstimatedDue"],
+  ["lastDoneDate", "LastDoneDate"], ["lastDoneHours", "LastDoneHours"],
+];
+const TM_HISTORY_COLS = [
+  ["jobHistoryNumber", "Job History Number"], ["componentCode", "ComponentCode"], ["componentName", "ComponentName"],
+  ["dateDone", "DateDone"], ["jobType", "JobType"], ["jobNo", "JobNo"], ["jobName", "JobName"],
+  ["doneByName", "DoneByName"], ["serviceReport", "ServiceReport"], ["remarks", "Remarks"], ["reason", "Reason"],
+  ["jobPriority", "JobPriority"], ["dateSigned", "Date signed"], ["hoursDone", "Hours done"],
+  ["dueHours", "Due hours"], ["dueDate", "Due date"], ["interval", "Interval"], ["signedBy", "Signed by"],
+];
 const STATUS_PAGAMENTO_OPTIONS = [
   "Aguardando Orçamento", "Aguardando Suprimentos", "Aguardando Execução", "Aguardando Medição", "Aprovação Pendente",
   "Aguardando NF", "Pagamento Programado", "On Hold", "Pago", "Cancelado",
@@ -1214,6 +1227,12 @@ const INITIAL_TM_DUE_SNAPSHOTS = [];
 export default function Root() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  /* trava de segurança: só habilita o auto-save quando o GET /api/state realmente teve sucesso.
+     Se a conexão falhar (backend reiniciando, erro de rede, etc.), NUNCA deixamos o app salvar —
+     senão o estado local (ainda nos valores INITIAL_* vazios) seria gravado por cima dos dados
+     reais do servidor 700ms depois, apagando tudo. Ver efeito de load logo abaixo. */
+  const [saveEnabled, setSaveEnabled] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [users, setUsers] = useState(DEFAULT_USERS);
   const [currentUser, setCurrentUser] = useState(null);
@@ -1231,11 +1250,23 @@ export default function Root() {
   const [tmHistory, setTmHistory] = useState(INITIAL_TM_HISTORY);
   const [tmDueSnapshots, setTmDueSnapshots] = useState(INITIAL_TM_DUE_SNAPSHOTS);
 
-  /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar */
+  /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
+     saveEnabled só vira true dentro do "then" de sucesso (mesmo que o servidor não tenha
+     nenhum dado ainda, o que é normal na primeiríssima vez). Em caso de falha (rede caiu,
+     backend reiniciando/redeployando, resposta inesperada), NÃO liberamos o app: mostramos uma
+     tela de erro com "Tentar novamente" em vez de deixar o usuário mexer em cima de um estado
+     vazio que seria salvo por cima do que já existe no servidor. */
   React.useEffect(() => {
+    let cancelled = false;
+    setLoaded(false);
+    setLoadError(null);
     fetch("/api/state")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((res) => {
+        if (cancelled) return;
         const d = res && res.data;
         if (d) {
           if (d.users) setUsers(d.users);
@@ -1252,16 +1283,24 @@ export default function Root() {
           if (d.tmHistory) setTmHistory(d.tmHistory);
           if (d.tmDueSnapshots) setTmDueSnapshots(d.tmDueSnapshots);
         }
+        setSaveEnabled(true);
         setLoaded(true);
       })
-      .catch(() => { setLoadError("Não foi possível conectar ao servidor — trabalhando localmente por enquanto."); setLoaded(true); });
-  }, []);
+      .catch(() => {
+        if (cancelled) return;
+        setLoadError("Não foi possível carregar os dados do servidor. Suas alterações NÃO seriam salvas com segurança agora, então o acesso ficou bloqueado até a conexão voltar — clique em \"Tentar novamente\".");
+        setSaveEnabled(false);
+        setLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, [loadAttempt]);
 
   /* salva no servidor (com um pequeno atraso) toda vez que qualquer coisa muda — adicionar, editar,
      excluir linhas em qualquer aba — assim fica salvo automaticamente para todo mundo que acessar,
-     independente de qual usuário fez a alteração */
+     independente de qual usuário fez a alteração. Só roda depois de um load bem-sucedido
+     (saveEnabled) — nunca com dados ainda não confirmados vindos do servidor. */
   React.useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !saveEnabled) return;
     const t = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
@@ -1272,12 +1311,26 @@ export default function Root() {
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
+  }, [loaded, saveEnabled, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
 
   if (!loaded) {
     return (
       <div className="genesis g-login-wrap"><Theme />
         <div style={{ color: "var(--text-dim)", fontFamily: "var(--mono)", fontSize: 13 }}>Carregando dados…</div>
+      </div>
+    );
+  }
+
+  /* falha ao carregar: tela bloqueante (não deixa entrar no app com dados vazios) */
+  if (loadError && !saveEnabled) {
+    return (
+      <div className="genesis g-login-wrap"><Theme />
+        <div style={{ maxWidth: 420, textAlign: "center", display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
+          <AlertTriangle size={32} color="var(--crit)" />
+          <div style={{ color: "var(--text)", fontSize: 14, fontWeight: 600 }}>Não foi possível carregar os dados</div>
+          <div style={{ color: "var(--text-dim)", fontSize: 12.5, lineHeight: 1.5 }}>{loadError}</div>
+          <button className="g-btn primary" onClick={() => setLoadAttempt((n) => n + 1)}>Tentar novamente</button>
+        </div>
       </div>
     );
   }
@@ -2349,7 +2402,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         )}
 
         {tab === "tmmaster" && (
-          <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn}
+          <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             handleImportTmDue={handleImportTmDue} handleImportTmHistory={handleImportTmHistory}
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} />
         )}
@@ -3404,8 +3457,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
      Um item aqui só passa a existir também como um Serviço de verdade
      (no Gantt/Port Call) quando ganha uma Data de Execução.
      ======================================================== */
-  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos", status: "Todos", execInicio: "", execFim: "" });
-  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos" || mf.status !== "Todos" || mf.execInicio || mf.execFim;
+  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos", statuses: [], execInicio: "", execFim: "" });
+  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos" || mf.statuses.length > 0 || mf.execInicio || mf.execFim;
   const filteredMapeados = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return planningItems.filter((p) => {
@@ -3413,7 +3466,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
       const inDep = !mf.departamento || norm(p.departamento).includes(norm(mf.departamento));
       const inEmpresa = !mf.empresa || norm(p.empresa).includes(norm(mf.empresa));
       const inImpacto = mf.impacto === "Todos" || (p.impacto || "Baixo") === mf.impacto;
-      const inStatus = mf.status === "Todos" || (p.status || "A Executar") === mf.status;
+      const inStatus = mf.statuses.length === 0 || mf.statuses.includes(p.status || "A Executar");
       const inExec = (!mf.execInicio || (p.dataExecucao && p.dataExecucao >= mf.execInicio)) && (!mf.execFim || (p.dataExecucao && p.dataExecucao <= mf.execFim));
       return inBusca && inDep && inEmpresa && inImpacto && inStatus && inExec;
     });
@@ -3453,15 +3506,15 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   /* ========================================================
      DOCAGEM — Itens de Machinery Items (DNV) que precisam ser vistoriados/feitos na docagem
      ======================================================== */
-  const [df, setDf] = useState({ busca: "", localizacao: "", necessitaMaterial: "Todos", status: "Todos" });
-  const hasActiveFilterDoc = df.busca || df.localizacao || df.necessitaMaterial !== "Todos" || df.status !== "Todos";
+  const [df, setDf] = useState({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: [] });
+  const hasActiveFilterDoc = df.busca || df.localizacao || df.necessitaMaterial !== "Todos" || df.statuses.length > 0;
   const filteredDocagem = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return docagemItems.filter((d) => {
       const inBusca = !df.busca || norm(d.nome).includes(norm(df.busca));
       const inLoc = !df.localizacao || norm(d.localizacao).includes(norm(df.localizacao));
       const inMat = df.necessitaMaterial === "Todos" || (df.necessitaMaterial === "Sim" ? d.necessitaMaterial : !d.necessitaMaterial);
-      const inStatus = df.status === "Todos" || (d.status || "A Executar") === df.status;
+      const inStatus = df.statuses.length === 0 || df.statuses.includes(d.status || "A Executar");
       return inBusca && inLoc && inMat && inStatus;
     });
   }, [docagemItems, df]);
@@ -3603,10 +3656,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             </div>
             <div className="g-field">
               <label>Status</label>
-              <select value={mf.status} onChange={(e) => setMf((p) => ({ ...p, status: e.target.value }))}>
-                <option>Todos</option>
-                {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <MultiSelectStatus options={PLAN_STATUS} selected={mf.statuses} onChange={(v) => setMf((p) => ({ ...p, statuses: v }))} />
             </div>
             <div className="g-field">
               <label>Período de Execução — de</label>
@@ -3618,7 +3668,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             </div>
             <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos", status: "Todos", execInicio: "", execFim: "" })}
+              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos", statuses: [], execInicio: "", execFim: "" })}
                 disabled={!hasActiveFilterMap} style={{ opacity: hasActiveFilterMap ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
@@ -3746,14 +3796,11 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             </div>
             <div className="g-field">
               <label>Status</label>
-              <select value={df.status} onChange={(e) => setDf((p) => ({ ...p, status: e.target.value }))}>
-                <option>Todos</option>
-                {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <MultiSelectStatus options={PLAN_STATUS} selected={df.statuses} onChange={(v) => setDf((p) => ({ ...p, statuses: v }))} />
             </div>
             <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setDf({ busca: "", localizacao: "", necessitaMaterial: "Todos", status: "Todos" })}
+              <button className="g-btn" onClick={() => setDf({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: [] })}
                 disabled={!hasActiveFilterDoc} style={{ opacity: hasActiveFilterDoc ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
@@ -3903,7 +3950,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
    TM MASTER — importação semanal do sistema de manutenção: "Due" (tudo em aberto,
    vencido ou a vencer) e "History" (tudo que já foi fechado desde o início do ano)
    ============================================================ */
-function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab }) {
+function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
 
@@ -4057,6 +4104,58 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
     return Object.entries(map).map(([tipo, count]) => ({ tipo, count })).sort((a, b) => b.count - a.count).slice(0, 12);
   }, [tmDueForMetrics]);
 
+  /* quantidade de jobs VENCIDOS (não conta "a vencer"), agrupados por Componente — usado no gráfico
+     "Jobs vencidos por Componente" */
+  const vencidasPorComponente = useMemo(() => {
+    const map = {};
+    vencidas.forEach((d) => { const k = d.component || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([componente, count]) => ({ componente, count })).sort((a, b) => b.count - a.count).slice(0, 15);
+  }, [tmDueForMetrics]);
+
+  /* comparativo mensal: quantidade de itens do Due que estão vencidos ou a vencer (agrupados pelo mês
+     de vencimento) x quantidade de itens do History fechados naquele mês (agrupados pela data de fechamento) */
+  const abertosVsFechadosPorMes = useMemo(() => {
+    const map = {};
+    tmDueForMetrics.forEach((d) => {
+      if (!d.dueDate || !isVencidaOuAte40(d)) return;
+      const key = d.dueDate.slice(0, 7);
+      if (!map[key]) map[key] = { mesKey: key, abertos: 0, fechados: 0 };
+      map[key].abertos++;
+    });
+    tmHistoryForMetrics.forEach((h) => {
+      if (!h.dateDone) return;
+      const key = h.dateDone.slice(0, 7);
+      if (!map[key]) map[key] = { mesKey: key, abertos: 0, fechados: 0 };
+      map[key].fechados++;
+    });
+    return Object.values(map).sort((a, b) => a.mesKey.localeCompare(b.mesKey)).map((r) => {
+      const [y, m] = r.mesKey.split("-");
+      return { ...r, mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}` };
+    });
+  }, [tmDueForMetrics, tmHistoryForMetrics]);
+
+  /* mesma comparação mensal acima, mas restrita só às CORRETIVAS (Job type = ONE): itens do Due
+     vencidos/a vencer agrupados pelo mês de vencimento x itens do History fechados naquele mês */
+  const corretivasPorMes = useMemo(() => {
+    const map = {};
+    tmDueForMetrics.forEach((d) => {
+      if (!isCorretiva(d) || !d.dueDate || !isVencidaOuAte40(d)) return;
+      const key = d.dueDate.slice(0, 7);
+      if (!map[key]) map[key] = { mesKey: key, vencidasOuAVencer: 0, fechadas: 0 };
+      map[key].vencidasOuAVencer++;
+    });
+    tmHistoryForMetrics.forEach((h) => {
+      if (!isCorretiva(h) || !h.dateDone) return;
+      const key = h.dateDone.slice(0, 7);
+      if (!map[key]) map[key] = { mesKey: key, vencidasOuAVencer: 0, fechadas: 0 };
+      map[key].fechadas++;
+    });
+    return Object.values(map).sort((a, b) => a.mesKey.localeCompare(b.mesKey)).map((r) => {
+      const [y, m] = r.mesKey.split("-");
+      return { ...r, mes: `${MONTH_NAMES[Number(m) - 1].slice(0, 3)}/${y.slice(2)}` };
+    });
+  }, [tmDueForMetrics, tmHistoryForMetrics]);
+
   /* ---------- métricas: History ---------- */
   const totalHistory = tmHistoryForMetrics.length;
   const corretivasFechadas = tmHistoryForMetrics.filter(isCorretiva);
@@ -4149,6 +4248,26 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
   }, [tmSubTab, filteredDue, totalDue, vencidas, ateVencer40, criticasVencidasOu40, corretivasDue, duePorDepartamento,
       vencidasPorJobType, aVencerPorJobType, filteredHistory, totalHistory, corretivasFechadas, postergadas, prazoStats,
       historyPorDepartamento, historyPorUsuario, setReportFn]);
+
+  /* "Exportar planilha" no cabeçalho segue a subaba/filtro ativo aqui — Due exporta o filtro de Due,
+     History o filtro de History, e Métricas exporta os dois conjuntos já escopados por mês/ano */
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      const wb = XLSX.utils.book_new();
+      if (tmSubTab === "due") {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(filteredDue, TM_DUE_COLS)), "TM Master - Due");
+        XLSX.writeFile(wb, `genesis-tm-master-due-${todayISO()}.xlsx`);
+      } else if (tmSubTab === "history") {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(filteredHistory, TM_HISTORY_COLS)), "TM Master - History");
+        XLSX.writeFile(wb, `genesis-tm-master-history-${todayISO()}.xlsx`);
+      } else {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmHistoryForMetrics, TM_HISTORY_COLS)), "History (filtrado)");
+        XLSX.writeFile(wb, `genesis-tm-master-metricas-${todayISO()}.xlsx`);
+      }
+    });
+  }, [tmSubTab, filteredDue, filteredHistory, tmDueForMetrics, tmHistoryForMetrics, setExportXlsxFn]);
 
   return (
     <>
@@ -4420,6 +4539,82 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
             </div>
           )}
 
+          {tmDueSnapshots.length > 1 && (
+            <div className="g-panel">
+              <div className="g-panel-head">
+                <span className="g-panel-title">Backlog total de jobs vencidos</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 700, color: "var(--crit)" }}>{vencidas.length}</span>
+              </div>
+              <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+                Somente os itens já vencidos (Diff negativo), a cada fotografia da planilha Due — mostra se o
+                backlog vencido está aumentando ou sendo reduzido ao longo do tempo.
+              </div>
+              <div style={{ width: "100%", height: 200 }}>
+                <ResponsiveContainer>
+                  <BarChart data={tmDueSnapshots.map((s) => ({ ...s, dataLabel: fmtDate(s.date) }))} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="dataLabel" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="vencidas" name="Backlog Vencido" radius={[3, 3, 0, 0]} fill="var(--crit)">
+                      <LabelList dataKey="vencidas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Abertos (vencidos + a vencer) x Fechados por mês</span></div>
+            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+              Barra cinza: itens do Due vencidos ou a vencer, agrupados pelo mês de vencimento. Barra verde: itens do
+              History fechados naquele mês, agrupados pela data de fechamento.
+            </div>
+            <div style={{ width: "100%", height: 240 }}>
+              <ResponsiveContainer>
+                <BarChart data={abertosVsFechadosPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                  <Bar dataKey="abertos" name="Abertos (vencidos + a vencer)" radius={[3, 3, 0, 0]} fill="var(--text-faint)">
+                    <LabelList dataKey="abertos" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                  <Bar dataKey="fechados" name="Fechados" radius={[3, 3, 0, 0]} fill="var(--ok)">
+                    <LabelList dataKey="fechados" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {abertosVsFechadosPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Sem dados suficientes com data de vencimento/fechamento no filtro atual.</div>}
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Corretivas — vencidas/a vencer x fechadas por mês (Job type = ONE)</span></div>
+            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+              Mesma comparação acima, restrita só às manutenções corretivas (Job type ONE). Barra vermelha: corretivas
+              vencidas ou a vencer, agrupadas pelo mês de vencimento. Barra verde: corretivas fechadas naquele mês.
+            </div>
+            <div style={{ width: "100%", height: 240 }}>
+              <ResponsiveContainer>
+                <BarChart data={corretivasPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                  <Bar dataKey="vencidasOuAVencer" name="Vencidas / A Vencer" radius={[3, 3, 0, 0]} fill="var(--crit)">
+                    <LabelList dataKey="vencidasOuAVencer" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                  <Bar dataKey="fechadas" name="Fechadas" radius={[3, 3, 0, 0]} fill="var(--ok)">
+                    <LabelList dataKey="fechadas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {corretivasPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhuma corretiva (Job type ONE) com data de vencimento/fechamento no filtro atual.</div>}
+          </div>
+
           <div className="g-section-label">Due — o que está em aberto</div>
           <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
             {bigKpi("Total em Aberto", totalDue, "var(--teal)", ClipboardList)}
@@ -4541,6 +4736,26 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, handleImp
               </div>
               <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>Clique numa barra pra filtrar a tabela Due.</div>
             </div>
+          </div>
+
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Jobs vencidos por Componente</span></div>
+            <div style={{ width: "100%", height: Math.max(240, vencidasPorComponente.length * 26) }}>
+              <ResponsiveContainer>
+                <BarChart data={vencidasPorComponente} layout="vertical" margin={{ left: 0, right: 24, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                  <YAxis type="category" dataKey="componente" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={140} />
+                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
+                  <Bar dataKey="count" name="Vencidas" radius={[0, 3, 3, 0]} fill="var(--crit)" cursor="pointer"
+                    onClick={(data) => goToDueFiltered({ busca: data.componente, situacao: "Vencida" })}>
+                    <LabelList dataKey="count" position="right" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {vencidasPorComponente.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhum item vencido no filtro atual.</div>}
+            <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>Top 15 componentes com mais jobs vencidos · clique numa barra pra filtrar a tabela Due.</div>
           </div>
 
           <div className="g-section-label">History — o que já foi fechado</div>
