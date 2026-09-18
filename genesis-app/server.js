@@ -39,18 +39,28 @@ if (DATABASE_URL) {
     const { rows } = await pool.query("SELECT data FROM app_state WHERE id = 1");
     return rows[0]?.data ?? null;
   };
-  setState = async (data) => {
+  /* MESCLA em vez de substituir o objeto inteiro: se algum cliente salvar com uma versão do
+     front-end mais antiga (ou uma aba desatualizada aberta no navegador) que não conhece um campo
+     mais novo (ex.: tmDue, planningItems), esse campo é simplesmente OMITIDO do payload enviado —
+     e se aqui fizéssemos um "replace" puro, esse campo desapareceria do banco pra sempre na
+     próxima gravação, mesmo sem ninguém ter mexido nele. Fazendo merge por chave de topo, um campo
+     ausente no payload preserva o valor já salvo; só é sobrescrito quando o cliente realmente o envia. */
+  setState = async (partial) => {
+    const { rows } = await pool.query("SELECT data FROM app_state WHERE id = 1");
+    const current = rows[0]?.data || {};
+    const merged = { ...current, ...partial };
     await pool.query(
       `INSERT INTO app_state (id, data, updated_at) VALUES (1, $1, now())
        ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = now()`,
-      [data]
+      [merged]
     );
+    return merged;
   };
   console.log("[genesis] Persistência: PostgreSQL conectado.");
 } else {
   let memory = null;
   getState = async () => memory;
-  setState = async (data) => { memory = data; };
+  setState = async (partial) => { memory = { ...(memory || {}), ...partial }; return memory; };
   console.warn("[genesis] AVISO: DATABASE_URL não definida — usando memória local (não persiste entre reinícios do servidor).");
 }
 
