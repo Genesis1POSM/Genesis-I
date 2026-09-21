@@ -640,6 +640,7 @@ const TM_DUE_COLS = [
   ["jobName", "Job name"], ["interval", "Int"], ["hours", "Hours"], ["dueRaw", "Due"], ["diffRaw", "Diff"],
   ["pri", "Pri"], ["department", "Department"], ["estimatedDue", "EstimatedDue"],
   ["lastDoneDate", "LastDoneDate"], ["lastDoneHours", "LastDoneHours"],
+  ["planoAcao", "Plano de Ação"], ["linkedPlanId", "Adicionado ao Planejamento"],
 ];
 const TM_HISTORY_COLS = [
   ["jobHistoryNumber", "Job History Number"], ["componentCode", "ComponentCode"], ["componentName", "ComponentName"],
@@ -1473,7 +1474,20 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             lastDoneHours: row["LastDoneHours"],
           };
         }).filter((r) => r.code || r.jobName);
-        setTmDue(rows);
+        /* a importação do Due vem fresca da planilha e gera ids novos a cada vez — pra não perder o
+           "Plano de Ação" preenchido nem o vínculo "Adicionado ao Planejamento" quando o usuário
+           reimporta uma planilha atualizada, casa pelo par Code+Job no com a lista anterior e
+           preserva esses dois campos (e o id) quando encontra o mesmo item */
+        setTmDue((prev) => {
+          const byKey = new Map();
+          prev.forEach((r) => { if (r.code) byKey.set(`${r.code}|${r.jobNo}`, r); });
+          return rows.map((r) => {
+            const old = r.code ? byKey.get(`${r.code}|${r.jobNo}`) : null;
+            return old
+              ? { ...r, id: old.id, planoAcao: old.planoAcao || "", linkedPlanId: old.linkedPlanId || null }
+              : { ...r, planoAcao: "", linkedPlanId: null };
+          });
+        });
         const vencidasCount = rows.filter((r) => r.diffValue !== null && r.diffValue < 0).length;
         const ateVencer40Count = rows.filter((r) => r.diffUnit === "D" && r.diffValue !== null && r.diffValue >= 0 && r.diffValue <= 40).length;
         setTmDueSnapshots((prev) => {
@@ -1624,6 +1638,36 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       dataExecucao: "", linkedServiceId: null,
     }]);
     flashNewRow(id);
+  };
+
+  /* TM Master → coluna "Adicionar ao Planejamento": cria (ou remove) um mapeamento correspondente
+     na aba Planejamento a partir de um item do Due, mantendo o vínculo pelos ids (linkedPlanId no
+     item do Due / linkedFromTmDueId no item de Planejamento), pra não duplicar se marcar de novo. */
+  const onToggleAddToPlanning = (dueRow, checked) => {
+    if (checked) {
+      if (dueRow.linkedPlanId) return;
+      const planId = uid("PLAN");
+      setPlanningItems((prev) => [...prev, {
+        id: planId,
+        nome: dueRow.jobName || dueRow.component || "Item TM Master",
+        departamento: dueRow.department || "", empresa: "",
+        descricaoProblema: [dueRow.component, dueRow.jobName].filter(Boolean).join(" — "),
+        planoAcao: dueRow.planoAcao || "", rc: "",
+        obs: dueRow.code ? `TM Master: ${dueRow.code}` : "",
+        status: "A Executar", precisaMaterial: false, materialNecessario: "", poMaterial: "",
+        impacto: dueRow.pri === "High" ? "Alto" : dueRow.pri === "Medium" ? "Médio" : "Baixo",
+        dataExecucao: "", linkedServiceId: null, linkedFromTmDueId: dueRow.id,
+      }]);
+      setTmDue((prev) => prev.map((r) => (r.id === dueRow.id ? { ...r, linkedPlanId: planId } : r)));
+      setImportMsg("Item adicionado à aba Planejamento.");
+      flashNewRow(planId);
+    } else {
+      const planIdToRemove = dueRow.linkedPlanId;
+      if (planIdToRemove) setPlanningItems((prev) => prev.filter((p) => p.id !== planIdToRemove));
+      setTmDue((prev) => prev.map((r) => (r.id === dueRow.id ? { ...r, linkedPlanId: null } : r)));
+      setImportMsg("Item removido da aba Planejamento.");
+    }
+    setTimeout(() => setImportMsg(null), 4000);
   };
 
   /* Importação de planilhas de mapeamento (ex.: "Saúde do Ativo", "Planejamento de Manutenção") —
@@ -2457,7 +2501,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         {tab === "tmmaster" && (
           <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             handleImportTmDue={handleImportTmDue} handleImportTmHistory={handleImportTmHistory}
-            tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} />
+            tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
         {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
@@ -4003,7 +4047,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
    TM MASTER — importação semanal do sistema de manutenção: "Due" (tudo em aberto,
    vencido ou a vencer) e "History" (tudo que já foi fechado desde o início do ano)
    ============================================================ */
-function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab }) {
+function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
 
@@ -4409,10 +4453,14 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
                   <th style={{ minWidth: 100 }}>Due</th>
                   <th style={{ minWidth: 80 }}>Diff</th>
                   <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 200 }}>Plano de Ação</th>
+                  <th style={{ minWidth: 110 }}>Add. Planejamento</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredDue.slice(0, 500).map((d) => (
+                {filteredDue.slice(0, 500).map((d) => {
+                  const i = tmDue.indexOf(d);
+                  return (
                   <tr className="g-row" key={d.id} style={isVencida(d) ? { background: "rgba(224,72,62,0.06)" } : isAteVencer40(d) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
                     <td style={{ minWidth: 160, whiteSpace: "normal" }}>{d.component}</td>
                     <td style={{ minWidth: 220, whiteSpace: "normal" }}>{d.jobName}</td>
@@ -4423,8 +4471,18 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
                     <td style={{ fontFamily: "var(--mono)" }}>{d.dueRaw}</td>
                     <td style={{ fontFamily: "var(--mono)", fontWeight: 700, color: isVencida(d) ? "var(--crit)" : isAteVencer40(d) ? "var(--warn)" : "var(--text-dim)" }}>{d.diffRaw}</td>
                     <td>{d.status}</td>
+                    <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}>
+                      <ETextArea rows={1} value={d.planoAcao || ""} onChange={(v) => updTmDue(i, "planoAcao", v)} />
+                    </td>
+                    <td style={{ minWidth: 110 }}>
+                      <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
+                        <input type="checkbox" checked={!!d.linkedPlanId} onChange={(e) => onToggleAddToPlanning(d, e.target.checked)} />
+                        {d.linkedPlanId ? "Adicionado" : "Adicionar"}
+                      </label>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             </div>
