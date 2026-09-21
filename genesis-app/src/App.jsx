@@ -2119,13 +2119,36 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-        const normHeader = (h) => h.toString().trim().toLowerCase().replace(/\s+/g, " ").replace(/\bde\b/g, "da");
+        /* Normaliza cabeçalhos removendo acentos, pontuação e preposições ("de"/"da"/"do"/"dos"/"das"),
+           para reconhecer planilhas próprias/externas que não seguem exatamente os nomes deste sistema
+           (ex.: "Descrição do Material", "Qtd", "Data de Solicitação" etc.) */
+        const stripAccents = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+        const normHeader = (h) =>
+          stripAccents(h.toString())
+            .toLowerCase()
+            .replace(/[.:º°]/g, "")
+            .split(/\s+/)
+            .filter((w) => w && !["de", "da", "do", "dos", "das"].includes(w))
+            .join(" ")
+            .trim();
         const HEADER_MAP = {
-          "tm master": "tmMaster", "departamento": "departamento", "sap": "sap", "descrição": "descricao",
-          "quantidade": "quantidade", "prioridade": "priority", "data da solicitação": "dataSolicitacao",
-          "data da necessidade": "dataNecessidade", "reserva": "reserva", "rc": "rc", "po": "po",
-          "linha da po": "linhaPo", "valor": "valor", "eta": "eta", "observação": "obs",
-          "data da recebimento": "dataRecebimento", "status": "status",
+          "tm master": "tmMaster", "tm": "tmMaster",
+          "departamento": "departamento", "depto": "departamento", "area": "departamento", "setor": "departamento",
+          "sap": "sap", "codigo sap": "sap", "cod sap": "sap", "material sap": "sap", "codigo material": "sap", "codigo": "sap", "cod": "sap", "cod material": "sap",
+          "descricao": "descricao", "descricao material": "descricao", "descricao item": "descricao", "material": "descricao", "item": "descricao", "produto": "descricao", "descricao do item": "descricao", "descricao produto": "descricao",
+          "quantidade": "quantidade", "qtd": "quantidade", "qde": "quantidade", "quant": "quantidade", "qtde": "quantidade",
+          "prioridade": "priority", "urgencia": "priority", "prioridade solicitacao": "priority",
+          "data solicitacao": "dataSolicitacao", "data pedido": "dataSolicitacao", "solicitacao": "dataSolicitacao", "data abertura": "dataSolicitacao",
+          "data necessidade": "dataNecessidade", "necessidade": "dataNecessidade", "data limite": "dataNecessidade", "data desejada": "dataNecessidade",
+          "reserva": "reserva", "no reserva": "reserva", "numero reserva": "reserva", "nº reserva": "reserva",
+          "rc": "rc", "requisicao compra": "rc", "requisicao": "rc", "no rc": "rc",
+          "po": "po", "pedido compra": "po", "ordem compra": "po", "no po": "po",
+          "linha po": "linhaPo", "item po": "linhaPo", "linha da po": "linhaPo",
+          "valor": "valor", "valor unitario": "valor", "valor total": "valor", "preco": "valor", "preco unitario": "valor", "vlr": "valor",
+          "eta": "eta", "previsao chegada": "eta", "chegada prevista": "eta", "previsao entrega": "eta",
+          "obs": "obs", "observacao": "obs", "observacoes": "obs", "obs gerais": "obs",
+          "data recebimento": "dataRecebimento", "recebido em": "dataRecebimento", "data entrega": "dataRecebimento",
+          "status": "status", "situacao": "status",
         };
         const rowKeyMap = {};
         if (json.length > 0) {
@@ -2179,7 +2202,15 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             dataRecebimento: parseDate(r.dataRecebimento),
             status: normStatus(r.status),
           };
-        }).filter((r) => r.descricao);
+        }).filter((r) => r.descricao || r.sap || r.tmMaster);
+
+        if (parsedRows.length === 0) {
+          const headersFound = json.length > 0 ? Object.keys(json[0]).join(", ") : "(planilha vazia)";
+          setImportMsg(`Nenhuma linha reconhecida nessa planilha. Cabeçalhos encontrados: ${headersFound}. Renomeie as colunas para algo como "Descrição"/"Material", "Quantidade", "Status" etc., ou avise quais são esses nomes para eu ajustar a importação.`);
+          setTimeout(() => setImportMsg(null), 12000);
+          e.target.value = "";
+          return;
+        }
 
         setMaterials((prev) => {
           const bySap = new Map();
