@@ -2374,7 +2374,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         </div>
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
-          {tab !== "materials" && tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx)"><Upload size={14} />Importar</button>}
+          {tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
           <button className="g-btn" onClick={() => (exportXlsxFn ? exportXlsxFn() : handleExportXlsx())} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
