@@ -1250,6 +1250,8 @@ export default function Root() {
   const [tmDue, setTmDue] = useState(INITIAL_TM_DUE);
   const [tmHistory, setTmHistory] = useState(INITIAL_TM_HISTORY);
   const [tmDueSnapshots, setTmDueSnapshots] = useState(INITIAL_TM_DUE_SNAPSHOTS);
+  /* cartões criados manualmente direto no Quadro Kanban (não vêm de Mapeados nem de Docagem) */
+  const [kanbanCards, setKanbanCards] = useState([]);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
      saveEnabled só vira true dentro do "then" de sucesso (mesmo que o servidor não tenha
@@ -1261,7 +1263,12 @@ export default function Root() {
     let cancelled = false;
     setLoaded(false);
     setLoadError(null);
-    fetch("/api/state")
+    /* trava de tempo: se o servidor não responder em 25s (ex.: instância gratuita do Render
+       "dormindo" e demorando pra acordar, ou backend travado), cancela a espera e mostra a tela
+       de "Tentar novamente" em vez de ficar preso em "Carregando dados..." pra sempre */
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    fetch("/api/state", { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -1283,17 +1290,24 @@ export default function Root() {
           if (d.tmDue) setTmDue(d.tmDue);
           if (d.tmHistory) setTmHistory(d.tmHistory);
           if (d.tmDueSnapshots) setTmDueSnapshots(d.tmDueSnapshots);
+          if (d.kanbanCards) setKanbanCards(d.kanbanCards);
         }
         setSaveEnabled(true);
         setLoaded(true);
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
-        setLoadError("Não foi possível carregar os dados do servidor. Suas alterações NÃO seriam salvas com segurança agora, então o acesso ficou bloqueado até a conexão voltar — clique em \"Tentar novamente\".");
+        const foiTimeout = err && err.name === "AbortError";
+        setLoadError(
+          foiTimeout
+            ? "O servidor demorou demais pra responder (isso costuma acontecer quando o site fica um tempo sem uso e o servidor \"dorme\" — pode levar até 1 minuto pra acordar de novo). Espere um pouco e clique em \"Tentar novamente\"."
+            : "Não foi possível carregar os dados do servidor. Suas alterações NÃO seriam salvas com segurança agora, então o acesso ficou bloqueado até a conexão voltar — clique em \"Tentar novamente\"."
+        );
         setSaveEnabled(false);
         setLoaded(true);
-      });
-    return () => { cancelled = true; };
+      })
+      .finally(() => clearTimeout(timeoutId));
+    return () => { cancelled = true; controller.abort(); clearTimeout(timeoutId); };
   }, [loadAttempt]);
 
   /* salva no servidor (com um pequeno atraso) toda vez que qualquer coisa muda — adicionar, editar,
@@ -1307,12 +1321,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, kanbanCards },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
+  }, [loaded, saveEnabled, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, kanbanCards]);
 
   if (!loaded) {
     return (
@@ -1421,6 +1435,15 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const updDocagem = upd(setDocagemItems), remDocagem = rem(setDocagemItems);
   const updTmDue = upd(setTmDue), remTmDue = rem(setTmDue);
   const updTmHistory = upd(setTmHistory), remTmHistory = rem(setTmHistory);
+  const updKanbanCard = upd(setKanbanCards), remKanbanCard = rem(setKanbanCards);
+  const addKanbanCard = () => {
+    const id = uid("KANB");
+    setKanbanCards((r) => [...r, {
+      id, nome: "Novo cartão", subtitulo: "", status: "A Executar",
+      dataExecucao: "", planoAcao: "", impacto: "Baixo",
+    }]);
+    flashNewRow(id);
+  };
 
 
   /* ---------- TM Master: parsing helpers ---------- */
@@ -1795,6 +1818,29 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     setWorkPackages((prev) => [...prev, ...novosServicos]);
     setDocagemItems((prev) => prev.map((d) => (linkByDocId[d.id] ? { ...d, linkedServiceId: linkByDocId[d.id] } : d)));
   }, [docagemItems]);
+
+  /* mesma graduação automática, agora pros cartões criados manualmente no Quadro Kanban */
+  React.useEffect(() => {
+    const paraGraduar = kanbanCards.filter((k) => k.dataExecucao && !k.linkedServiceId);
+    if (paraGraduar.length === 0) return;
+    const linkByCardId = {};
+    const novosServicos = paraGraduar.map((k) => {
+      const serviceId = uid("PC-2026-08");
+      linkByCardId[k.id] = serviceId;
+      const start = `${k.dataExecucao}T08:00`;
+      const end = `${k.dataExecucao}T17:00`;
+      return {
+        id: serviceId, name: k.nome, discipline: "Marine", group: "Sem categoria",
+        ganttCategory: "Manutenção", empresa: "", md: "Não", rc: "", obs: "",
+        budget: 0, committed: 0, actual: 0, forecast: 0, start, end,
+        status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
+        planoAcao: k.planoAcao || "", precisaMaterial: false,
+        materialNecessario: "", impacto: k.impacto || "Baixo",
+      };
+    });
+    setWorkPackages((prev) => [...prev, ...novosServicos]);
+    setKanbanCards((prev) => prev.map((k) => (linkByCardId[k.id] ? { ...k, linkedServiceId: linkByCardId[k.id] } : k)));
+  }, [kanbanCards]);
 
   const addWp = () => {
     const id = uid("PC-2026-08");
@@ -2495,7 +2541,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
             handleImportDocagem={handleImportDocagem} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab}
-            newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
+            newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento}
+            kanbanCards={kanbanCards} updKanbanCard={updKanbanCard} remKanbanCard={remKanbanCard} addKanbanCard={addKanbanCard} />
         )}
 
         {tab === "tmmaster" && (
@@ -3533,7 +3580,8 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab,
+  kanbanCards, updKanbanCard, remKanbanCard, addKanbanCard }) {
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
@@ -3598,6 +3646,42 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
     const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     updWp(i, "start", toLocal(newStart));
     updWp(i, "end", toLocal(newEnd));
+  };
+
+  /* ========================================================
+     QUADRO KANBAN — cartões criados manualmente aqui (lista própria, kanbanCards, sem nenhuma
+     relação com Mapeados/Docagem), organizados por Status. Arrastar o cartão entre as colunas
+     muda o status. Preencher a Data de Execução no cartão já dispara a graduação automática pro
+     Port Call (mesmo efeito de sempre, feito direto no cartão). */
+  const [kanbanBusca, setKanbanBusca] = useState("");
+  const [draggedCard, setDraggedCard] = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState(null);
+  const kanbanBoardCards = useMemo(() => {
+    const norm = (s) => (s || "").toString().toLowerCase();
+    const all = (kanbanCards || []).map((k, i) => ({
+      key: k.id || `kanban-${i}`, id: k.id,
+      nome: k.nome || "Novo cartão", subtitulo: k.subtitulo || "",
+      status: k.status || "A Executar", dataExecucao: k.dataExecucao || "",
+      linkedServiceId: k.linkedServiceId, impacto: k.impacto || "Baixo", planoAcao: k.planoAcao || "",
+    }));
+    if (!kanbanBusca) return all;
+    return all.filter((c) => norm(c.nome).includes(norm(kanbanBusca)) || norm(c.subtitulo).includes(norm(kanbanBusca)));
+  }, [kanbanCards, kanbanBusca]);
+  const kanbanColunas = useMemo(
+    () => PLAN_STATUS.map((s) => ({ status: s, itens: kanbanBoardCards.filter((c) => c.status === s) })),
+    [kanbanBoardCards]
+  );
+  const setKanbanCardStatus = (card, novoStatus) => {
+    const idx = (kanbanCards || []).findIndex((k) => k.id === card.id);
+    if (idx >= 0) updKanbanCard(idx, "status", novoStatus);
+  };
+  const setKanbanCardData = (card, novaData) => {
+    const idx = (kanbanCards || []).findIndex((k) => k.id === card.id);
+    if (idx >= 0) updKanbanCard(idx, "dataExecucao", novaData);
+  };
+  const removeKanbanCard = (card) => {
+    const idx = (kanbanCards || []).findIndex((k) => k.id === card.id);
+    if (idx >= 0) remKanbanCard(idx);
   };
 
   /* ========================================================
@@ -3705,6 +3789,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
         <button className={planSubTab === "docagem" ? "active" : ""} onClick={() => setPlanSubTab("docagem")}>Docagem (Machinery Items - DNV)</button>
         <button className={planSubTab === "board" ? "active" : ""} onClick={() => setPlanSubTab("board")}>Quadro por Port Call</button>
+        <button className={planSubTab === "kanban" ? "active" : ""} onClick={() => setPlanSubTab("kanban")}>Quadro Kanban</button>
       </div>
 
       {planSubTab === "mapeados" ? (
@@ -3979,7 +4064,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             {filteredDocagem.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item de docagem ainda — importe a planilha da DNV ou use "Novo item".</div>}
           </div>
         </>
-      ) : (
+      ) : planSubTab === "board" ? (
         <>
           <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
             Aqui aparecem os serviços que já têm data de execução (vindos da aba Serviços, incluindo os que
@@ -4033,6 +4118,83 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
+            Arraste um cartão entre as colunas pra mudar o status. Preencher a "Data de Execução" no
+            cartão já cria automaticamente o serviço correspondente no Port Call (mesmo mecanismo das
+            outras abas) — o cartão fica marcado como "Já no Port Call" a partir daí.
+          </div>
+
+          <div className="g-flex" style={{ marginBottom: 10, justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <input type="text" placeholder="Buscar por nome, departamento ou localização..." value={kanbanBusca}
+              onChange={(e) => setKanbanBusca(e.target.value)}
+              style={{ minWidth: 280, background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 4, padding: "6px 10px", fontSize: 12.5 }} />
+            <button className="g-btn primary" onClick={addKanbanCard}><Plus size={14} />Novo cartão</button>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
+            {kanbanColunas.map((col) => (
+              <div key={col.status}
+                onDragOver={(e) => { e.preventDefault(); setDragOverStatus(col.status); }}
+                onDragLeave={() => setDragOverStatus((s) => (s === col.status ? null : s))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedCard) setKanbanCardStatus(draggedCard, col.status);
+                  setDraggedCard(null);
+                  setDragOverStatus(null);
+                }}
+                style={{ minWidth: 270, maxWidth: 270, flexShrink: 0 }}>
+                <div className="g-panel" style={{
+                  marginBottom: 0, minHeight: 200, height: "100%",
+                  outline: dragOverStatus === col.status ? `2px dashed ${PLAN_STATUS_COLOR[col.status]}` : "none",
+                }}>
+                  <div className="g-panel-head" style={{ marginBottom: 10 }}>
+                    <span className="g-panel-title" style={{ fontSize: 12.5, color: PLAN_STATUS_COLOR[col.status] }}>
+                      <span className="g-dot" style={{ background: PLAN_STATUS_COLOR[col.status], marginRight: 6 }} />{col.status}
+                    </span>
+                    <span className="g-muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{col.itens.length}</span>
+                  </div>
+                  {col.itens.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhum item aqui.</div>}
+                  {col.itens.map((card) => (
+                    <div key={card.key}
+                      draggable
+                      onDragStart={() => setDraggedCard(card)}
+                      onDragEnd={() => { setDraggedCard(null); setDragOverStatus(null); }}
+                      style={{
+                        background: "var(--panel-raised)", border: "1px solid var(--border)",
+                        borderLeft: `3px solid ${PLAN_STATUS_COLOR[col.status]}`,
+                        borderRadius: 5, padding: "8px 9px", marginBottom: 8, cursor: "grab",
+                        opacity: draggedCard?.key === card.key ? 0.4 : 1,
+                      }}>
+                      <div onClick={(e) => e.stopPropagation()} className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 4, marginBottom: 4 }}>
+                        <ETextArea rows={1} value={card.nome} onChange={(v) => updKanbanCard((kanbanCards || []).findIndex((k) => k.id === card.id), "nome", v)} />
+                        <button
+                          title="Excluir cartão"
+                          onClick={() => removeKanbanCard(card)}
+                          style={{ background: "none", border: "none", color: "var(--text-faint)", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "2px 4px", flexShrink: 0 }}>
+                          ✕
+                        </button>
+                      </div>
+                      <div className="g-flex" style={{ gap: 5, flexWrap: "wrap", marginBottom: 5 }}>
+                        {card.impacto && <span className="g-pill" style={{ background: "var(--panel)" }}><span className="g-dot" style={{ background: IMPACT_COLOR[card.impacto] }} />{card.impacto}</span>}
+                        {card.linkedServiceId && <span className="g-pill" style={{ background: "rgba(53,211,153,0.12)", color: "var(--ok)", fontSize: 10 }}>Já no Port Call</span>}
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 5 }}>
+                        <EText value={card.subtitulo} onChange={(v) => updKanbanCard((kanbanCards || []).findIndex((k) => k.id === card.id), "subtitulo", v)} />
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <label style={{ fontSize: 10, color: "var(--text-faint)", display: "block", marginBottom: 2 }}>Data de Execução</label>
+                        <input type="date" value={card.dataExecucao} onChange={(e) => setKanbanCardData(card, e.target.value)}
+                          style={{ width: "100%", fontSize: 10.5, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "3px 4px" }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
