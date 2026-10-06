@@ -181,6 +181,20 @@ const Theme = () => (
     }
     .g-kpi-value { font-size: 19px; font-weight: 600; font-family: var(--mono); }
     .g-kpi-value.small { font-size: 16px; }
+    /* ---------- Pagamentos (novo visual) ---------- */
+    .pay-hero { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
+    .pay-main { padding: 18px 20px; border-top: 3px solid var(--accent); }
+    .pay-mini { padding: 16px 18px; }
+    .pay-num { font-size: 26px; font-weight: 700; margin-top: 8px; letter-spacing: -.5px; }
+    .pay-num small { font-size: 12px; font-weight: 500; color: var(--text-faint); letter-spacing: 0; }
+    .pay-statusbar { display: flex; height: 12px; border-radius: 99px; overflow: hidden; gap: 2px; background: var(--border-soft); }
+    .pay-view .g-mode-toggle { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+    .pay-view > .g-panel, .pay-view .g-panel { border-radius: 12px; box-shadow: 0 1px 4px rgba(20,30,45,0.05); }
+    .pay-view .g-table th { background: var(--panel-raised); font-size: 10px; padding: 10px 8px; }
+    .pay-view .g-table tr.g-row:nth-child(even) { background: #FAFBFD; }
+    .pay-view .g-table tr.g-row:hover { background: var(--accent-dim); }
+    .pay-view .g-table td { padding: 8px 8px; }
+    @media (max-width: 1100px) { .pay-hero { grid-template-columns: 1fr 1fr; } }
     /* ---------- Dashboard (novo visual) ---------- */
     .dsh-period { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
     .dsh-period-note { font-size: 11px; color: var(--text-faint); }
@@ -5472,7 +5486,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
   const clearSelection = () => setSelectedIds(new Set());
 
   return (
-    <>
+    <div className="pay-view">
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={paySubTab === "total" ? "active" : ""} onClick={() => setPaySubTab("total")}>Dashboard Total</button>
         <button className={paySubTab === "status" ? "active" : ""} onClick={() => setPaySubTab("status")}>Status dos Pagamentos</button>
@@ -5480,7 +5494,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       </div>
 
       {/* filtro compartilhado — presente em todas as páginas da aba Pagamentos */}
-      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+      <div className="dsh-period" style={{ alignItems: "flex-end" }}>
         <div className="g-field">
           <label>Status (múltipla escolha)</label>
           <MultiSelectStatus options={STATUS_PAGAMENTO_OPTIONS} selected={f.statuses} onChange={(v) => setF((p) => ({ ...p, statuses: v }))} />
@@ -5527,7 +5541,7 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
       {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
       {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
       {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
-    </>
+    </div>
   );
 }
 
@@ -5574,6 +5588,11 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
   const totalDiasAberto = activeRows.reduce((s, r) => s + Number(r.daysOpenTotal || 0), 0);
   const valorTotalSum = activeRows.reduce((s, r) => s + Number(r.valorTotal || 0), 0);
   const emAtraso = activeRows.filter((r) => Number(r.daysOpenTotal || 0) > 60).length;
+  const statusBar = useMemo(() => {
+    const map = {};
+    activeRows.forEach((r) => { const k = r.statusPagamento || "Sem status"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([name, value]) => ({ name, value, color: STATUS_PAGAMENTO_COLOR[name] || "#9499A8" }));
+  }, [activeRows]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -5600,16 +5619,41 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
 
   return (
     <>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        {bigKpi("Registros", activeRows.length, "var(--teal)", LayoutGrid)}
-        {bigKpi("Valor Total", fmt(valorTotalSum), "var(--ok)", Wallet)}
-        {bigKpi("Serviços em Atraso (+60d)", emAtraso, "var(--crit)", AlertTriangle)}
+      <div className="pay-hero">
+        <div className="dsh-card pay-main">
+          <div className="dsh-label">Valor Total</div>
+          <div className="dsh-big" style={{ color: "var(--teal)" }}>{fmt(valorTotalSum)}</div>
+          <div className="dsh-sub">{activeRows.length} registro(s){selectedIds.size > 0 ? " selecionado(s)" : ""}</div>
+        </div>
+        <div className="dsh-card pay-mini" style={{ borderTop: "3px solid var(--crit)" }}>
+          <div className="dsh-label">Em Atraso (+60d)</div>
+          <div className="pay-num" style={{ color: "var(--crit)" }}>{emAtraso}</div>
+        </div>
+        <div className="dsh-card pay-mini">
+          <div className="dsh-label">Execução → Pagamento</div>
+          <div className="pay-num">{avg(execPayVals).toFixed(1)}<small> dias</small></div>
+        </div>
+        <div className="dsh-card pay-mini">
+          <div className="dsh-label">MD → Execução</div>
+          <div className="pay-num">{avg(mdExecVals).toFixed(1)}<small> dias</small></div>
+        </div>
+        <div className="dsh-card pay-mini">
+          <div className="dsh-label">Dias em Aberto (Total)</div>
+          <div className="pay-num">{totalDiasAberto}<small> dias</small></div>
+        </div>
       </div>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        {bigKpi("Média Execução → Pagamento", `${avg(execPayVals).toFixed(1)} dias`, "var(--teal)")}
-        {bigKpi("Média MD → Execução", `${avg(mdExecVals).toFixed(1)} dias`, "var(--teal)")}
-        {bigKpi("Total de Dias em Aberto", `${totalDiasAberto} dias`, "var(--crit)", AlertTriangle)}
-      </div>
+
+      {statusBar.length > 0 && (
+        <div className="dsh-card" style={{ marginBottom: 14, padding: "14px 18px" }}>
+          <div className="dsh-title" style={{ marginBottom: 8 }}>Situação dos Pagamentos</div>
+          <div className="pay-statusbar">
+            {statusBar.map((x) => <div key={x.name} style={{ flex: x.value, background: x.color }} title={`${x.name}: ${x.value}`} />)}
+          </div>
+          <div className="dsh-legend" style={{ flexDirection: "row", flexWrap: "wrap", gap: "6px 18px", marginTop: 10 }}>
+            {statusBar.map((x) => <div key={x.name}><i style={{ background: x.color }} />{x.name}<b style={{ marginLeft: 6 }}>{x.value}</b></div>)}
+          </div>
+        </div>
+      )}
 
       <div className="g-panel">
         <div className="g-table-wrap">
@@ -5622,14 +5666,12 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
               <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
               <SortTh sortKey="md" sort={sort} setSort={setSort}>MD</SortTh>
               <SortTh sortKey="mdSentDate" sort={sort} setSort={setSort}>Envio MD</SortTh>
-              <th>MD→Exec (d)</th>
               <SortTh sortKey="daysOpenTotal" sort={sort} setSort={setSort}>Dias Aberto Total</SortTh>
               <SortTh sortKey="rc" sort={sort} setSort={setSort}>RC</SortTh>
               <SortTh sortKey="serviceStatus" sort={sort} setSort={setSort}>Status Serviço</SortTh>
               <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO/Contrato</SortTh>
               <SortTh sortKey="medicao" sort={sort} setSort={setSort}>Medição</SortTh>
               <SortTh sortKey="valorTotal" sort={sort} setSort={setSort}>Valor Total</SortTh>
-              <SortTh sortKey="saldoPo" sort={sort} setSort={setSort}>Saldo PO</SortTh>
               <th style={{ minWidth: 240 }}>Observações</th>
               <SortTh sortKey="statusPagamento" sort={sort} setSort={setSort} style={{ minWidth: 210 }}>Status Pagamento</SortTh>
               <SortTh sortKey="dataPagamento" sort={sort} setSort={setSort}>Data Pagamento</SortTh>
@@ -5647,16 +5689,12 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
                   <td style={{ minWidth: 120 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
                   <td><ESelect value={r.md} onChange={(v) => updInv(i, "md", v)} options={["Sim", "Não"]} /></td>
                   <td><EDate value={r.mdSentDate} onChange={(v) => updInv(i, "mdSentDate", v)} /></td>
-                  <td style={{ fontFamily: "var(--mono)", textAlign: "right", color: mdToExecDays(r) < 0 ? "var(--crit)" : undefined }} title={mdToExecDays(r) < 0 ? "Negativo — não entra na média" : ""}>
-                    {mdToExecDays(r) ?? "—"}
-                  </td>
                   <td><ENum value={r.daysOpenTotal} onChange={(v) => updInv(i, "daysOpenTotal", v)} /></td>
                   <td style={{ minWidth: 90 }}><EText value={r.rc} onChange={(v) => updInv(i, "rc", v)} mono /></td>
                   <td><ESelect value={r.serviceStatus} onChange={(v) => updInv(i, "serviceStatus", v)} options={["Aberto", "Fechado"]} /></td>
                   <td style={{ minWidth: 120 }}><EText value={r.poContrato} onChange={(v) => updInv(i, "poContrato", v)} mono /></td>
                   <td style={{ minWidth: 90 }}><EText value={r.medicao} onChange={(v) => updInv(i, "medicao", v)} mono /></td>
                   <td><ENum value={r.valorTotal} onChange={(v) => updInv(i, "valorTotal", v)} /></td>
-                  <td><ENum value={r.saldoPo} onChange={(v) => updInv(i, "saldoPo", v)} /></td>
                   <td style={{ minWidth: 240, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.obs} onChange={(v) => updInv(i, "obs", v)} /></td>
                   <td style={{ minWidth: 210 }}><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
                   <td><EDate value={r.dataPagamento} onChange={(v) => updInv(i, "dataPagamento", v)} /></td>
