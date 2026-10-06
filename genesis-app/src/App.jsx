@@ -608,6 +608,8 @@ const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergenc
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
 const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
 const PLAN_STATUS = ["A Executar", "Em Andamento", "Concluído", "Cancelado"];
+const PLAN_STATUS_PADRAO = PLAN_STATUS.filter((x) => x !== "Concluído"); /* filtro automático: tudo menos Concluído */
+const mesmoConjunto = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 const PLAN_STATUS_COLOR = { "A Executar": "#8D9BB5", "Em Andamento": "#3FC1C9", "Concluído": "#35D399", "Cancelado": "#6B7280" };
 /* categories + Orçado (USD) exactly as in the uploaded drill-down report */
 const CATEGORIES = ["Elétrica", "Hse", "Hull & Structure", "Integridade", "Lubrificantes", "Marine", "Mecânica", "R&R Elétrica", "R&R Mecânica", "CAPEX"];
@@ -3662,8 +3664,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
      Um item aqui só passa a existir também como um Serviço de verdade
      (no Gantt/Port Call) quando ganha uma Data de Execução.
      ======================================================== */
-  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos", statuses: [], execInicio: "", execFim: "" });
-  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos" || mf.statuses.length > 0 || mf.execInicio || mf.execFim;
+  const [mf, setMf] = useState({ busca: "", departamento: "", empresa: "", impacto: "Todos", statuses: PLAN_STATUS_PADRAO, execInicio: "", execFim: "" });
+  const hasActiveFilterMap = mf.busca || mf.departamento || mf.empresa || mf.impacto !== "Todos" || !mesmoConjunto(mf.statuses, PLAN_STATUS_PADRAO) || mf.execInicio || mf.execFim;
   const filteredMapeados = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return planningItems.filter((p) => {
@@ -3711,8 +3713,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   /* ========================================================
      DOCAGEM — Itens de Machinery Items (DNV) que precisam ser vistoriados/feitos na docagem
      ======================================================== */
-  const [df, setDf] = useState({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: [] });
-  const hasActiveFilterDoc = df.busca || df.localizacao || df.necessitaMaterial !== "Todos" || df.statuses.length > 0;
+  const [df, setDf] = useState({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: PLAN_STATUS_PADRAO });
+  const hasActiveFilterDoc = df.busca || df.localizacao || df.necessitaMaterial !== "Todos" || !mesmoConjunto(df.statuses, PLAN_STATUS_PADRAO);
   const filteredDocagem = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return docagemItems.filter((d) => {
@@ -3872,7 +3874,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             </div>
             <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos", statuses: [], execInicio: "", execFim: "" })}
+              <button className="g-btn" onClick={() => setMf({ busca: "", departamento: "", empresa: "", impacto: "Todos", statuses: PLAN_STATUS_PADRAO, execInicio: "", execFim: "" })}
                 disabled={!hasActiveFilterMap} style={{ opacity: hasActiveFilterMap ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
@@ -4004,7 +4006,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             </div>
             <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setDf({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: [] })}
+              <button className="g-btn" onClick={() => setDf({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: PLAN_STATUS_PADRAO })}
                 disabled={!hasActiveFilterDoc} style={{ opacity: hasActiveFilterDoc ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
