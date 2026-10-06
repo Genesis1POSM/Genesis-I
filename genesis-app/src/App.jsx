@@ -3835,6 +3835,21 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   const concluidosDoc = docagemItems.filter((d) => d.status === "Concluído").length;
   const pendentesDoc = docagemItems.filter((d) => d.status !== "Concluído" && d.status !== "Cancelado").length;
 
+  const [groupMap, setGroupMap] = useState(true);
+  const [collapsedMap, setCollapsedMap] = useState(new Set());
+  const [expandedPlanRow, setExpandedPlanRow] = useState(null);
+  const [groupDoc, setGroupDoc] = useState(true);
+  const [collapsedDoc, setCollapsedDoc] = useState(new Set());
+  const [expandedDocRow, setExpandedDocRow] = useState(null);
+  const groupRows = (rows, on, keyFn, fallback) => {
+    if (!on) return [{ key: "Todos", rows }];
+    const map = new Map();
+    rows.forEach((r) => { const k = (keyFn(r) || "").toString().trim() || fallback; if (!map.has(k)) map.set(k, []); map.get(k).push(r); });
+    return [...map.entries()].sort((x, y) => (x[0] === fallback) - (y[0] === fallback) || x[0].localeCompare(y[0], "pt-BR")).map(([key, rs]) => ({ key, rows: rs }));
+  };
+  const mapGroups = useMemo(() => groupRows(filteredMapeados, groupMap, (p) => p.departamento, "Sem departamento"), [filteredMapeados, groupMap]);
+  const docGroups = useMemo(() => groupRows(filteredDocagem, groupDoc, (d) => d.localizacao, "Sem localização"), [filteredDocagem, groupDoc]);
+
   React.useEffect(() => {
     if (!setExportXlsxFn) return;
     setExportXlsxFn(() => () => {
@@ -3995,68 +4010,109 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Itens mapeados para execução ({filteredMapeados.length})</span></div>
+            <div className="tbl-toolbar" style={{ margin: "-18px -18px 0 -18px", borderRadius: "12px 12px 0 0" }}>
+              <label className="tbl-check"><input type="checkbox" checked={groupMap} onChange={(e) => setGroupMap(e.target.checked)} />Agrupar por departamento</label>
+              <span className="g-muted" style={{ fontSize: 11 }}>clique na seta de uma linha para editar problema, plano de ação, empresa e departamento</span>
+            </div>
             <div className="g-table-wrap">
-            <table className="g-table">
+            <table className="g-table tbl-modern">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 180 }}>Nome</th>
-                  <th style={{ minWidth: 120 }}>Departamento</th>
-                  <th style={{ minWidth: 120 }}>Empresa</th>
-                  <th style={{ minWidth: 220 }}>Descrição do Problema</th>
-                  <th style={{ minWidth: 200 }}>Plano de Ação</th>
-                  <th style={{ minWidth: 110 }}>Precisa de Material</th>
-                  <th style={{ minWidth: 100 }}>PO</th>
+                  <th style={{ width: 34 }}></th>
+                  <th style={{ minWidth: 300 }}>Item</th>
+                  <th style={{ minWidth: 140 }}>Data de Execução</th>
                   <th>Impacto</th>
-                  <th style={{ minWidth: 130 }}>Data de Execução</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 150 }}>Material</th>
+                  <th style={{ minWidth: 150 }}>Status</th>
+                  <th style={{ width: 70 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredMapeados.map((p) => {
+                {mapGroups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    {groupMap && (
+                      <tr className="tbl-group" onClick={() => setCollapsedMap((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
+                        <td colSpan={7}>
+                          <span className="tbl-group-arrow">{collapsedMap.has(g.key) ? "▸" : "▾"}</span>
+                          {g.key}
+                          <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
+                          <span className="tbl-group-tot">{g.rows.filter((x) => !x.dataExecucao).length > 0 ? `${g.rows.filter((x) => !x.dataExecucao).length} sem data de execução` : "todos com data"}</span>
+                        </td>
+                      </tr>
+                    )}
+                    {!(groupMap && collapsedMap.has(g.key)) && g.rows.map((p) => {
                   const i = planningItems.indexOf(p);
+                  const isOpen = expandedPlanRow === p.id;
                   return (
-                    <tr id={`row-${p.id}`} className={"g-row" + (newRowId === p.id ? " g-row-flash" : "")} key={p.id}>
-                      <td style={{ minWidth: 180, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.nome} onChange={(v) => updPlan(i, "nome", v)} /></td>
-                      <td style={{ minWidth: 120 }}><EText value={p.departamento} onChange={(v) => updPlan(i, "departamento", v)} /></td>
-                      <td style={{ minWidth: 120 }}><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></td>
-                      <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.descricaoProblema} onChange={(v) => updPlan(i, "descricaoProblema", v)} /></td>
-                      <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={p.planoAcao} onChange={(v) => updPlan(i, "planoAcao", v)} /></td>
-                      <td style={{ minWidth: 110 }}>
-                        <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
-                          <input type="checkbox" checked={!!p.precisaMaterial} onChange={(e) => updPlan(i, "precisaMaterial", e.target.checked)} />
-                          Sim
-                        </label>
+                    <React.Fragment key={p.id}>
+                    <tr id={`row-${p.id}`} className={"g-row tbl-row" + (newRowId === p.id ? " g-row-flash" : "")} style={{ "--c": PLAN_STATUS_COLOR[p.status || "A Executar"] || "#9499A8" }}>
+                      <td className="tbl-first"></td>
+                      <td style={{ minWidth: 300, whiteSpace: "normal", verticalAlign: "top" }}>
+                        <ETextArea rows={1} value={p.nome} onChange={(v) => updPlan(i, "nome", v)} />
+                        <div className="tbl-chips">
+                          {p.empresa && <span className="tbl-chip">{p.empresa}</span>}
+                          {p.precisaMaterial && p.poMaterial && <span className="tbl-chip">PO {p.poMaterial}</span>}
+                          {p.planoAcao && <span className="tbl-chip" title={p.planoAcao}>com plano de ação</span>}
+                        </div>
                       </td>
-                      <td style={{ minWidth: 100 }}>
-                        {p.precisaMaterial ? (
-                          <input type="text" className="g-edit" placeholder="nº da PO..." value={p.poMaterial || ""} onChange={(e) => updPlan(i, "poMaterial", e.target.value)}
-                            style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
-                        ) : <span className="g-muted">—</span>}
+                      <td style={{ minWidth: 140 }}>
+                        {p.dataExecucao
+                          ? <input type="date" value={p.dataExecucao} onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
+                              style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "5px 6px", fontSize: 11.5 }} />
+                          : <div className="g-flex" style={{ gap: 6 }}><span style={{ color: "var(--text-faint)", fontSize: 11 }}>sem data</span>
+                              <input type="date" value="" onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
+                                style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "5px 6px", fontSize: 11.5 }} /></div>}
                       </td>
                       <td>
                         <select value={p.impacto || "Baixo"} onChange={(e) => updPlan(i, "impacto", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[p.impacto || "Baixo"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5 }}>
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: IMPACT_COLOR[p.impacto || "Baixo"], fontWeight: 700, borderRadius: 99, padding: "4px 8px", fontSize: 11.5 }}>
                           {IMPACT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
                         </select>
                       </td>
-                      <td style={{ minWidth: 130 }}>
-                        <input type="date" value={p.dataExecucao || ""} onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
+                      <td style={{ minWidth: 150 }}>
+                        <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
+                          <input type="checkbox" checked={!!p.precisaMaterial} onChange={(e) => updPlan(i, "precisaMaterial", e.target.checked)} />
+                          Precisa de material
+                        </label>
+                        {p.precisaMaterial && (
+                          <input type="text" className="g-edit" placeholder="nº da PO..." value={p.poMaterial || ""} onChange={(e) => updPlan(i, "poMaterial", e.target.value)}
+                            style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px", width: "100%", marginTop: 4 }} />
+                        )}
                       </td>
-                      <td style={{ minWidth: 140 }}>
+                      <td style={{ minWidth: 150 }}>
                         <select value={p.status || "A Executar"} onChange={(e) => updPlan(i, "status", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[p.status || "A Executar"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5, width: "100%" }}>
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[p.status || "A Executar"], fontWeight: 700, borderRadius: 6, padding: "5px 8px", fontSize: 11.5, width: "100%" }}>
                           {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
                         {p.linkedServiceId && (
                           <div style={{ marginTop: 4, fontSize: 10, color: "var(--ok)" }}>🔗 Serviço criado</div>
                         )}
                       </td>
-                      <td><span className="g-btn ghost danger" onClick={() => remPlan(i)}><Trash2 size={13} /></span></td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <span className="g-btn ghost" onClick={() => setExpandedPlanRow(isOpen ? null : p.id)} title="Ver todos os detalhes">
+                          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </span>
+                        <span className="g-btn ghost danger" onClick={() => remPlan(i)}><Trash2 size={13} /></span>
+                      </td>
                     </tr>
+                    {isOpen && (
+                      <tr className="tbl-detail">
+                        <td></td>
+                        <td colSpan={6}>
+                          <div className="tbl-detail-grid">
+                            <div className="g-field"><label>Departamento</label><EText value={p.departamento} onChange={(v) => updPlan(i, "departamento", v)} /></div>
+                            <div className="g-field"><label>Empresa</label><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></div>
+                            <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Descrição do Problema</label><ETextArea rows={1} value={p.descricaoProblema} onChange={(v) => updPlan(i, "descricaoProblema", v)} /></div>
+                            <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Plano de Ação</label><ETextArea rows={1} value={p.planoAcao} onChange={(v) => updPlan(i, "planoAcao", v)} /></div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
             </div>
@@ -4127,66 +4183,102 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Itens de Docagem — Machinery Items DNV ({filteredDocagem.length})</span></div>
+            <div className="tbl-toolbar" style={{ margin: "-18px -18px 0 -18px", borderRadius: "12px 12px 0 0" }}>
+              <label className="tbl-check"><input type="checkbox" checked={groupDoc} onChange={(e) => setGroupDoc(e.target.checked)} />Agrupar por localização</label>
+              <span className="g-muted" style={{ fontSize: 11 }}>clique na seta de uma linha para editar localização, tipo, empresa, plano de ação e conclusão</span>
+            </div>
             <div className="g-table-wrap">
-            <table className="g-table">
+            <table className="g-table tbl-modern">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 220 }}>Nome</th>
-                  <th style={{ minWidth: 120 }}>Localização</th>
-                  <th style={{ minWidth: 100 }}>Tipo</th>
-                  <th style={{ minWidth: 120 }}>Empresa</th>
-                  <th style={{ minWidth: 200 }}>Plano de Ação</th>
-                  <th style={{ minWidth: 110 }}>Necessita de Material</th>
-                  <th style={{ minWidth: 100 }}>PO Relacionada</th>
-                  <th style={{ minWidth: 130 }}>Previsão de Execução</th>
-                  <th style={{ minWidth: 130 }}>Data de Conclusão</th>
-                  <th style={{ minWidth: 140 }}>Status</th>
-                  <th></th>
+                  <th style={{ width: 34 }}></th>
+                  <th style={{ minWidth: 300 }}>Item</th>
+                  <th style={{ minWidth: 150 }}>Material</th>
+                  <th style={{ minWidth: 140 }}>Previsão de Execução</th>
+                  <th style={{ minWidth: 150 }}>Status</th>
+                  <th style={{ width: 70 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredDocagem.map((d) => {
+                {docGroups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    {groupDoc && (
+                      <tr className="tbl-group" onClick={() => setCollapsedDoc((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
+                        <td colSpan={6}>
+                          <span className="tbl-group-arrow">{collapsedDoc.has(g.key) ? "▸" : "▾"}</span>
+                          {g.key}
+                          <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
+                          <span className="tbl-group-tot">{g.rows.filter((x) => x.status === "Concluído").length} de {g.rows.length} concluído(s)</span>
+                        </td>
+                      </tr>
+                    )}
+                    {!(groupDoc && collapsedDoc.has(g.key)) && g.rows.map((d) => {
                   const i = docagemItems.indexOf(d);
+                  const isOpen = expandedDocRow === d.id;
                   return (
-                    <tr id={`row-${d.id}`} className={"g-row" + (newRowId === d.id ? " g-row-flash" : "")} key={d.id}>
-                      <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={d.nome} onChange={(v) => updDocagem(i, "nome", v)} /></td>
-                      <td style={{ minWidth: 120 }}><EText value={d.localizacao} onChange={(v) => updDocagem(i, "localizacao", v)} /></td>
-                      <td style={{ minWidth: 100 }}><EText value={d.tipoPeriodo} onChange={(v) => updDocagem(i, "tipoPeriodo", v)} /></td>
-                      <td style={{ minWidth: 120 }}><EText value={d.empresa} onChange={(v) => updDocagem(i, "empresa", v)} /></td>
-                      <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={d.planoAcao} onChange={(v) => updDocagem(i, "planoAcao", v)} /></td>
-                      <td style={{ minWidth: 110 }}>
+                    <React.Fragment key={d.id}>
+                    <tr id={`row-${d.id}`} className={"g-row tbl-row" + (newRowId === d.id ? " g-row-flash" : "")} style={{ "--c": PLAN_STATUS_COLOR[d.status || "A Executar"] || "#9499A8" }}>
+                      <td className="tbl-first"></td>
+                      <td style={{ minWidth: 300, whiteSpace: "normal", verticalAlign: "top" }}>
+                        <ETextArea rows={1} value={d.nome} onChange={(v) => updDocagem(i, "nome", v)} />
+                        <div className="tbl-chips">
+                          {d.tipoPeriodo && <span className="tbl-chip">{d.tipoPeriodo}</span>}
+                          {d.empresa && <span className="tbl-chip">{d.empresa}</span>}
+                          {d.necessitaMaterial && d.poRelacionada && <span className="tbl-chip">PO {d.poRelacionada}</span>}
+                          {d.dataConclusao && <span className="tbl-chip">Concluído {fmtDate(d.dataConclusao)}</span>}
+                        </div>
+                      </td>
+                      <td style={{ minWidth: 150 }}>
                         <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
                           <input type="checkbox" checked={!!d.necessitaMaterial} onChange={(e) => updDocagem(i, "necessitaMaterial", e.target.checked)} />
-                          Sim
+                          Necessita de material
                         </label>
-                      </td>
-                      <td style={{ minWidth: 100 }}>
-                        {d.necessitaMaterial ? (
+                        {d.necessitaMaterial && (
                           <input type="text" className="g-edit" placeholder="nº da PO..." value={d.poRelacionada || ""} onChange={(e) => updDocagem(i, "poRelacionada", e.target.value)}
-                            style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 3, padding: "4px 6px", width: "100%" }} />
-                        ) : <span className="g-muted">—</span>}
-                      </td>
-                      <td style={{ minWidth: 130 }}>
-                        <input type="date" value={d.previsaoExecucao || ""} onChange={(e) => updDocagem(i, "previsaoExecucao", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
-                      </td>
-                      <td style={{ minWidth: 130 }}>
-                        <input type="date" value={d.dataConclusao || ""} onChange={(e) => updDocagem(i, "dataConclusao", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "5px 6px", fontSize: 11.5 }} />
+                            style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px", width: "100%", marginTop: 4 }} />
+                        )}
                       </td>
                       <td style={{ minWidth: 140 }}>
+                        <input type="date" value={d.previsaoExecucao || ""} onChange={(e) => updDocagem(i, "previsaoExecucao", e.target.value)}
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "5px 6px", fontSize: 11.5 }} />
+                      </td>
+                      <td style={{ minWidth: 150 }}>
                         <select value={d.status || "A Executar"} onChange={(e) => updDocagem(i, "status", e.target.value)}
-                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[d.status || "A Executar"], fontWeight: 600, borderRadius: 3, padding: "4px 6px", fontSize: 11.5, width: "100%" }}>
+                          style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[d.status || "A Executar"], fontWeight: 700, borderRadius: 6, padding: "5px 8px", fontSize: 11.5, width: "100%" }}>
                           {PLAN_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
                         {d.linkedServiceId && (
                           <div style={{ marginTop: 4, fontSize: 10, color: "var(--ok)" }}>🔗 Serviço criado</div>
                         )}
                       </td>
-                      <td><span className="g-btn ghost danger" onClick={() => remDocagem(i)}><Trash2 size={13} /></span></td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <span className="g-btn ghost" onClick={() => setExpandedDocRow(isOpen ? null : d.id)} title="Ver todos os detalhes">
+                          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </span>
+                        <span className="g-btn ghost danger" onClick={() => remDocagem(i)}><Trash2 size={13} /></span>
+                      </td>
                     </tr>
+                    {isOpen && (
+                      <tr className="tbl-detail">
+                        <td></td>
+                        <td colSpan={5}>
+                          <div className="tbl-detail-grid">
+                            <div className="g-field"><label>Localização</label><EText value={d.localizacao} onChange={(v) => updDocagem(i, "localizacao", v)} /></div>
+                            <div className="g-field"><label>Tipo</label><EText value={d.tipoPeriodo} onChange={(v) => updDocagem(i, "tipoPeriodo", v)} /></div>
+                            <div className="g-field"><label>Empresa</label><EText value={d.empresa} onChange={(v) => updDocagem(i, "empresa", v)} /></div>
+                            <div className="g-field"><label>Data de Conclusão</label>
+                              <input type="date" value={d.dataConclusao || ""} onChange={(e) => updDocagem(i, "dataConclusao", e.target.value)}
+                                style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 8px", fontSize: 12 }} /></div>
+                            <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Plano de Ação</label><ETextArea rows={1} value={d.planoAcao} onChange={(v) => updDocagem(i, "planoAcao", v)} /></div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
             </div>
@@ -4322,6 +4414,29 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
       return inBusca && inJobType && inDep && inUsuario && inPost;
     });
   }, [tmHistory, histf, codeToDept]);
+
+  const [groupDue, setGroupDue] = useState(true);
+  const [collapsedDue, setCollapsedDue] = useState(new Set());
+  const [groupHist, setGroupHist] = useState(true);
+  const [collapsedHist, setCollapsedHist] = useState(new Set());
+  const dueGroups = useMemo(() => {
+    const vis = filteredDue.slice(0, 500);
+    const urg = (d) => (d.diffValue === null || d.diffValue === undefined ? 1e9 : d.diffValue);
+    if (!groupDue) return [{ key: "Todos", rows: [...vis].sort((x, y) => urg(x) - urg(y)) }];
+    const map = new Map();
+    vis.forEach((d) => { const k = (d.department || "").trim() || "Sem departamento"; if (!map.has(k)) map.set(k, []); map.get(k).push(d); });
+    return [...map.entries()].sort((x, y) => x[0].localeCompare(y[0], "pt-BR")).map(([key, rows]) => ({ key, rows: rows.sort((p, q) => urg(p) - urg(q)) }));
+  }, [filteredDue, groupDue]);
+  const histGroups = useMemo(() => {
+    const vis = filteredHistory.slice(0, 500);
+    if (!groupHist) return [{ key: "todos", label: "Todos", rows: vis }];
+    const map = new Map();
+    vis.forEach((h) => { const k = h.dateDone ? h.dateDone.slice(0, 7) : "sem-data"; if (!map.has(k)) map.set(k, []); map.get(k).push(h); });
+    return [...map.entries()].sort((x, y) => (x[0] === "sem-data") - (y[0] === "sem-data") || y[0].localeCompare(x[0])).map(([key, rows]) => ({
+      key, rows: rows.sort((p, q) => (q.dateDone || "").localeCompare(p.dateDone || "")),
+      label: key === "sem-data" ? "Sem data de fechamento" : `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} / ${key.slice(0, 4)}`,
+    }));
+  }, [filteredHistory, groupHist]);
 
   /* ---------- filtro de Mês/Ano específico da subaba Métricas — escopa todas as métricas abaixo
      (Due pela data de vencimento, History pela data de fechamento) ---------- */
@@ -4654,41 +4769,64 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Itens em aberto ({filteredDue.length})</span></div>
+            <div className="tbl-toolbar" style={{ margin: "-18px -18px 0 -18px", borderRadius: "12px 12px 0 0" }}>
+              <label className="tbl-check"><input type="checkbox" checked={groupDue} onChange={(e) => setGroupDue(e.target.checked)} />Agrupar por departamento</label>
+              <span className="g-muted" style={{ fontSize: 11 }}>faixa vermelha = vencida · laranja = vence em até 40 dias · verde = no prazo</span>
+            </div>
             <div className="g-table-wrap">
-            <table className="g-table">
+            <table className="g-table tbl-modern">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 160 }}>Component</th>
-                  <th style={{ minWidth: 220 }}>Job Name</th>
-                  <th style={{ minWidth: 90 }}>Job Type</th>
-                  <th style={{ minWidth: 70 }}>Job N°</th>
-                  <th style={{ minWidth: 110 }}>Department</th>
-                  <th style={{ minWidth: 80 }}>Pri</th>
-                  <th style={{ minWidth: 100 }}>Due</th>
-                  <th style={{ minWidth: 80 }}>Diff</th>
+                  <th style={{ width: 8, padding: 0 }}></th>
+                  <th style={{ minWidth: 320 }}>Manutenção</th>
+                  <th style={{ minWidth: 150 }}>Prazo</th>
+                  <th style={{ minWidth: 100 }}>Prioridade</th>
                   <th style={{ minWidth: 90 }}>Status</th>
-                  <th style={{ minWidth: 200 }}>Plano de Ação</th>
-                  <th style={{ minWidth: 110 }}>Add. Planejamento</th>
+                  <th style={{ minWidth: 220 }}>Plano de Ação</th>
+                  <th style={{ minWidth: 130 }}>Planejamento</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredDue.slice(0, 500).map((d) => {
+                {dueGroups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    {groupDue && (
+                      <tr className="tbl-group" onClick={() => setCollapsedDue((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
+                        <td colSpan={7}>
+                          <span className="tbl-group-arrow">{collapsedDue.has(g.key) ? "▸" : "▾"}</span>
+                          {g.key}
+                          <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
+                          <span className="tbl-group-tot">{g.rows.filter(isVencida).length} vencida(s) · {g.rows.filter(isAteVencer40).length} em até 40 dias</span>
+                        </td>
+                      </tr>
+                    )}
+                    {!(groupDue && collapsedDue.has(g.key)) && g.rows.map((d) => {
                   const i = tmDue.indexOf(d);
+                  const cor = isVencida(d) ? "#EF4444" : isAteVencer40(d) ? "#F5A623" : "#22C55E";
+                  const pc = isVencida(d) ? "d3" : isAteVencer40(d) ? "d2" : "d1";
+                  const priCor = d.pri === "High" ? "#B91C1C" : d.pri === "Medium" ? "#B45309" : "#5B6273";
+                  const priBg = d.pri === "High" ? "#FEE7E7" : d.pri === "Medium" ? "#FFF3DC" : "#EEF0F4";
                   return (
-                  <tr className="g-row" key={d.id} style={isVencida(d) ? { background: "rgba(224,72,62,0.06)" } : isAteVencer40(d) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
-                    <td style={{ minWidth: 160, whiteSpace: "normal" }}>{d.component}</td>
-                    <td style={{ minWidth: 220, whiteSpace: "normal" }}>{d.jobName}</td>
-                    <td>{d.jobType}</td>
-                    <td style={{ fontFamily: "var(--mono)" }}>{d.jobNo}</td>
-                    <td style={{ minWidth: 110 }}>{d.department}</td>
-                    <td style={{ color: d.pri === "High" ? "var(--crit)" : d.pri === "Medium" ? "var(--warn)" : "var(--text-dim)", fontWeight: 600 }}>{d.pri}</td>
-                    <td style={{ fontFamily: "var(--mono)" }}>{d.dueRaw}</td>
-                    <td style={{ fontFamily: "var(--mono)", fontWeight: 700, color: isVencida(d) ? "var(--crit)" : isAteVencer40(d) ? "var(--warn)" : "var(--text-dim)" }}>{d.diffRaw}</td>
+                  <tr className="g-row tbl-row" key={d.id} style={{ "--c": cor }}>
+                    <td className="tbl-first" style={{ padding: 0 }}></td>
+                    <td style={{ minWidth: 320, whiteSpace: "normal" }}>
+                      <div style={{ fontWeight: 600, color: "#12203A" }}>{d.component}</div>
+                      <div className="tbl-sub" style={{ padding: "2px 0 0 0" }}>{d.jobName}</div>
+                      <div className="tbl-chips" style={{ padding: "4px 0 0 0" }}>
+                        {d.jobType && <span className="tbl-chip">{d.jobType}</span>}
+                        {d.jobNo && <span className="tbl-chip">Job {d.jobNo}</span>}
+                        {d.code && <span className="tbl-chip">Cód. {d.code}</span>}
+                      </div>
+                    </td>
+                    <td style={{ minWidth: 150 }}>
+                      <span className={`tbl-days ${pc}`}>{d.diffValue === null || d.diffValue === undefined ? (d.diffRaw || "—") : isVencida(d) ? `vencida há ${Math.abs(d.diffValue)} ${d.diffUnit === "H" ? "h" : "dias"}` : `vence em ${d.diffValue} ${d.diffUnit === "H" ? "h" : "dias"}`}</span>
+                      {d.dueRaw && <div className="tbl-sub" style={{ padding: "4px 0 0 2px" }}>Due {d.dueRaw}</div>}
+                    </td>
+                    <td><span className="tbl-days" style={{ background: priBg, color: priCor }}>{d.pri || "—"}</span></td>
                     <td>{d.status}</td>
-                    <td style={{ minWidth: 200, whiteSpace: "normal", verticalAlign: "top" }}>
+                    <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}>
                       <ETextArea rows={1} value={d.planoAcao || ""} onChange={(v) => updTmDue(i, "planoAcao", v)} />
                     </td>
-                    <td style={{ minWidth: 110 }}>
+                    <td style={{ minWidth: 130 }}>
                       <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
                         <input type="checkbox" checked={!!d.linkedPlanId} onChange={(e) => onToggleAddToPlanning(d, e.target.checked)} />
                         {d.linkedPlanId ? "Adicionado" : "Adicionar"}
@@ -4697,6 +4835,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
                   </tr>
                   );
                 })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
             </div>
@@ -4773,32 +4913,54 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 
           <div className="g-panel">
             <div className="g-panel-head"><span className="g-panel-title">Jobs fechados ({filteredHistory.length})</span></div>
+            <div className="tbl-toolbar" style={{ margin: "-18px -18px 0 -18px", borderRadius: "12px 12px 0 0" }}>
+              <label className="tbl-check"><input type="checkbox" checked={groupHist} onChange={(e) => setGroupHist(e.target.checked)} />Agrupar por mês de fechamento</label>
+              <span className="g-muted" style={{ fontSize: 11 }}>faixa laranja = postergada</span>
+            </div>
             <div className="g-table-wrap">
-            <table className="g-table">
+            <table className="g-table tbl-modern">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 160 }}>Component</th>
-                  <th style={{ minWidth: 200 }}>Job Name</th>
-                  <th style={{ minWidth: 90 }}>Job Type</th>
-                  <th style={{ minWidth: 70 }}>Job N°</th>
-                  <th style={{ minWidth: 100 }}>Date Done</th>
-                  <th style={{ minWidth: 130 }}>Done By</th>
-                  <th style={{ minWidth: 110 }}>Departamento</th>
-                  <th style={{ minWidth: 140 }}>Remarks</th>
+                  <th style={{ width: 8, padding: 0 }}></th>
+                  <th style={{ minWidth: 340 }}>Manutenção Realizada</th>
+                  <th style={{ minWidth: 130 }}>Responsável</th>
+                  <th style={{ minWidth: 110 }}>Fechado Em</th>
+                  <th style={{ minWidth: 120 }}>Situação</th>
+                  <th style={{ minWidth: 200 }}>Observações</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredHistory.slice(0, 500).map((h) => (
-                  <tr className="g-row" key={h.jobHistoryNumber} style={isPostergada(h) ? { background: "rgba(242,169,59,0.05)" } : undefined}>
-                    <td style={{ minWidth: 160, whiteSpace: "normal" }}>{h.componentName}</td>
-                    <td style={{ minWidth: 200, whiteSpace: "normal" }}>{h.jobName}</td>
-                    <td>{h.jobType}</td>
-                    <td style={{ fontFamily: "var(--mono)" }}>{h.jobNo}</td>
-                    <td style={{ fontFamily: "var(--mono)" }}>{fmtDate(h.dateDone)}</td>
+                {histGroups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    {groupHist && (
+                      <tr className="tbl-group" onClick={() => setCollapsedHist((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
+                        <td colSpan={6}>
+                          <span className="tbl-group-arrow">{collapsedHist.has(g.key) ? "▸" : "▾"}</span>
+                          {g.label}
+                          <span className="tbl-group-cnt">{g.rows.length} fechamento(s)</span>
+                          <span className="tbl-group-tot">{g.rows.filter(isPostergada).length} postergada(s)</span>
+                        </td>
+                      </tr>
+                    )}
+                    {!(groupHist && collapsedHist.has(g.key)) && g.rows.map((h) => (
+                  <tr className="g-row tbl-row" key={h.jobHistoryNumber} style={{ "--c": isPostergada(h) ? "#F5A623" : "#22C55E" }}>
+                    <td className="tbl-first" style={{ padding: 0 }}></td>
+                    <td style={{ minWidth: 340, whiteSpace: "normal" }}>
+                      <div style={{ fontWeight: 600, color: "#12203A" }}>{h.jobName}</div>
+                      <div className="tbl-sub" style={{ padding: "2px 0 0 0" }}>{h.componentName}</div>
+                      <div className="tbl-chips" style={{ padding: "4px 0 0 0" }}>
+                        {h.jobType && <span className="tbl-chip">{h.jobType}</span>}
+                        {h.jobNo && <span className="tbl-chip">Job {h.jobNo}</span>}
+                        {deptOfHistory(h) && <span className="tbl-chip">{deptOfHistory(h)}</span>}
+                      </div>
+                    </td>
                     <td>{h.doneByName || "—"}</td>
-                    <td style={{ minWidth: 110 }}>{deptOfHistory(h)}</td>
-                    <td style={{ minWidth: 140, whiteSpace: "normal" }}>{h.remarks || "—"}</td>
+                    <td>{fmtDate(h.dateDone)}</td>
+                    <td>{isPostergada(h) ? <span className="tbl-days d2">Postergada</span> : <span className="tbl-days d1">Fechada</span>}</td>
+                    <td style={{ minWidth: 200, whiteSpace: "normal" }}>{h.remarks || "—"}</td>
                   </tr>
+                    ))}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -5212,6 +5374,18 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   const naoRecebido = (m) => !["Recebido", "Entregue a bordo"].includes(m.status);
+  const PRIO_COLOR = { "Crítica": "#EF4444", "Emergencial": "#EF4444", "Sobressalente crítico": "#EF4444", "Alta": "#F5A623", "Importante": "#F5A623", "Média": "#3B82F6", "Baixa": "#9499A8" };
+  const [groupByPrio, setGroupByPrio] = useState(true);
+  const [collapsedMat, setCollapsedMat] = useState(new Set());
+  const toggleMatGroup = (k) => setCollapsedMat((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const matGroups = useMemo(() => {
+    if (!groupByPrio) return [{ key: "Todas", rows: sorted }];
+    const ordem = ["Emergencial", "Sobressalente crítico", "Crítica", "Alta", "Importante", "Média", "Baixa"];
+    const map = new Map();
+    sorted.forEach((m) => { const k = m.priority || "Sem prioridade"; if (!map.has(k)) map.set(k, []); map.get(k).push(m); });
+    const pos = (k) => { const x = ordem.indexOf(k); return x < 0 ? 99 : x; };
+    return [...map.entries()].sort((x, y) => pos(x[0]) - pos(y[0])).map(([key, rows]) => ({ key, rows }));
+  }, [sorted, groupByPrio]);
   const urgentes = filtered.filter((m) => ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && naoRecebido(m));
   const abertas = filtered.filter(naoRecebido);
   const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
@@ -5426,78 +5600,100 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
       )}
 
       {matSubTab === "requisicoes" && (
-      <div className="g-panel">
+      <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="tbl-toolbar">
+          <label className="tbl-check"><input type="checkbox" checked={groupByPrio} onChange={(e) => setGroupByPrio(e.target.checked)} />Agrupar por prioridade</label>
+          <span className="g-muted" style={{ fontSize: 11 }}>{filtered.length} material(is) · clique na seta de uma linha para editar todos os detalhes</span>
+        </div>
         <div className="g-table-wrap">
-        <table className="g-table">
+        <table className="g-table tbl-modern">
           <thead>
             <tr>
-              <th></th>
-              <SortTh sortKey="tmMaster" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>TM Master</SortTh>
-              <SortTh sortKey="departamento" sort={sort} setSort={setSort} style={{ minWidth: 120 }}>Departamento</SortTh>
-              <SortTh sortKey="sap" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>SAP</SortTh>
-              <SortTh sortKey="descricao" sort={sort} setSort={setSort} style={{ minWidth: 190 }}>Descrição</SortTh>
-              <SortTh sortKey="quantidade" sort={sort} setSort={setSort}>Quantidade</SortTh>
-              <SortTh sortKey="priority" sort={sort} setSort={setSort}>Prioridade</SortTh>
-              <SortTh sortKey="dataSolicitacao" sort={sort} setSort={setSort}>Data da solicitação</SortTh>
-              <SortTh sortKey="dataNecessidade" sort={sort} setSort={setSort}>Data da Necessidade</SortTh>
-              <SortTh sortKey="reserva" sort={sort} setSort={setSort} style={{ minWidth: 90 }}>Reserva</SortTh>
-              <SortTh sortKey="rc" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>RC</SortTh>
-              <SortTh sortKey="po" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>PO</SortTh>
-              <SortTh sortKey="linhaPo" sort={sort} setSort={setSort}>Linha da PO</SortTh>
-              <SortTh sortKey="valor" sort={sort} setSort={setSort}>Valor</SortTh>
-              <SortTh sortKey="eta" sort={sort} setSort={setSort}>ETA</SortTh>
-              <SortTh sortKey="obs" sort={sort} setSort={setSort} style={{ minWidth: 160 }}>Observação</SortTh>
-              <SortTh sortKey="dataRecebimento" sort={sort} setSort={setSort}>Data de Recebimento</SortTh>
+              <th style={{ width: 34 }}></th>
+              <SortTh sortKey="descricao" sort={sort} setSort={setSort} style={{ minWidth: 320 }}>Material</SortTh>
+              <SortTh sortKey="quantidade" sort={sort} setSort={setSort}>Qtd</SortTh>
+              <SortTh sortKey="dataNecessidade" sort={sort} setSort={setSort} style={{ minWidth: 150 }}>Necessário Até</SortTh>
+              <SortTh sortKey="priority" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Prioridade</SortTh>
               <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 180 }}>Status</SortTh>
-              <th></th>
+              <SortTh sortKey="valor" sort={sort} setSort={setSort}>Valor</SortTh>
+              <th style={{ width: 70 }}></th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((m) => {
+            {matGroups.map((g) => (
+              <React.Fragment key={g.key}>
+                {groupByPrio && (
+                  <tr className="tbl-group" onClick={() => toggleMatGroup(g.key)}>
+                    <td colSpan={8}>
+                      <span className="tbl-group-arrow">{collapsedMat.has(g.key) ? "▸" : "▾"}</span>
+                      Prioridade {g.key}
+                      <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
+                      <span className="tbl-group-tot">{g.rows.filter((x) => naoRecebido(x)).length} em aberto</span>
+                    </td>
+                  </tr>
+                )}
+                {!(groupByPrio && collapsedMat.has(g.key)) && g.rows.map((m) => {
               const i = materials.indexOf(m);
               const isOpen = expandedRow === i;
+              const cor = PRIO_COLOR[m.priority] || "#9499A8";
+              const dn = naoRecebido(m) && m.dataNecessidade ? Math.round((new Date(m.dataNecessidade) - new Date(todayISO())) / 86400000) : null;
               return (
                 <React.Fragment key={i}>
-                  <tr id={`row-${m.id}`} className={"g-row" + (newRowId === m.id ? " g-row-flash" : "")}>
-                    <td>
-                      <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : i)}>
-                        {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                      </span>
+                  <tr id={`row-${m.id}`} className={"g-row tbl-row" + (newRowId === m.id ? " g-row-flash" : "")} style={{ "--c": cor }}>
+                    <td className="tbl-first"></td>
+                    <td style={{ minWidth: 320, whiteSpace: "normal", verticalAlign: "top" }}>
+                      <ETextArea rows={1} value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} />
+                      <div className="tbl-chips">
+                        {m.departamento && <span className="tbl-chip">{m.departamento}</span>}
+                        {m.tmMaster && <span className="tbl-chip">TM {m.tmMaster}</span>}
+                        {m.sap && <span className="tbl-chip">SAP {m.sap}</span>}
+                        {m.rc && <span className="tbl-chip">RC {m.rc}</span>}
+                        {m.po && <span className="tbl-chip">PO {m.po}</span>}
+                      </div>
                     </td>
-                    <td style={{ minWidth: 100 }}><EText value={m.tmMaster} onChange={(v) => updMat(i, "tmMaster", v)} mono /></td>
-                    <td style={{ minWidth: 120 }}><EText value={m.departamento} onChange={(v) => updMat(i, "departamento", v)} /></td>
-                    <td style={{ minWidth: 100 }}><EText value={m.sap} onChange={(v) => updMat(i, "sap", v)} mono /></td>
-                    <td style={{ minWidth: 190, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} /></td>
                     <td><ENum value={m.quantidade} onChange={(v) => updMat(i, "quantidade", v)} /></td>
-                    <td><ESelect value={m.priority} onChange={(v) => updMat(i, "priority", v)} options={PRIORITY} /></td>
-                    <td><EDate value={m.dataSolicitacao} onChange={(v) => updMat(i, "dataSolicitacao", v)} /></td>
-                    <td><EDate value={m.dataNecessidade} onChange={(v) => updMat(i, "dataNecessidade", v)} /></td>
-                    <td style={{ minWidth: 90 }}><EText value={m.reserva} onChange={(v) => updMat(i, "reserva", v)} mono /></td>
-                    <td style={{ minWidth: 100 }}><EText value={m.rc} onChange={(v) => updMat(i, "rc", v)} mono /></td>
-                    <td style={{ minWidth: 100 }}><EText value={m.po} onChange={(v) => updMat(i, "po", v)} mono /></td>
-                    <td><EText value={m.linhaPo} onChange={(v) => updMat(i, "linhaPo", v)} mono /></td>
-                    <td><ENum value={m.valor} onChange={(v) => updMat(i, "valor", v)} /></td>
-                    <td>
-                      {m.eta
-                        ? <EDate value={m.eta} onChange={(v) => updMat(i, "eta", v)} />
-                        : <span className="g-flex"><span style={{ color: "var(--crit)", fontSize: 11 }}>sem ETA</span>
-                            <input type="date" className="g-edit mono" onChange={(e) => updMat(i, "eta", e.target.value)} /></span>}
+                    <td style={{ minWidth: 150 }}>
+                      <EDate value={m.dataNecessidade} onChange={(v) => updMat(i, "dataNecessidade", v)} />
+                      {dn !== null && <div className="tbl-sub" style={{ color: dn < 0 ? "#B91C1C" : dn <= 7 ? "#B45309" : undefined, fontWeight: dn <= 7 ? 700 : 400 }}>{dn < 0 ? `atrasado ${Math.abs(dn)} dia(s)` : dn === 0 ? "é hoje" : `em ${dn} dia(s)`}</div>}
                     </td>
-                    <td style={{ minWidth: 160, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></td>
-                    <td><EDate value={m.dataRecebimento} onChange={(v) => updMat(i, "dataRecebimento", v)} /></td>
+                    <td style={{ minWidth: 130 }}><ESelect value={m.priority} onChange={(v) => updMat(i, "priority", v)} options={PRIORITY} /></td>
                     <td style={{ minWidth: 180 }}><ESelect value={m.status} onChange={(v) => updMat(i, "status", v)} options={MAT_STATUS} /></td>
-                    <td><span className="g-btn ghost danger" onClick={() => remMat(i)}><Trash2 size={13} /></span></td>
+                    <td><ENum value={m.valor} onChange={(v) => updMat(i, "valor", v)} /></td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : i)} title="Ver todos os detalhes">
+                        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                      <span className="g-btn ghost danger" onClick={() => remMat(i)}><Trash2 size={13} /></span>
+                    </td>
                   </tr>
                   {isOpen && (
-                    <tr className="g-expand-row">
+                    <tr className="tbl-detail">
                       <td></td>
-                      <td colSpan={18} style={{ padding: "10px 8px 16px 8px" }}>
-                        <div className="g-field" style={{ maxWidth: 320 }}>
-                          <label>Vincular a um serviço (opcional)</label>
-                          <select className="g-edit" value={m.wp || ""} onChange={(e) => updMat(i, "wp", e.target.value)}>
-                            <option value="">— nenhum —</option>
-                            {workPackages.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                          </select>
+                      <td colSpan={7}>
+                        <div className="tbl-detail-grid">
+                          <div className="g-field"><label>TM Master</label><EText value={m.tmMaster} onChange={(v) => updMat(i, "tmMaster", v)} mono /></div>
+                          <div className="g-field"><label>Departamento</label><EText value={m.departamento} onChange={(v) => updMat(i, "departamento", v)} /></div>
+                          <div className="g-field"><label>SAP</label><EText value={m.sap} onChange={(v) => updMat(i, "sap", v)} mono /></div>
+                          <div className="g-field"><label>Reserva</label><EText value={m.reserva} onChange={(v) => updMat(i, "reserva", v)} mono /></div>
+                          <div className="g-field"><label>RC</label><EText value={m.rc} onChange={(v) => updMat(i, "rc", v)} mono /></div>
+                          <div className="g-field"><label>PO</label><EText value={m.po} onChange={(v) => updMat(i, "po", v)} mono /></div>
+                          <div className="g-field"><label>Linha da PO</label><EText value={m.linhaPo} onChange={(v) => updMat(i, "linhaPo", v)} mono /></div>
+                          <div className="g-field"><label>Data da Solicitação</label><EDate value={m.dataSolicitacao} onChange={(v) => updMat(i, "dataSolicitacao", v)} /></div>
+                          <div className="g-field"><label>ETA</label>
+                            {m.eta
+                              ? <EDate value={m.eta} onChange={(v) => updMat(i, "eta", v)} />
+                              : <span className="g-flex"><span style={{ color: "var(--crit)", fontSize: 11 }}>sem ETA</span>
+                                  <input type="date" className="g-edit mono" onChange={(e) => updMat(i, "eta", e.target.value)} /></span>}
+                          </div>
+                          <div className="g-field"><label>Data de Recebimento</label><EDate value={m.dataRecebimento} onChange={(v) => updMat(i, "dataRecebimento", v)} /></div>
+                          <div className="g-field" style={{ minWidth: 220 }}>
+                            <label>Vincular a um serviço (opcional)</label>
+                            <select className="g-edit" value={m.wp || ""} onChange={(e) => updMat(i, "wp", e.target.value)}>
+                              <option value="">— nenhum —</option>
+                              {workPackages.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Observação</label><ETextArea rows={1} value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></div>
                         </div>
                       </td>
                     </tr>
@@ -5505,6 +5701,8 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
                 </React.Fragment>
               );
             })}
+              </React.Fragment>
+            ))}
           </tbody>
         </table>
         </div>
