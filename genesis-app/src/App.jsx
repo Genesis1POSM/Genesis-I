@@ -5,7 +5,7 @@ import {
   Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock, ClipboardList, Gauge
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, PieChart, Pie
 } from "recharts";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -170,6 +170,42 @@ const Theme = () => (
     }
     .g-kpi-value { font-size: 19px; font-weight: 600; font-family: var(--mono); }
     .g-kpi-value.small { font-size: 16px; }
+    /* ---------- Dashboard (novo visual) ---------- */
+    .dsh-period { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+    .dsh-period-note { font-size: 11px; color: var(--text-faint); }
+    .dsh-hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+    .dsh-row2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+    .dsh-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(20,30,45,0.05); min-width: 0; }
+    .dsh-fin { padding: 18px 20px; }
+    .dsh-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-faint); font-weight: 600; }
+    .dsh-big { font-size: 28px; font-weight: 700; margin: 6px 0 8px 0; letter-spacing: -.5px; }
+    .dsh-sub { font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+    .dsh-fx { width: 58px; border: 1px solid var(--border); border-radius: 5px; padding: 2px 5px; font-size: 11px; background: var(--panel-raised); color: var(--text); }
+    .dsh-bar { height: 8px; background: var(--border-soft); border-radius: 99px; overflow: hidden; margin: 4px 0 8px 0; }
+    .dsh-bar > div { height: 100%; border-radius: 99px; transition: width .4s; }
+    .dsh-title { font-size: 13.5px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .dsh-count { background: var(--accent-dim); color: var(--accent); border-radius: 99px; font-size: 11px; padding: 1px 8px; font-weight: 600; }
+    .dsh-donut { display: flex; align-items: center; gap: 14px; }
+    .dsh-donut-chart { position: relative; width: 150px; height: 150px; flex: none; }
+    .dsh-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+    .dsh-donut-center b { font-size: 22px; }
+    .dsh-donut-center span { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .6px; }
+    .dsh-legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); flex: 1; }
+    .dsh-legend div { display: flex; align-items: center; gap: 7px; }
+    .dsh-legend i { width: 9px; height: 9px; border-radius: 99px; display: inline-block; }
+    .dsh-legend b { margin-left: auto; color: var(--text); }
+    .dsh-chips { display: flex; gap: 8px; margin-top: 12px; }
+    .dsh-chips div { flex: 1; background: var(--panel-raised); border-radius: 8px; padding: 8px 10px; font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .5px; min-width: 0; }
+    .dsh-chips b { display: block; font-size: 13px; color: var(--text); margin-bottom: 2px; text-transform: none; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dsh-scroll { max-height: 320px; overflow-y: auto; }
+    .dsh-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--border-soft); }
+    .dsh-item:last-child { border-bottom: none; }
+    .dsh-item-main { font-size: 12.5px; font-weight: 500; }
+    .dsh-item-sub { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
+    .dsh-days { color: var(--crit); font-weight: 700; font-size: 12px; white-space: nowrap; }
+    .dsh-details { margin-top: 10px; font-size: 12px; }
+    .dsh-details summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+    @media (max-width: 1100px) { .dsh-hero, .dsh-row2 { grid-template-columns: 1fr; } }
     .g-section-label {
       font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-faint);
       margin: 18px 0 8px 2px; font-family: var(--mono);
@@ -685,12 +721,6 @@ const cellToDateTimeStr = (v) => {
   if (!v && v !== 0) return "";
   if (v instanceof Date) return `${v.getFullYear()}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}T${pad2(v.getHours())}:${pad2(v.getMinutes())}`;
   return String(v);
-};
-/* exporta uma lista de abas [nome, linhas] para um .xlsx — usado pelas páginas pra exportar exatamente o que mostram */
-const exportSheets = (fileBase, sheets) => {
-  const wb = XLSX.utils.book_new();
-  sheets.forEach(([name, rows]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "—": "Sem registros" }]), name));
-  XLSX.writeFile(wb, `${fileBase}-${todayISO()}.xlsx`);
 };
 const rowsToSheet = (rows, cols) => rows.map((r) => Object.fromEntries(cols.map(([key, label]) => [label, r[key]])));
 const sheetToRows = (json, cols) =>
@@ -1256,8 +1286,6 @@ export default function Root() {
   const [tmDue, setTmDue] = useState(INITIAL_TM_DUE);
   const [tmHistory, setTmHistory] = useState(INITIAL_TM_HISTORY);
   const [tmDueSnapshots, setTmDueSnapshots] = useState(INITIAL_TM_DUE_SNAPSHOTS);
-  /* cartões criados manualmente direto no Quadro Kanban (não vêm de Mapeados nem de Docagem) */
-  const [kanbanCards, setKanbanCards] = useState([]);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
      saveEnabled só vira true dentro do "then" de sucesso (mesmo que o servidor não tenha
@@ -1269,12 +1297,7 @@ export default function Root() {
     let cancelled = false;
     setLoaded(false);
     setLoadError(null);
-    /* trava de tempo: se o servidor não responder em 25s (ex.: instância gratuita do Render
-       "dormindo" e demorando pra acordar, ou backend travado), cancela a espera e mostra a tela
-       de "Tentar novamente" em vez de ficar preso em "Carregando dados..." pra sempre */
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
-    fetch("/api/state", { signal: controller.signal })
+    fetch("/api/state")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -1296,24 +1319,17 @@ export default function Root() {
           if (d.tmDue) setTmDue(d.tmDue);
           if (d.tmHistory) setTmHistory(d.tmHistory);
           if (d.tmDueSnapshots) setTmDueSnapshots(d.tmDueSnapshots);
-          if (d.kanbanCards) setKanbanCards(d.kanbanCards);
         }
         setSaveEnabled(true);
         setLoaded(true);
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return;
-        const foiTimeout = err && err.name === "AbortError";
-        setLoadError(
-          foiTimeout
-            ? "O servidor demorou demais pra responder (isso costuma acontecer quando o site fica um tempo sem uso e o servidor \"dorme\" — pode levar até 1 minuto pra acordar de novo). Espere um pouco e clique em \"Tentar novamente\"."
-            : "Não foi possível carregar os dados do servidor. Suas alterações NÃO seriam salvas com segurança agora, então o acesso ficou bloqueado até a conexão voltar — clique em \"Tentar novamente\"."
-        );
+        setLoadError("Não foi possível carregar os dados do servidor. Suas alterações NÃO seriam salvas com segurança agora, então o acesso ficou bloqueado até a conexão voltar — clique em \"Tentar novamente\".");
         setSaveEnabled(false);
         setLoaded(true);
-      })
-      .finally(() => clearTimeout(timeoutId));
-    return () => { cancelled = true; controller.abort(); clearTimeout(timeoutId); };
+      });
+    return () => { cancelled = true; };
   }, [loadAttempt]);
 
   /* salva no servidor (com um pequeno atraso) toda vez que qualquer coisa muda — adicionar, editar,
@@ -1327,12 +1343,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, kanbanCards },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, kanbanCards]);
+  }, [loaded, saveEnabled, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
 
   if (!loaded) {
     return (
@@ -1374,7 +1390,6 @@ export default function Root() {
       docagemItems={docagemItems} setDocagemItems={setDocagemItems}
       tmDue={tmDue} setTmDue={setTmDue} tmHistory={tmHistory} setTmHistory={setTmHistory}
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={setTmDueSnapshots}
-      kanbanCards={kanbanCards} setKanbanCards={setKanbanCards}
       loadError={loadError}
     />
   );
@@ -1388,8 +1403,9 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
-  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, kanbanCards, setKanbanCards, loadError }) {
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, loadError }) {
   const [tab, setTab] = useState("dashboard");
+  React.useEffect(() => { setReportFn(null); setExportXlsxFn(null); }, [tab]);
   const [newRowId, setNewRowId] = useState(null);
   /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
      guarda o id por alguns segundos pra a linha poder ser destacada e "scrollada" até a visão do usuário */
@@ -1441,15 +1457,6 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const updDocagem = upd(setDocagemItems), remDocagem = rem(setDocagemItems);
   const updTmDue = upd(setTmDue), remTmDue = rem(setTmDue);
   const updTmHistory = upd(setTmHistory), remTmHistory = rem(setTmHistory);
-  const updKanbanCard = upd(setKanbanCards), remKanbanCard = rem(setKanbanCards);
-  const addKanbanCard = () => {
-    const id = uid("KANB");
-    setKanbanCards((r) => [...r, {
-      id, nome: "Novo cartão", subtitulo: "", status: "A Executar",
-      dataExecucao: "", planoAcao: "", impacto: "Baixo",
-    }]);
-    flashNewRow(id);
-  };
 
 
   /* ---------- TM Master: parsing helpers ---------- */
@@ -1824,29 +1831,6 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     setWorkPackages((prev) => [...prev, ...novosServicos]);
     setDocagemItems((prev) => prev.map((d) => (linkByDocId[d.id] ? { ...d, linkedServiceId: linkByDocId[d.id] } : d)));
   }, [docagemItems]);
-
-  /* mesma graduação automática, agora pros cartões criados manualmente no Quadro Kanban */
-  React.useEffect(() => {
-    const paraGraduar = kanbanCards.filter((k) => k.dataExecucao && !k.linkedServiceId);
-    if (paraGraduar.length === 0) return;
-    const linkByCardId = {};
-    const novosServicos = paraGraduar.map((k) => {
-      const serviceId = uid("PC-2026-08");
-      linkByCardId[k.id] = serviceId;
-      const start = `${k.dataExecucao}T08:00`;
-      const end = `${k.dataExecucao}T17:00`;
-      return {
-        id: serviceId, name: k.nome, discipline: "Marine", group: "Sem categoria",
-        ganttCategory: "Manutenção", empresa: "", md: "Não", rc: "", obs: "",
-        budget: 0, committed: 0, actual: 0, forecast: 0, start, end,
-        status: "Planejamento", progress: 0, createdAt: new Date().toISOString(),
-        planoAcao: k.planoAcao || "", precisaMaterial: false,
-        materialNecessario: "", impacto: k.impacto || "Baixo",
-      };
-    });
-    setWorkPackages((prev) => [...prev, ...novosServicos]);
-    setKanbanCards((prev) => prev.map((k) => (linkByCardId[k.id] ? { ...k, linkedServiceId: linkByCardId[k.id] } : k)));
-  }, [kanbanCards]);
 
   const addWp = () => {
     const id = uid("PC-2026-08");
@@ -2419,7 +2403,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         <span className="g-brand-mark">GENESIS I</span>
         <div className="g-nav-row">
           {navItems.map((n) => (
-            <div key={n.key} className={`g-nav-item ${tab === n.key ? "active" : ""}`} onClick={() => { if (n.key !== tab) { setReportFn(null); setExportXlsxFn(null); setTab(n.key); } }}>
+            <div key={n.key} className={`g-nav-item ${tab === n.key ? "active" : ""}`} onClick={() => setTab(n.key)}>
               <n.icon size={14} />{n.label}
             </div>
           ))}
@@ -2501,7 +2485,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
           {tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
-          <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) exatamente o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
+          <button className="g-btn" onClick={() => (exportXlsxFn ? exportXlsxFn() : handleExportXlsx())} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
           {tab === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
@@ -2522,7 +2506,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       <div className="g-body">
         {tab === "dashboard" && (
           <DashboardView kpis={kpis} workPackages={workPackages} disciplineCosts={disciplineCosts}
-            serviceInvoices={serviceInvoices} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+            serviceInvoices={serviceInvoices} setReportFn={setReportFn}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
@@ -2546,8 +2530,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
             handleImportDocagem={handleImportDocagem} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab}
-            newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento}
-            kanbanCards={kanbanCards} updKanbanCard={updKanbanCard} remKanbanCard={remKanbanCard} addKanbanCard={addKanbanCard} />
+            newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
         )}
 
         {tab === "tmmaster" && (
@@ -2556,18 +2539,18 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
-        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
+        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
 
         {tab === "payments" && (
           <PaymentsSection
             paySubTab={paySubTab} setPaySubTab={setPaySubTab}
             serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} addInv={addInv}
-            setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} newRowId={newRowId}
+            setReportFn={setReportFn} newRowId={newRowId}
           />
         )}
 
         {tab === "costs" && (
-          <CostsView serviceInvoices={serviceInvoices} updInv={updInv} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <CostsView serviceInvoices={serviceInvoices} updInv={updInv} setReportFn={setReportFn}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
@@ -2582,7 +2565,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 /* ============================================================
    DASHBOARD — exact KPI set requested
    ============================================================ */
-function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn, setExportXlsxFn }) {
+function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn }) {
 
   /* filtro de período do Dashboard — por padrão, o mês vigente */
   const defaultDashPeriod = useMemo(() => {
@@ -2720,153 +2703,137 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
     });
   }, [financeiro, servicos, pagamentos, categoryCostsDash, gastosPorMes, topOpenInvoices, dp, setReportFn]);
 
-  /* exporta em planilha exatamente o que o Dashboard mostra (mesmo período e mesmos números) */
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      exportSheets("genesis-dashboard", [
-        ["Resumo", [...financeiro, ...servicos, ...pagamentos].map((k) => ({ Indicador: k.label, Valor: k.value }))
-          .concat([{ Indicador: "Período", Valor: `${fmtPeriodDate(dp.dataInicio)} — ${fmtPeriodDate(dp.dataFim)}` }])],
-        ["CustoPorCategoria", categoryCostsDash.map((d) => ({
-          Categoria: d.category, "Ordem (Compra de Serviços)": adpServicosLabel(d.category), "Orçado (US$)": d.orcadoUsd,
-          "Orçado (R$)": d.orcadoBrl, "Realizado (R$)": d.realizado, "Disponível (R$)": d.disponivel,
-        }))],
-        ["GastosPorMes", gastosPorMes.map((g) => ({ Mês: g.mes, Valor: g.valor }))],
-        ["AprovacaoPendente", topOpenInvoices.map((r) => ({ Data: r.date, Serviço: r.assunto, Empresa: r.empresa, Valor: r.valorTotal, "Dias em Aberto": r.daysOpenTotal }))],
-      ]);
-    });
-  }, [financeiro, servicos, pagamentos, categoryCostsDash, gastosPorMes, topOpenInvoices, dp, setExportXlsxFn]);
+  const pctRealizado = totalOrcadoDash > 0 ? Math.min(100, Math.round((totalRealizadoDash / totalOrcadoDash) * 100)) : 0;
+  const pctReal = totalOrcadoDash > 0 ? Math.round((totalRealizadoDash / totalOrcadoDash) * 100) : 0;
+  const donutServicos = [
+    { name: "Concluídos", value: concluidosServicos, color: "#22C55E" },
+    { name: "Em andamento", value: emAndamentoServicos, color: "#3B82F6" },
+    { name: "Não iniciados", value: naoIniciadosServicos, color: "#9499A8" },
+    { name: "Cancelados", value: canceladosServicos, color: "#EF4444" },
+  ].filter((d) => d.value > 0);
+  const donutPagamentos = [
+    { name: "Pago", value: pagosDash.length, color: "#22C55E" },
+    { name: "Pendente", value: pendentesDash.length, color: "#F5A623" },
+    { name: "Atrasado", value: atrasadosDash.length, color: "#EF4444" },
+  ].filter((d) => d.value > 0);
+  const tipStyle = { background: "#fff", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11 };
+  const catChart = categoryCostsDash.filter((c) => c.orcadoBrl > 0 || c.realizado > 0);
+
+  const Donut = ({ data, center, centerLabel }) => (
+    <div className="dsh-donut">
+      <div className="dsh-donut-chart">
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={data.length ? data : [{ name: "Sem dados", value: 1, color: "#E7E9F0" }]} dataKey="value" innerRadius={52} outerRadius={74} paddingAngle={data.length > 1 ? 2 : 0} stroke="none">
+              {(data.length ? data : [{ color: "#E7E9F0" }]).map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Pie>
+            {data.length > 0 && <Tooltip contentStyle={tipStyle} />}
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="dsh-donut-center"><b>{center}</b><span>{centerLabel}</span></div>
+      </div>
+      <div className="dsh-legend">
+        {data.map((d) => (
+          <div key={d.name}><i style={{ background: d.color }} />{d.name}<b>{d.value}</b></div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <>
-      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+      <div className="dsh-period">
         <div className="g-field">
-          <label>Período — de</label>
+          <label>De</label>
           <input type="date" value={dp.dataInicio} onChange={(e) => setDp((p) => ({ ...p, dataInicio: e.target.value }))} />
         </div>
         <div className="g-field">
-          <label>Período — até</label>
+          <label>Até</label>
           <input type="date" value={dp.dataFim} onChange={(e) => setDp((p) => ({ ...p, dataFim: e.target.value }))} />
         </div>
-        <div className="g-field">
-          <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setDp(defaultDashPeriod)} disabled={isDefaultDashPeriod} style={{ opacity: isDefaultDashPeriod ? 0.5 : 1 }}>
-            <X size={13} />Voltar ao mês vigente
-          </button>
-        </div>
+        <button className="g-btn" onClick={() => setDp(defaultDashPeriod)} disabled={isDefaultDashPeriod} style={{ opacity: isDefaultDashPeriod ? 0.5 : 1 }}>
+          <X size={13} />Mês vigente
+        </button>
         <div className="g-filter-spacer" />
-        <div className="g-filter-summary">Financeiro calculado pelo mês provisionado de cada serviço (não pela data de execução)</div>
+        <div className="dsh-period-note">Financeiro pelo mês provisionado de cada serviço</div>
       </div>
 
-      <div className="g-section-label">Financeiro (de acordo com a aba Custos)</div>
-      <div className="g-muted" style={{ fontSize: 11, marginBottom: 8 }}>
-        O Realizado considera o mês em que cada serviço foi <strong>provisionado</strong>, não a data em que foi executado —
-        assim, backlogs de meses anteriores aparecem no mês certo em que o custo de fato vai pesar.
-      </div>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        {financeiro.map((k) => (
-          <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
-            <div className="g-kpi-label">{k.label}</div>
-            <div className="g-kpi-value">{k.value}</div>
+      {/* ---------- Financeiro ---------- */}
+      <div className="dsh-hero">
+        <div className="dsh-card dsh-fin">
+          <div className="dsh-label">Orçado no período</div>
+          <div className="dsh-big">{fmt(totalOrcadoDash)}</div>
+          <div className="dsh-sub">Câmbio US$ {exchangeRate}
+            <input type="number" step="0.01" value={exchangeRate} onChange={(e) => setExchangeRate(Number(e.target.value))} className="dsh-fx" title="Câmbio US$ → R$" />
           </div>
-        ))}
-      </div>
-
-      <div className="g-section-label">Serviços (de acordo com a aba Serviços)</div>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
-        {servicos.map((k) => (
-          <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
-            <div className="g-kpi-label">{k.label}</div>
-            <div className="g-kpi-value small" style={{ color: k.color }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="g-section-label">Pagamentos (de acordo com a aba Pagamentos)</div>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        {pagamentos.map((k) => (
-          <div className="g-kpi" style={{ "--kpi-accent": k.color }} key={k.label}>
-            <div className="g-kpi-label">{k.label}</div>
-            <div className="g-kpi-value small" style={{ color: k.color }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="g-panel">
-        <div className="g-panel-head"><span className="g-panel-title">Aprovação Pendente há mais tempo (Status de Pagamentos)</span></div>
-        {topOpenInvoices.length === 0 && <div className="g-muted">Nenhum pagamento com aprovação pendente no momento.</div>}
-        {topOpenInvoices.map((r) => (
-          <div className="g-list-item" key={r.id}>
-            <span>{r.assunto} · {r.empresa} · {fmt(r.valorTotal)}</span>
-            <span className="g-flex">
-              <span style={{ color: "var(--crit)", fontFamily: "var(--mono)", fontWeight: 600 }}>{r.daysOpenTotal} dias</span>
-              <Pill status={r.statusPagamento} />
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="g-grid-2">
-        <div className="g-panel">
-          <div className="g-panel-head"><span className="g-panel-title">Próximas manutenções previstas para serem realizadas ({upcomingMaintenance.length})</span></div>
-          {upcomingMaintenance.length === 0 && <div className="g-muted">Nenhuma manutenção prevista no momento.</div>}
-          {upcomingMaintenance.map((w) => (
-            <div className="g-list-item" key={w.id}>
-              <span>
-                {w.name} · {w.discipline} · início previsto {fmtDateTime(w.start)}
-              </span>
-              <Pill status={w.status} />
-            </div>
-          ))}
         </div>
-
-        <div className="g-panel">
-          <div className="g-panel-head">
-            <span className="g-panel-title">{lastPortCallLabel}</span>
-          </div>
-          <div style={{ fontSize: 10.5, color: "var(--text-faint)", fontFamily: "var(--mono)", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".5px" }}>
-            Serviços do último Port Call registrado no sistema
-          </div>
-          {lastPortCallServices.length === 0 && <div className="g-muted">Nenhum Port Call registrado ainda.</div>}
-          <table className="g-table">
-            <thead><tr><th>Data</th><th>Serviço</th><th>Empresa</th><th>Status</th></tr></thead>
-            <tbody>
-              {lastPortCallServices.map((w) => (
-                <tr className="g-row" key={w.id}>
-                  <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{fmtDate(dateKeyOf(w.start))}</td>
-                  <td style={{ minWidth: 160 }}>{w.name}</td>
-                  <td style={{ minWidth: 120 }}>{w.empresa || "—"}</td>
-                  <td><Pill status={w.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="dsh-card dsh-fin">
+          <div className="dsh-label">Realizado</div>
+          <div className="dsh-big" style={{ color: "var(--teal)" }}>{fmt(totalRealizadoDash)}</div>
+          <div className="dsh-bar"><div style={{ width: `${pctRealizado}%`, background: pctReal > 100 ? "var(--crit)" : pctReal > 85 ? "var(--warn)" : "var(--accent)" }} /></div>
+          <div className="dsh-sub">{pctReal}% do orçado</div>
+        </div>
+        <div className="dsh-card dsh-fin" style={{ borderTop: `3px solid ${totalDisponivelDash < 0 ? "var(--crit)" : "var(--ok)"}` }}>
+          <div className="dsh-label">Saldo disponível</div>
+          <div className="dsh-big" style={{ color: totalDisponivelDash < 0 ? "var(--crit)" : "var(--ok)" }}>{fmt(totalDisponivelDash)}</div>
+          <div className="dsh-sub">{totalDisponivelDash < 0 ? "Acima do orçamento" : "Dentro do orçamento"}</div>
         </div>
       </div>
 
-      <div className="g-grid-2">
-        <div className="g-panel">
-          <div className="g-panel-head">
-            <span className="g-panel-title">Custo por categoria — mês selecionado (Orçado × Realizado)</span>
-            <span className="g-flex" style={{ fontSize: 11 }}>
-              <span className="g-muted" style={{ fontFamily: "var(--mono)" }}>Câmbio US$→R$</span>
-              <input type="number" step="0.01" value={exchangeRate} onChange={(e) => setExchangeRate(Number(e.target.value))}
-                style={{ width: 64, background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 11, padding: "4px 6px", borderRadius: 3 }} />
-            </span>
+      {/* ---------- Serviços + Pagamentos ---------- */}
+      <div className="dsh-row2">
+        <div className="dsh-card">
+          <div className="dsh-title">Serviços</div>
+          <Donut data={donutServicos} center={`${taxaConclusaoServicos}%`} centerLabel="concluído" />
+          <div className="dsh-chips">
+            <div><b>{totalServicos}</b>Total</div>
+            <div><b style={{ color: "var(--ok)" }}>{concluidosServicos}</b>Concluídos</div>
+            <div><b style={{ color: "var(--accent)" }}>{emAndamentoServicos}</b>Andamento</div>
           </div>
-          <div style={{ width: "100%", height: 220 }}>
+        </div>
+        <div className="dsh-card">
+          <div className="dsh-title">Pagamentos</div>
+          <Donut data={donutPagamentos} center={serviceInvoices.length} centerLabel="registros" />
+          <div className="dsh-chips">
+            <div><b style={{ color: "var(--ok)" }}>{fmt(sumVal(pagosDash))}</b>Pago</div>
+            <div><b style={{ color: "var(--warn)" }}>{fmt(sumVal(pendentesDash))}</b>Pendente</div>
+            <div><b style={{ color: "var(--crit)" }}>{fmt(sumVal(atrasadosDash))}</b>Atrasado</div>
+          </div>
+        </div>
+        <div className="dsh-card">
+          <div className="dsh-title">Gastos por mês provisionado</div>
+          <div style={{ width: "100%", height: 230 }}>
             <ResponsiveContainer>
-              <BarChart data={categoryCostsDash} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+              <BarChart data={gastosPorMes} margin={{ left: 0, right: 4, top: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                <XAxis dataKey="category" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={60} />
-                <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
-                <Bar dataKey="orcadoBrl" name="Orçado (R$)" radius={[3, 3, 0, 0]} fill="var(--border)" />
-                <Bar dataKey="realizado" name="Realizado (R$)" radius={[3, 3, 0, 0]} fill="var(--accent)" />
+                <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={36} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                <Tooltip contentStyle={tipStyle} formatter={(v) => fmt(v)} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
+                <Bar dataKey="valor" name="Gasto" radius={[5, 5, 0, 0]} fill="#3B82F6" />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <table className="g-table" style={{ marginTop: 10 }}>
+        </div>
+      </div>
+
+      {/* ---------- Custo por categoria ---------- */}
+      <div className="dsh-card" style={{ marginBottom: 14 }}>
+        <div className="dsh-title">Custo por categoria — Orçado × Realizado</div>
+        <div style={{ width: "100%", height: 250 }}>
+          <ResponsiveContainer>
+            <BarChart data={catChart} margin={{ left: 0, right: 8, top: 8, bottom: 0 }} barGap={3}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+              <XAxis dataKey="category" tick={{ fill: "var(--text-dim)", fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={55} />
+              <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+              <Tooltip contentStyle={tipStyle} formatter={(v) => fmt(v)} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
+              <Bar dataKey="orcadoBrl" name="Orçado (R$)" radius={[4, 4, 0, 0]} fill="#D5DAE6" />
+              <Bar dataKey="realizado" name="Realizado (R$)" radius={[4, 4, 0, 0]} fill="#3B82F6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <details className="dsh-details">
+          <summary>Ver tabela detalhada com as Ordens</summary>
+          <table className="g-table" style={{ marginTop: 8 }}>
             <thead><tr><th>Categoria</th><th>Orçado (US$)</th><th>Orçado (R$)</th><th>Realizado (R$)</th><th>Ordem (Compra de Serviços)</th></tr></thead>
             <tbody>
               {categoryCostsDash.map((d) => (
@@ -2880,37 +2847,82 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
               ))}
             </tbody>
           </table>
-        </div>
+        </details>
+      </div>
 
-        <div className="g-panel">
-          <div className="g-panel-head"><span className="g-panel-title">Gastos por mês provisionado</span></div>
-          <div style={{ width: "100%", height: 220 }}>
-            <ResponsiveContainer>
-              <BarChart data={gastosPorMes} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v) => fmt(v)} />
-                <Bar dataKey="valor" name="Gasto" radius={[3, 3, 0, 0]} fill="var(--teal)" />
-              </BarChart>
-            </ResponsiveContainer>
+      {/* ---------- Manutenções + Port Call ---------- */}
+      <div className="g-grid-2">
+        <div className="dsh-card">
+          <div className="dsh-title">Próximas manutenções <span className="dsh-count">{upcomingMaintenance.length}</span></div>
+          <div className="dsh-scroll">
+            {upcomingMaintenance.length === 0 && <div className="g-muted">Nenhuma manutenção prevista no momento.</div>}
+            {upcomingMaintenance.map((w) => (
+              <div className="dsh-item" key={w.id}>
+                <div>
+                  <div className="dsh-item-main">{w.name}</div>
+                  <div className="dsh-item-sub">{w.discipline} · início {fmtDateTime(w.start)}</div>
+                </div>
+                <Pill status={w.status} />
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="g-panel">
-          <div className="g-panel-head"><span className="g-panel-title">Materiais urgentes ({kpis.materiaisUrgentes.length})</span></div>
-          {kpis.materiaisUrgentes.length === 0 && <div className="g-muted">Nenhum material urgente em aberto.</div>}
-          {kpis.materiaisUrgentes.map((m) => (
-            <div className="g-list-item" key={m.id}>
-              <span>{m.descricao} · necessário {fmtDate(m.dataNecessidade)}</span>
-              <span className="g-flex">
-                <span className="g-pill" style={{ background: "var(--panel-raised)" }}>
-                  <span className="g-dot" style={{ background: m.priority === "Crítica" ? "var(--crit)" : "var(--warn)" }} />{m.priority}
+        <div className="dsh-card">
+          <div className="dsh-title">{lastPortCallLabel} <span className="dsh-count">{lastPortCallServices.length}</span></div>
+          <div className="dsh-item-sub" style={{ marginBottom: 8 }}>Serviços do último Port Call registrado</div>
+          <div className="dsh-scroll">
+            {lastPortCallServices.length === 0 && <div className="g-muted">Nenhum Port Call registrado ainda.</div>}
+            {lastPortCallServices.map((w) => (
+              <div className="dsh-item" key={w.id}>
+                <div>
+                  <div className="dsh-item-main">{w.name}</div>
+                  <div className="dsh-item-sub">{w.empresa || "—"} · {fmtDate(dateKeyOf(w.start))}</div>
+                </div>
+                <Pill status={w.status} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ---------- Atenção: aprovações + materiais ---------- */}
+      <div className="g-grid-2" style={{ marginTop: 14 }}>
+        <div className="dsh-card">
+          <div className="dsh-title">Aprovação pendente há mais tempo <span className="dsh-count">{topOpenInvoices.length}</span></div>
+          <div className="dsh-scroll">
+            {topOpenInvoices.length === 0 && <div className="g-muted">Nenhum pagamento com aprovação pendente.</div>}
+            {topOpenInvoices.map((r) => (
+              <div className="dsh-item" key={r.id}>
+                <div>
+                  <div className="dsh-item-main">{r.assunto}</div>
+                  <div className="dsh-item-sub">{r.empresa} · {fmt(r.valorTotal)}</div>
+                </div>
+                <span className="dsh-days">{r.daysOpenTotal} dias</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="dsh-card">
+          <div className="dsh-title">Materiais urgentes <span className="dsh-count">{kpis.materiaisUrgentes.length}</span></div>
+          <div className="dsh-scroll">
+            {kpis.materiaisUrgentes.length === 0 && <div className="g-muted">Nenhum material urgente em aberto.</div>}
+            {kpis.materiaisUrgentes.map((m) => (
+              <div className="dsh-item" key={m.id}>
+                <div>
+                  <div className="dsh-item-main">{m.descricao}</div>
+                  <div className="dsh-item-sub">Necessário {fmtDate(m.dataNecessidade)}</div>
+                </div>
+                <span className="g-flex">
+                  <span className="g-pill" style={{ background: "var(--panel-raised)" }}>
+                    <span className="g-dot" style={{ background: m.priority === "Crítica" ? "var(--crit)" : "var(--warn)" }} />{m.priority}
+                  </span>
+                  <Pill status={m.status} />
                 </span>
-                <Pill status={m.status} />
-              </span>
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </>
@@ -3602,8 +3614,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab,
-  kanbanCards, updKanbanCard, remKanbanCard, addKanbanCard }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab }) {
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
@@ -3671,42 +3682,6 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   };
 
   /* ========================================================
-     QUADRO KANBAN — cartões criados manualmente aqui (lista própria, kanbanCards, sem nenhuma
-     relação com Mapeados/Docagem), organizados por Status. Arrastar o cartão entre as colunas
-     muda o status. Preencher a Data de Execução no cartão já dispara a graduação automática pro
-     Port Call (mesmo efeito de sempre, feito direto no cartão). */
-  const [kanbanBusca, setKanbanBusca] = useState("");
-  const [draggedCard, setDraggedCard] = useState(null);
-  const [dragOverStatus, setDragOverStatus] = useState(null);
-  const kanbanBoardCards = useMemo(() => {
-    const norm = (s) => (s || "").toString().toLowerCase();
-    const all = (kanbanCards || []).map((k, i) => ({
-      key: k.id || `kanban-${i}`, id: k.id,
-      nome: k.nome || "Novo cartão", subtitulo: k.subtitulo || "",
-      status: k.status || "A Executar", dataExecucao: k.dataExecucao || "",
-      linkedServiceId: k.linkedServiceId, impacto: k.impacto || "Baixo", planoAcao: k.planoAcao || "",
-    }));
-    if (!kanbanBusca) return all;
-    return all.filter((c) => norm(c.nome).includes(norm(kanbanBusca)) || norm(c.subtitulo).includes(norm(kanbanBusca)));
-  }, [kanbanCards, kanbanBusca]);
-  const kanbanColunas = useMemo(
-    () => PLAN_STATUS.map((s) => ({ status: s, itens: kanbanBoardCards.filter((c) => c.status === s) })),
-    [kanbanBoardCards]
-  );
-  const setKanbanCardStatus = (card, novoStatus) => {
-    const idx = (kanbanCards || []).findIndex((k) => k.id === card.id);
-    if (idx >= 0) updKanbanCard(idx, "status", novoStatus);
-  };
-  const setKanbanCardData = (card, novaData) => {
-    const idx = (kanbanCards || []).findIndex((k) => k.id === card.id);
-    if (idx >= 0) updKanbanCard(idx, "dataExecucao", novaData);
-  };
-  const removeKanbanCard = (card) => {
-    const idx = (kanbanCards || []).findIndex((k) => k.id === card.id);
-    if (idx >= 0) remKanbanCard(idx);
-  };
-
-  /* ========================================================
      DOCAGEM — Itens de Machinery Items (DNV) que precisam ser vistoriados/feitos na docagem
      ======================================================== */
   const [df, setDf] = useState({ busca: "", localizacao: "", necessitaMaterial: "Todos", statuses: [] });
@@ -3736,10 +3711,6 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
       } else if (planSubTab === "docagem") {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(filteredDocagem, DOC_COLS)), "Docagem");
         XLSX.writeFile(wb, `genesis-docagem-${todayISO()}.xlsx`);
-      } else if (planSubTab === "kanban") {
-        const rows = (kanbanCards || []).map((c) => ({ "Cartão": c.nome || "", "Subtítulo": c.subtitulo || "", "Status": c.status || "", "Data de Execução": c.dataExecucao || "" }));
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "—": "Sem registros" }]), "Kanban");
-        XLSX.writeFile(wb, `genesis-planejamento-kanban-${todayISO()}.xlsx`);
       } else {
         const rows = [];
         colunas.forEach((col) => col.itens.forEach((w) => rows.push(w)));
@@ -3747,7 +3718,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
         XLSX.writeFile(wb, `genesis-planejamento-quadro-${todayISO()}.xlsx`);
       }
     });
-  }, [planSubTab, filteredMapeados, filteredDocagem, colunas, kanbanCards, setExportXlsxFn]);
+  }, [planSubTab, filteredMapeados, filteredDocagem, colunas, setExportXlsxFn]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -3814,8 +3785,6 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
         <button className={planSubTab === "docagem" ? "active" : ""} onClick={() => setPlanSubTab("docagem")}>Docagem (Machinery Items - DNV)</button>
-        <button className={planSubTab === "board" ? "active" : ""} onClick={() => setPlanSubTab("board")}>Quadro por Port Call</button>
-        <button className={planSubTab === "kanban" ? "active" : ""} onClick={() => setPlanSubTab("kanban")}>Quadro Kanban</button>
       </div>
 
       {planSubTab === "mapeados" ? (
@@ -4090,7 +4059,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             {filteredDocagem.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item de docagem ainda — importe a planilha da DNV ou use "Novo item".</div>}
           </div>
         </>
-      ) : planSubTab === "board" ? (
+      ) : (
         <>
           <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
             Aqui aparecem os serviços que já têm data de execução (vindos da aba Serviços, incluindo os que
@@ -4144,83 +4113,6 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
-            Arraste um cartão entre as colunas pra mudar o status. Preencher a "Data de Execução" no
-            cartão já cria automaticamente o serviço correspondente no Port Call (mesmo mecanismo das
-            outras abas) — o cartão fica marcado como "Já no Port Call" a partir daí.
-          </div>
-
-          <div className="g-flex" style={{ marginBottom: 10, justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-            <input type="text" placeholder="Buscar por nome, departamento ou localização..." value={kanbanBusca}
-              onChange={(e) => setKanbanBusca(e.target.value)}
-              style={{ minWidth: 280, background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 4, padding: "6px 10px", fontSize: 12.5 }} />
-            <button className="g-btn primary" onClick={addKanbanCard}><Plus size={14} />Novo cartão</button>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
-            {kanbanColunas.map((col) => (
-              <div key={col.status}
-                onDragOver={(e) => { e.preventDefault(); setDragOverStatus(col.status); }}
-                onDragLeave={() => setDragOverStatus((s) => (s === col.status ? null : s))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (draggedCard) setKanbanCardStatus(draggedCard, col.status);
-                  setDraggedCard(null);
-                  setDragOverStatus(null);
-                }}
-                style={{ minWidth: 270, maxWidth: 270, flexShrink: 0 }}>
-                <div className="g-panel" style={{
-                  marginBottom: 0, minHeight: 200, height: "100%",
-                  outline: dragOverStatus === col.status ? `2px dashed ${PLAN_STATUS_COLOR[col.status]}` : "none",
-                }}>
-                  <div className="g-panel-head" style={{ marginBottom: 10 }}>
-                    <span className="g-panel-title" style={{ fontSize: 12.5, color: PLAN_STATUS_COLOR[col.status] }}>
-                      <span className="g-dot" style={{ background: PLAN_STATUS_COLOR[col.status], marginRight: 6 }} />{col.status}
-                    </span>
-                    <span className="g-muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{col.itens.length}</span>
-                  </div>
-                  {col.itens.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhum item aqui.</div>}
-                  {col.itens.map((card) => (
-                    <div key={card.key}
-                      draggable
-                      onDragStart={() => setDraggedCard(card)}
-                      onDragEnd={() => { setDraggedCard(null); setDragOverStatus(null); }}
-                      style={{
-                        background: "var(--panel-raised)", border: "1px solid var(--border)",
-                        borderLeft: `3px solid ${PLAN_STATUS_COLOR[col.status]}`,
-                        borderRadius: 5, padding: "8px 9px", marginBottom: 8, cursor: "grab",
-                        opacity: draggedCard?.key === card.key ? 0.4 : 1,
-                      }}>
-                      <div onClick={(e) => e.stopPropagation()} className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 4, marginBottom: 4 }}>
-                        <ETextArea rows={1} value={card.nome} onChange={(v) => updKanbanCard((kanbanCards || []).findIndex((k) => k.id === card.id), "nome", v)} />
-                        <button
-                          title="Excluir cartão"
-                          onClick={() => removeKanbanCard(card)}
-                          style={{ background: "none", border: "none", color: "var(--text-faint)", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "2px 4px", flexShrink: 0 }}>
-                          ✕
-                        </button>
-                      </div>
-                      <div className="g-flex" style={{ gap: 5, flexWrap: "wrap", marginBottom: 5 }}>
-                        {card.impacto && <span className="g-pill" style={{ background: "var(--panel)" }}><span className="g-dot" style={{ background: IMPACT_COLOR[card.impacto] }} />{card.impacto}</span>}
-                        {card.linkedServiceId && <span className="g-pill" style={{ background: "rgba(53,211,153,0.12)", color: "var(--ok)", fontSize: 10 }}>Já no Port Call</span>}
-                      </div>
-                      <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 5 }}>
-                        <EText value={card.subtitulo} onChange={(v) => updKanbanCard((kanbanCards || []).findIndex((k) => k.id === card.id), "subtitulo", v)} />
-                      </div>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <label style={{ fontSize: 10, color: "var(--text-faint)", display: "block", marginBottom: 2 }}>Data de Execução</label>
-                        <input type="date" value={card.dataExecucao} onChange={(e) => setKanbanCardData(card, e.target.value)}
-                          style={{ width: "100%", fontSize: 10.5, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 3, padding: "3px 4px" }} />
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
             ))}
@@ -5155,7 +5047,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
-function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, setExportXlsxFn, handleImportEmergenciais, newRowId }) {
+function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais, newRowId }) {
   React.useEffect(() => {
     if (!newRowId) return;
     const el = document.getElementById(`row-${newRowId}`);
@@ -5239,23 +5131,6 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, s
       pdfSave(doc, "relatorio-materiais");
     });
   }, [filtered, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
-
-  /* exporta em planilha exatamente os materiais filtrados na página, mais o resumo mostrado nela */
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      exportSheets("genesis-materiais", [
-        ["Resumo", [
-          { Indicador: "Total de Materiais", Valor: filtered.length }, { Indicador: "Materiais Urgentes", Valor: urgentes.length },
-          { Indicador: "Requisições Abertas", Valor: abertas.length }, { Indicador: "Sem ETA", Valor: semEta.length }, { Indicador: "Sem PO", Valor: semPo.length },
-        ]],
-        ["PorStatus", porStatus.map((d) => ({ Status: d.status, Quantidade: d.count }))],
-        ["PorPrioridade", porPrioridade.map((d) => ({ Prioridade: d.priority, Quantidade: d.count }))],
-        ["PorDepartamento", porDepartamento.map((d) => ({ Departamento: d.departamento, Quantidade: d.count }))],
-        ["Materiais", rowsToSheet(sorted, MAT_COLS)],
-      ]);
-    });
-  }, [sorted, filtered, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setExportXlsxFn]);
 
   return (
     <>
@@ -5553,7 +5428,7 @@ function MultiSelectStatus({ options, selected, onChange, labelFor }) {
 
 const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
-function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn, setExportXlsxFn, newRowId }) {
+function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn, newRowId }) {
   const [f, setF] = useState(emptyPayFilter);
   const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
@@ -5620,15 +5495,15 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
         </div>
       )}
 
-      {paySubTab === "total" && <PaymentsTotalView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
-      {paySubTab === "status" && <PaymentsStatusView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
-      {paySubTab === "dashboard" && <PaymentsValoresView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
     </>
   );
 }
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
-function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn, setExportXlsxFn, newRowId }) {
+function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn, newRowId }) {
   React.useEffect(() => {
     if (!newRowId) return;
     const el = document.getElementById(`row-${newRowId}`);
@@ -5693,21 +5568,6 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
       pdfSave(doc, "relatorio-pagamentos-total");
     });
   }, [activeRows, valorTotalSum, emAtraso, execPayVals, mdExecVals, totalDiasAberto, selectedIds, setReportFn]);
-
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      const rows = selectedIds.size > 0 ? sorted.filter((r) => selectedIds.has(r.id)) : sorted;
-      exportSheets("genesis-pagamentos-total", [
-        ["Resumo", [
-          { Indicador: "Registros", Valor: activeRows.length }, { Indicador: "Valor Total", Valor: valorTotalSum },
-          { Indicador: "Serviços em Atraso (+60d)", Valor: emAtraso }, { Indicador: "Média Execução → Pagamento (dias)", Valor: Number(avg(execPayVals).toFixed(1)) },
-          { Indicador: "Média MD → Execução (dias)", Valor: Number(avg(mdExecVals).toFixed(1)) }, { Indicador: "Total de Dias em Aberto", Valor: totalDiasAberto },
-        ]],
-        ["Pagamentos", rowsToSheet(rows, INV_COLS)],
-      ]);
-    });
-  }, [sorted, activeRows, valorTotalSum, emAtraso, execPayVals, mdExecVals, totalDiasAberto, selectedIds, setExportXlsxFn]);
 
   return (
     <>
@@ -5786,7 +5646,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
 }
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
-function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn, setExportXlsxFn }) {
+function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
   const [sort, setSort] = useState({ key: "date", dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
   const statusColorMap = STATUS_PAGAMENTO_COLOR;
@@ -5830,17 +5690,6 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
       pdfSave(doc, "relatorio-status-pagamentos");
     });
   }, [activeRows, kpiStatuses, selectedIds, setReportFn]);
-
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      const rows = selectedIds.size > 0 ? sorted.filter((r) => selectedIds.has(r.id)) : sorted;
-      exportSheets("genesis-status-pagamentos", [
-        ["Resumo", [{ Indicador: "Todos", Valor: activeRows.length }, ...kpiStatuses.map((s) => ({ Indicador: s, Valor: countOf(s) }))]],
-        ["StatusPagamentos", rowsToSheet(rows, INV_COLS)],
-      ]);
-    });
-  }, [sorted, activeRows, kpiStatuses, selectedIds, setExportXlsxFn]);
 
   return (
     <>
@@ -5930,7 +5779,7 @@ const InvoiceSituationPill = ({ situation }) => (
 );
 
 /* ---------- Página 3: Dashboard de Valores — visão enxuta puxando os mesmos dados do Dashboard Total ---------- */
-function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn, setExportXlsxFn }) {
+function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
   const [situationFilter, setSituationFilter] = useState("Todos");
   const [sort, setSort] = useState({ key: "date", dir: 1 });
 
@@ -5979,17 +5828,6 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
       pdfSave(doc, "relatorio-dashboard-valores");
     });
   }, [activeRows, cards, selectedIds, setReportFn]);
-
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      const rows = selectedIds.size > 0 ? sorted.filter((r) => selectedIds.has(r.id)) : sorted;
-      exportSheets("genesis-dashboard-valores", [
-        ["Resumo", cards.map((c) => ({ Indicador: c.label, Valor: c.value }))],
-        ["Registros", rowsToSheet(rows, INV_COLS).map((o, i) => ({ ...o, Situação: rows[i]._situation }))],
-      ]);
-    });
-  }, [sorted, cards, selectedIds, setExportXlsxFn]);
 
   return (
     <>
@@ -6053,7 +5891,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
 /* ============================================================
    COSTS
    ============================================================ */
-function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn, setExportXlsxFn }) {
+function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
   const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
   const [categoriaTableCollapsed, setCategoriaTableCollapsed] = useState(false);
@@ -6316,46 +6154,6 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
     });
   }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto,
       pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, comPrevisao, semPrevisao, capexProvisionado, outrasCategoriasProvisionado, exchangeRate, cf, costSubTab, setReportFn]);
-
-  /* exporta em planilha exatamente o que a sub-aba aberta de Custos mostra (mesmo filtro/mês) */
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      const mesesLabel = cf.provisionadoMeses.length === 0 ? "Todos os meses" : cf.provisionadoMeses.map(monthLabel).join(", ");
-      const resumoBase = [
-        { Indicador: "Meses provisionados", Valor: mesesLabel }, { Indicador: "Câmbio US$→R$", Valor: exchangeRate },
-        { Indicador: "Total Realizado (rateado)", Valor: totalRealizado }, { Indicador: "Total Orçado", Valor: totalOrcadoBrl },
-        { Indicador: "Saldo Disponível", Valor: totalDisponivel }, { Indicador: "% Orçamento Consumido", Valor: pctConsumido },
-      ];
-      if (costSubTab === "rateio") {
-        const rateio = [];
-        filtered.forEach((r) => allocationsOf(r).forEach((a) => rateio.push({
-          Data: r.date, Serviço: r.assunto, Empresa: r.empresa, Categoria: a.category, Ordem: adpServicosLabel(a.category),
-          Valor: Number(a.valor || 0), Status: r.statusPagamento, "Justificativa Geral": r.justificativaGeral || "",
-        })));
-        exportSheets("genesis-custos-rateio", [
-          ["Resumo", resumoBase.concat([{ Indicador: "Serviços sem Rateio Completo", Valor: semRateioCompleto }, { Indicador: "Registros no período", Valor: filtered.length }])],
-          ["CustoPorCategoria", categoryCosts.map((c) => ({
-            Categoria: c.category, "Ordem (Compra de Serviços)": adpServicosLabel(c.category), "Orçado (US$)": c.ilimitado ? "" : c.orcadoUsd,
-            "Orçado (R$)": c.ilimitado ? "" : c.orcadoBrl, "Realizado (R$)": c.realizado, "Disponível (R$)": c.ilimitado ? "" : c.disponivel,
-          }))],
-          ["Rateio", rateio],
-        ]);
-      } else {
-        exportSheets("genesis-custos-dashboard", [
-          ["Resumo", resumoBase.concat([
-            { Indicador: "Pago (qtd)", Valor: pagosPeriodo.length }, { Indicador: "Pago (R$)", Valor: sumVal(pagosPeriodo) },
-            { Indicador: "Pendente (qtd)", Valor: pendentesPeriodo.length }, { Indicador: "Pendente (R$)", Valor: sumVal(pendentesPeriodo) },
-            { Indicador: "Atrasado (qtd)", Valor: atrasadosPeriodo.length }, { Indicador: "Atrasado (R$)", Valor: sumVal(atrasadosPeriodo) },
-            { Indicador: "CAPEX provisionado", Valor: capexProvisionado }, { Indicador: "Demais categorias provisionado", Valor: outrasCategoriasProvisionado },
-          ])],
-          ["ProvisionadoPorMes", provisionadoPorMes.map((m) => ({ Mês: m.mes, CAPEX: m.capex, "Demais categorias": m.outras }))],
-          ["Servicos", rowsToSheet(allInPeriod, INV_COLS).map((o, i) => ({ ...o, Situação: invoiceSituation(allInPeriod[i]) }))],
-        ]);
-      }
-    });
-  }, [filtered, categoryCosts, totalRealizado, totalOrcadoBrl, totalDisponivel, pctConsumido, semRateioCompleto, allInPeriod,
-      pagosPeriodo, pendentesPeriodo, atrasadosPeriodo, capexProvisionado, outrasCategoriasProvisionado, provisionadoPorMes, exchangeRate, cf, costSubTab, setExportXlsxFn]);
 
   /* relatório próprio do Dashboard Financeiro — reflete o que essa sub-aba mostra de fato:
      KPIs de Custos/Pagamentos/Provisionamento, os dados dos três gráficos, e a tabela de
