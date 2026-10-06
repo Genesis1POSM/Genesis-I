@@ -258,6 +258,38 @@ const Theme = () => (
     }
     .g-grid-2 { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; }
 
+    /* ---------- Visual geral renovado (todas as páginas) ---------- */
+    .g-body { background: var(--bg); }
+    .g-pageactions { padding: 18px 22px 2px 22px; }
+    .g-title { font-size: 21px; font-weight: 700; letter-spacing: -.2px; color: #12203A; display: flex; align-items: center; gap: 10px; }
+    .g-title::before { content: ""; width: 4px; height: 22px; border-radius: 4px; background: linear-gradient(180deg, #3B82F6, #E11D2E); display: inline-block; }
+    .g-btn { border-radius: 8px; padding: 8px 14px; background: var(--panel); box-shadow: 0 1px 2px rgba(20,30,45,0.05); transition: border-color .12s, box-shadow .12s, transform .05s; }
+    .g-btn:hover { border-color: var(--accent); box-shadow: 0 2px 6px rgba(59,130,246,0.15); }
+    .g-btn:active { transform: translateY(1px); }
+    .g-btn.primary { background: linear-gradient(180deg, #4C8FF7, #3B82F6); border-color: #3B82F6; color: #fff; box-shadow: 0 2px 6px rgba(59,130,246,0.35); }
+    .g-btn.ghost { box-shadow: none; background: transparent; }
+    .g-panel { border-radius: 12px; padding: 18px; box-shadow: 0 1px 4px rgba(20,30,45,0.05); }
+    .g-panel-title { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 700; color: #12203A; font-family: var(--sans); }
+    .g-kpi { border-radius: 12px; background: var(--panel); border: 1px solid var(--border); padding: 16px 18px; box-shadow: 0 1px 4px rgba(20,30,45,0.05); }
+    .g-kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--kpi-accent, var(--teal)); }
+    .g-kpi.active { background: color-mix(in srgb, var(--kpi-accent, var(--teal)) 8%, var(--panel)); }
+    .g-kpi-label { font-family: var(--sans); font-weight: 600; letter-spacing: .6px; }
+    .g-kpi-value { font-weight: 700; letter-spacing: -.3px; }
+    .g-section-label { font-family: var(--sans); font-weight: 700; font-size: 11px; letter-spacing: 1.2px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+    .g-section-label::before { content: ""; width: 14px; height: 3px; border-radius: 3px; background: var(--accent); }
+    .g-filterbar { border: 1px solid var(--border); border-radius: 12px !important; background: var(--panel); box-shadow: 0 1px 4px rgba(20,30,45,0.04); }
+    .g-field label { font-family: var(--sans); font-weight: 600; }
+    .g-field input, .g-field select { border-radius: 7px; background: var(--panel); padding: 7px 10px; }
+    .g-field input:focus, .g-field select:focus { box-shadow: 0 0 0 3px var(--accent-dim); }
+    .g-mode-toggle { background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; }
+    .g-mode-toggle button { background: transparent; border-radius: 8px; padding: 7px 14px; }
+    .g-mode-toggle button.active { background: var(--accent); box-shadow: 0 2px 6px rgba(59,130,246,0.3); }
+    .g-table th { background: var(--panel-raised); font-family: var(--sans); padding: 10px 8px; }
+    .g-table tr.g-row:nth-child(even) { background: #FAFBFD; }
+    .g-table tr.g-row:hover { background: var(--accent-dim); }
+    .g-table td { padding: 8px; }
+    .g-table-wrap { border-radius: 8px; }
+    .g-alert { border-radius: 10px; }
     /* ---------- WP tag (signature element) ---------- */
     .g-tag {
       display: inline-flex; align-items: center;
