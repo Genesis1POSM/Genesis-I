@@ -174,7 +174,7 @@ const Theme = () => (
     .dsh-period { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
     .dsh-period-note { font-size: 11px; color: var(--text-faint); }
     .dsh-hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
-    .dsh-row2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+    .dsh-row2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 14px; }
     .dsh-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(20,30,45,0.05); min-width: 0; }
     .dsh-fin { padding: 18px 20px; }
     .dsh-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-faint); font-weight: 600; }
@@ -1850,8 +1850,10 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       id: newId, name: original.name, discipline: original.discipline, group: original.group,
       ganttCategory: original.ganttCategory, empresa: original.empresa, md: original.md, rc: original.rc, obs: "",
       budget: 0, committed: 0, actual: 0, forecast: 0, start: "", end: "",
-      status: "Não iniciado", progress: 0, repeatOf: original.id, createdAt: new Date().toISOString(),
+      status: original.status === "Concluído" || original.status === "Cancelado" ? "Não iniciado" : original.status,
+      progress: original.progress || 0, repeatOf: original.id, createdAt: new Date().toISOString(),
     }]);
+    flashNewRow(newId);
     return newId;
   };
 
@@ -2580,9 +2582,9 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
 
   /* próximas manutenções — só o que ainda está em aberto de fato (não concluído nem cancelado) */
   const upcomingMaintenance = workPackages
-    .filter((w) => ["Em andamento", "Não iniciado", "Planejamento"].includes(w.status))
+    .filter((w) => w.status === "Planejamento")
     .slice()
-    .sort((a, b) => new Date(a.start) - new Date(b.start));
+    .sort((a, b) => (a.start ? new Date(a.start).getTime() : Infinity) - (b.start ? new Date(b.start).getTime() : Infinity));
 
   /* ---------- Serviços: espelha exatamente os mesmos números da aba Serviços ---------- */
   const totalServicos = workPackages.length;
@@ -2690,8 +2692,6 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
         categoryCostsDash.map((d) => [d.category, fmtBudgetUsd(d.orcadoUsd), fmtBudgetBrl(d.orcadoUsd, d.orcadoBrl), fmt(d.realizado)]),
         { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } }
       );
-      y = pdfSectionTitle(doc, y, "Gastos por mês provisionado");
-      y = pdfTable(doc, y, ["Mês", "Valor"], gastosPorMes.map((g) => [g.mes, fmt(g.valor)]), { columnStyles: { 1: { halign: "right" } } });
       if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "Pagamentos com Aprovação Pendente há mais tempo");
       pdfTable(doc, y,
@@ -2800,20 +2800,6 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
             <div><b style={{ color: "var(--crit)" }}>{fmt(sumVal(atrasadosDash))}</b>Atrasado</div>
           </div>
         </div>
-        <div className="dsh-card">
-          <div className="dsh-title">Gastos por mês provisionado</div>
-          <div style={{ width: "100%", height: 230 }}>
-            <ResponsiveContainer>
-              <BarChart data={gastosPorMes} margin={{ left: 0, right: 4, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={36} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                <Tooltip contentStyle={tipStyle} formatter={(v) => fmt(v)} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
-                <Bar dataKey="valor" name="Gasto" radius={[5, 5, 0, 0]} fill="#3B82F6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
       </div>
 
       {/* ---------- Custo por categoria ---------- */}
@@ -2853,14 +2839,14 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
       {/* ---------- Manutenções + Port Call ---------- */}
       <div className="g-grid-2">
         <div className="dsh-card">
-          <div className="dsh-title">Próximas manutenções <span className="dsh-count">{upcomingMaintenance.length}</span></div>
+          <div className="dsh-title">Próximas manutenções (Planejamento) <span className="dsh-count">{upcomingMaintenance.length}</span></div>
           <div className="dsh-scroll">
             {upcomingMaintenance.length === 0 && <div className="g-muted">Nenhuma manutenção prevista no momento.</div>}
             {upcomingMaintenance.map((w) => (
               <div className="dsh-item" key={w.id}>
                 <div>
                   <div className="dsh-item-main">{w.name}</div>
-                  <div className="dsh-item-sub">{w.discipline} · início {fmtDateTime(w.start)}</div>
+                  <div className="dsh-item-sub">{w.discipline} · início {w.start ? fmtDateTime(w.start) : "sem data"}</div>
                 </div>
                 <Pill status={w.status} />
               </div>
@@ -3499,7 +3485,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {w.repeatOf && <span title="Esta linha é uma repetição de um serviço não concluído anteriormente" style={{ fontSize: 13, flexShrink: 0 }}>🔁</span>}
                         {w.status === "Cancelado" && <span title="Cancelado — não é mais necessário" style={{ fontSize: 13, flexShrink: 0 }}>🚫</span>}
                         {w.linkedInvoiceId && <span title="Lançamento gerado automaticamente na aba Pagamentos" style={{ fontSize: 13, flexShrink: 0 }}>💲</span>}
-                        <EText value={w.name} onChange={(v) => updWp(i, "name", v)} />
+                        <ETextArea rows={1} value={w.name} onChange={(v) => updWp(i, "name", v)} />
                       </div>
                     </td>
                     <td style={{ minWidth: 130 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
@@ -3534,7 +3520,12 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                       );
                     })()}
                     <td style={{ minWidth: 200 }}><EText value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></td>
-                    <td><span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span></td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {w.status !== "Concluído" && w.status !== "Cancelado" && (
+                        <span className="g-btn ghost" onClick={() => repeatWp(w)} title="Ainda não concluído — repetir esta linha para outra data (a nova linha mantém o status; troque para Concluído quando terminar)">🔁</span>
+                      )}
+                      <span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span>
+                    </td>
                   </tr>
                   {isOpen && (
                     <tr className="g-expand-row">
@@ -3583,7 +3574,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         {w.status !== "Concluído" && w.status !== "Cancelado" && (
                           <div className="g-flex" style={{ gap: 8 }}>
                             <button className="g-btn" onClick={() => repeatWp(w)}>
-                              🔁 Não concluído — repetir como nova linha (data em branco)
+                              🔁 Ainda não concluído — repetir em outra data
                             </button>
                             <button className="g-btn" onClick={() => updWp(i, "status", "Cancelado")}>
                               🚫 Não é mais necessário — cancelar
