@@ -2508,7 +2508,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
       <div className="g-body">
         {tab === "dashboard" && (
           <DashboardView kpis={kpis} workPackages={workPackages} disciplineCosts={disciplineCosts}
-            serviceInvoices={serviceInvoices} setReportFn={setReportFn}
+            serviceInvoices={serviceInvoices} setReportFn={setReportFn} tmDue={tmDue}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
@@ -2567,7 +2567,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 /* ============================================================
    DASHBOARD — exact KPI set requested
    ============================================================ */
-function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn }) {
+function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn, tmDue = [] }) {
 
   /* filtro de período do Dashboard — por padrão, o mês vigente */
   const defaultDashPeriod = useMemo(() => {
@@ -2717,7 +2717,22 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
     { name: "Atrasado", value: atrasadosDash.length, color: "#EF4444" },
   ].filter((d) => d.value > 0);
   const tipStyle = { background: "#fff", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11 };
-  const catChart = categoryCostsDash.filter((c) => c.orcadoBrl > 0 || c.realizado > 0);
+  /* TM Master (Due): situação de cada manutenção por departamento — mesma regra da aba TM Master */
+  const tmVencida = (r) => r.diffValue !== null && r.diffValue < 0;
+  const tmAte40 = (r) => r.diffUnit === "D" && r.diffValue !== null && r.diffValue >= 0 && r.diffValue <= 40;
+  const tmVencidas = tmDue.filter(tmVencida).length;
+  const tmAte40Dias = tmDue.filter(tmAte40).length;
+  const tmNormais = tmDue.length - tmVencidas - tmAte40Dias;
+  const tmPorDepto = useMemo(() => {
+    const map = {};
+    tmDue.forEach((d) => {
+      const k = d.department || "Sem departamento";
+      if (!map[k]) map[k] = { departamento: k, Vencidas: 0, "Até 40 dias": 0, "No prazo": 0, total: 0 };
+      if (tmVencida(d)) map[k].Vencidas++; else if (tmAte40(d)) map[k]["Até 40 dias"]++; else map[k]["No prazo"]++;
+      map[k].total++;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [tmDue]);
 
   const Donut = ({ data, center, centerLabel }) => (
     <div className="dsh-donut">
@@ -2802,21 +2817,41 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
         </div>
       </div>
 
-      {/* ---------- Custo por categoria ---------- */}
+      {/* ---------- TM Master ---------- */}
       <div className="dsh-card" style={{ marginBottom: 14 }}>
-        <div className="dsh-title">Custo por categoria — Orçado × Realizado</div>
-        <div style={{ width: "100%", height: 250 }}>
-          <ResponsiveContainer>
-            <BarChart data={catChart} margin={{ left: 0, right: 8, top: 8, bottom: 0 }} barGap={3}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-              <XAxis dataKey="category" tick={{ fill: "var(--text-dim)", fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={55} />
-              <YAxis tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-              <Tooltip contentStyle={tipStyle} formatter={(v) => fmt(v)} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
-              <Bar dataKey="orcadoBrl" name="Orçado (R$)" radius={[4, 4, 0, 0]} fill="#D5DAE6" />
-              <Bar dataKey="realizado" name="Realizado (R$)" radius={[4, 4, 0, 0]} fill="#3B82F6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <div className="dsh-title">TM Master — manutenções vencendo <span className="dsh-count">{tmDue.length}</span></div>
+        {tmDue.length === 0 ? (
+          <div className="g-muted">Nenhum dado de TM Master importado ainda.</div>
+        ) : (
+          <>
+            <div className="dsh-chips" style={{ marginBottom: 12 }}>
+              <div><b style={{ color: "var(--crit)" }}>{tmVencidas}</b>Vencidas</div>
+              <div><b style={{ color: "var(--warn)" }}>{tmAte40Dias}</b>Vencem em até 40 dias</div>
+              <div><b style={{ color: "var(--ok)" }}>{tmNormais}</b>No prazo</div>
+            </div>
+            <div style={{ width: "100%", height: Math.max(180, tmPorDepto.length * 34 + 50) }}>
+              <ResponsiveContainer>
+                <BarChart data={tmPorDepto} layout="vertical" margin={{ left: 10, right: 16, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="departamento" width={120} tick={{ fill: "var(--text-dim)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={tipStyle} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
+                  <Bar dataKey="Vencidas" stackId="a" fill="#EF4444" />
+                  <Bar dataKey="Até 40 dias" stackId="a" fill="#F5A623" />
+                  <Bar dataKey="No prazo" stackId="a" fill="#22C55E" radius={[0, 5, 5, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="dsh-legend" style={{ flexDirection: "row", gap: 16, marginTop: 6 }}>
+              <div><i style={{ background: "#EF4444" }} />Vencidas</div>
+              <div><i style={{ background: "#F5A623" }} />Até 40 dias</div>
+              <div><i style={{ background: "#22C55E" }} />No prazo</div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="dsh-card" style={{ marginBottom: 14 }}>
         <details className="dsh-details">
           <summary>Ver tabela detalhada com as Ordens</summary>
           <table className="g-table" style={{ marginTop: 8 }}>
