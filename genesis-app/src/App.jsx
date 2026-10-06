@@ -807,6 +807,11 @@ const cellToDateTimeStr = (v) => {
   if (v instanceof Date) return `${v.getFullYear()}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}T${pad2(v.getHours())}:${pad2(v.getMinutes())}`;
   return String(v);
 };
+const exportSheets = (fileBase, sheets) => {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(([name, rows]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows && rows.length ? rows : [{ "—": "Sem registros" }]), name.slice(0, 31)));
+  XLSX.writeFile(wb, `${fileBase}-${todayISO()}.xlsx`);
+};
 const rowsToSheet = (rows, cols) => rows.map((r) => Object.fromEntries(cols.map(([key, label]) => [label, r[key]])));
 const sheetToRows = (json, cols) =>
   json.map((row) => {
@@ -1491,7 +1496,6 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
   tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, loadError }) {
   const [tab, setTab] = useState("dashboard");
-  React.useEffect(() => { setReportFn(null); setExportXlsxFn(null); }, [tab]);
   const [newRowId, setNewRowId] = useState(null);
   /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
      guarda o id por alguns segundos pra a linha poder ser destacada e "scrollada" até a visão do usuário */
@@ -2498,7 +2502,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         <div className="g-brand-sep" />
         <div className="g-nav-row">
           {navItems.map((n) => (
-            <div key={n.key} className={`g-nav-item ${tab === n.key ? "active" : ""}`} onClick={() => setTab(n.key)}>
+            <div key={n.key} className={`g-nav-item ${tab === n.key ? "active" : ""}`} onClick={() => { if (n.key !== tab) { setReportFn(null); setExportXlsxFn(null); setTab(n.key); } }}>
               <n.icon size={14} />{n.label}
             </div>
           ))}
@@ -2580,7 +2584,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
           {tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
-          <button className="g-btn" onClick={() => (exportXlsxFn ? exportXlsxFn() : handleExportXlsx())} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
+          <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
           {tab === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
@@ -2600,7 +2604,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 
       <div className="g-body">
         {tab === "dashboard" && (
-          <DashboardView kpis={kpis} workPackages={workPackages} disciplineCosts={disciplineCosts}
+          <DashboardView setExportXlsxFn={setExportXlsxFn} kpis={kpis} workPackages={workPackages} disciplineCosts={disciplineCosts}
             serviceInvoices={serviceInvoices} setReportFn={setReportFn} tmDue={tmDue}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
@@ -2634,10 +2638,10 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
-        {tab === "materials" && <MaterialsView materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
+        {tab === "materials" && <MaterialsView setExportXlsxFn={setExportXlsxFn} materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
 
         {tab === "payments" && (
-          <PaymentsSection
+          <PaymentsSection setExportXlsxFn={setExportXlsxFn}
             paySubTab={paySubTab} setPaySubTab={setPaySubTab}
             serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} addInv={addInv}
             setReportFn={setReportFn} newRowId={newRowId}
@@ -2645,7 +2649,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         )}
 
         {tab === "costs" && (
-          <CostsView serviceInvoices={serviceInvoices} updInv={updInv} setReportFn={setReportFn}
+          <CostsView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} setReportFn={setReportFn}
             exchangeRate={exchangeRate} setExchangeRate={setExchangeRate} />
         )}
 
@@ -2660,7 +2664,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 /* ============================================================
    DASHBOARD — exact KPI set requested
    ============================================================ */
-function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn, tmDue = [] }) {
+function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn, tmDue = [] }) {
 
   /* filtro de período do Dashboard — por padrão, o mês vigente */
   const defaultDashPeriod = useMemo(() => {
@@ -2768,6 +2772,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
     { label: "Atrasado", value: `${atrasadosDash.length} · ${fmt(sumVal(atrasadosDash))}`, color: "var(--crit)" },
   ];
 
+
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
@@ -2795,6 +2800,7 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
       pdfSave(doc, "relatorio-dashboard");
     });
   }, [financeiro, servicos, pagamentos, categoryCostsDash, gastosPorMes, topOpenInvoices, dp, setReportFn]);
+
 
   const pctRealizado = totalOrcadoDash > 0 ? Math.min(100, Math.round((totalRealizadoDash / totalOrcadoDash) * 100)) : 0;
   const pctReal = totalOrcadoDash > 0 ? Math.round((totalRealizadoDash / totalOrcadoDash) * 100) : 0;
@@ -2826,6 +2832,23 @@ function DashboardView({ kpis, workPackages, disciplineCosts, serviceInvoices, e
     });
     return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 10);
   }, [tmDue]);
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      exportSheets("genesis-dashboard", [
+        ["Financeiro", financeiro.map((k) => ({ Indicador: k.label, Valor: k.value }))],
+        ["Custo por Categoria", categoryCostsDash.map((d) => ({ Categoria: d.category, "Ordem": adpServicosLabel(d.category), "Orçado (US$)": d.orcadoUsd, "Orçado (R$)": d.orcadoBrl, "Realizado (R$)": d.realizado, "Disponível (R$)": d.disponivel }))],
+        ["Serviços", servicos.map((k) => ({ Indicador: k.label, Valor: k.value }))],
+        ["Pagamentos", pagamentos.map((k) => ({ Situação: k.label, "Quantidade · Valor": k.value }))],
+        ["Aprovação Pendente", topOpenInvoices.map((r) => ({ Data: r.date, Serviço: r.assunto, Empresa: r.empresa, "Valor Total": r.valorTotal, "Dias em Aberto": r.daysOpenTotal, Status: r.statusPagamento }))],
+        ["Próximas Manutenções", upcomingMaintenance.map((w) => ({ Manutenção: w.name, Categoria: w.discipline, Empresa: w.empresa, Início: w.start, Status: w.status }))],
+        ["Último Port Call", lastPortCallServices.map((w) => ({ "Port Call": lastPortCallLabel, Serviço: w.name, Empresa: w.empresa, Data: w.start, Status: w.status }))],
+        ["TM Master", tmPorDepto.map((d) => ({ Departamento: d.departamento, Vencidas: d.Vencidas, "Até 40 dias": d["Até 40 dias"], "No prazo": d["No prazo"], Total: d.total }))],
+        ["Materiais Urgentes", kpis.materiaisUrgentes.map((m) => ({ Descrição: m.descricao, Necessidade: m.dataNecessidade, Prioridade: m.priority, Status: m.status }))],
+      ]);
+    });
+  }, [financeiro, servicos, pagamentos, categoryCostsDash, topOpenInvoices, upcomingMaintenance, lastPortCallServices, tmPorDepto, kpis, setExportXlsxFn]);
 
   const Donut = ({ data, center, centerLabel }) => (
     <div className="dsh-donut">
@@ -5343,7 +5366,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
-function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais, newRowId }) {
+function MaterialsView({ setExportXlsxFn, materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais, newRowId }) {
   React.useEffect(() => {
     if (!newRowId) return;
     const el = document.getElementById(`row-${newRowId}`);
@@ -5411,6 +5434,21 @@ function MaterialsView({ materials, updMat, remMat, workPackages, setReportFn, h
     filtered.forEach((m) => { const k = m.departamento || "Sem departamento"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
   }, [filtered]);
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      if (matSubTab === "analises") {
+        exportSheets("genesis-materiais-analises", [
+          ["Por Status", porStatus.map((x) => ({ Status: x.status, Quantidade: x.count }))],
+          ["Por Prioridade", porPrioridade.map((x) => ({ Prioridade: x.priority, Quantidade: x.count }))],
+          ["Por Departamento", porDepartamento.map((x) => ({ Departamento: x.departamento, Quantidade: x.count }))],
+        ]);
+      } else {
+        exportSheets("genesis-materiais", [["Materiais", rowsToSheet(sorted, MAT_COLS)]]);
+      }
+    });
+  }, [matSubTab, sorted, porStatus, porPrioridade, porDepartamento, setExportXlsxFn]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -5760,7 +5798,7 @@ function MultiSelectStatus({ options, selected, onChange, labelFor }) {
 
 const emptyPayFilter = { statuses: [], servico: "", po: "", rc: "", empresa: "", dataInicio: "", dataFim: "" };
 
-function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn, newRowId }) {
+function PaymentsSection({ setExportXlsxFn, paySubTab, setPaySubTab, serviceInvoices, updInv, remInv, addInv, setReportFn, newRowId }) {
   const [f, setF] = useState(emptyPayFilter);
   const hasActiveFilter = f.statuses.length > 0 || f.servico || f.po || f.rc || f.empresa || f.dataInicio || f.dataFim;
 
@@ -5827,15 +5865,15 @@ function PaymentsSection({ paySubTab, setPaySubTab, serviceInvoices, updInv, rem
         </div>
       )}
 
-      {paySubTab === "total" && <PaymentsTotalView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
-      {paySubTab === "status" && <PaymentsStatusView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
-      {paySubTab === "dashboard" && <PaymentsValoresView serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "total" && <PaymentsTotalView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "status" && <PaymentsStatusView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "dashboard" && <PaymentsValoresView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
     </div>
   );
 }
 
 /* ---------- Página 1: Dashboard Total (todas as colunas da planilha + filtros + métricas de prazo) ---------- */
-function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn, newRowId }) {
+function PaymentsTotalView({ setExportXlsxFn, serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn, newRowId }) {
   React.useEffect(() => {
     if (!newRowId) return;
     const el = document.getElementById(`row-${newRowId}`);
@@ -5900,6 +5938,14 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
     activeRows.forEach((r) => { const k = r.statusPagamento || "Sem status"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([name, value]) => ({ name, value, color: STATUS_PAGAMENTO_COLOR[name] || "#9499A8" }));
   }, [activeRows]);
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      const cols = INV_COLS.filter(([k]) => k !== "saldoPo" && k !== "diffDays");
+      exportSheets("genesis-pagamentos-total", [["Pagamentos", rowsToSheet(activeRows, cols)]]);
+    });
+  }, [activeRows, setExportXlsxFn]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -6061,7 +6107,7 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
 }
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
-function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
+function PaymentsStatusView({ setExportXlsxFn, serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
   const [sort, setSort] = useState({ key: "date", dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
   const statusColorMap = STATUS_PAGAMENTO_COLOR;
@@ -6086,6 +6132,13 @@ function PaymentsStatusView({ serviceInvoices, updInv, remInv, f, setF, selected
   /* KPIs refletem a seleção de linhas quando houver alguma */
   const activeRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
   const countOf = (s) => activeRows.filter((r) => r.statusPagamento === s).length;
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      exportSheets("genesis-pagamentos-status", [["Status dos Pagamentos", rowsToSheet(activeRows, INV_COLS)]]);
+    });
+  }, [activeRows, setExportXlsxFn]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -6194,7 +6247,7 @@ const InvoiceSituationPill = ({ situation }) => (
 );
 
 /* ---------- Página 3: Dashboard de Valores — visão enxuta puxando os mesmos dados do Dashboard Total ---------- */
-function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
+function PaymentsValoresView({ setExportXlsxFn, serviceInvoices, updInv, remInv, f, selectedIds, toggleSelect, setReportFn }) {
   const [situationFilter, setSituationFilter] = useState("Todos");
   const [sort, setSort] = useState({ key: "date", dir: 1 });
 
@@ -6227,6 +6280,14 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
     { key: "Pendente", label: "Pendente", value: `${pendentes.length} · ${fmt(sum(pendentes))}`, color: "var(--warn)", icon: AlertTriangle },
     { key: "Atrasado", label: "Atrasado", value: `${atrasados.length} · ${fmt(sum(atrasados))}`, color: "var(--crit)", icon: AlertTriangle },
   ];
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      const rows = activeRows.map((r) => ({ ...rowsToSheet([r], INV_COLS)[0], "Situação": r._situation }));
+      exportSheets("genesis-pagamentos-valores", [["Valores", rows]]);
+    });
+  }, [activeRows, setExportXlsxFn]);
 
   React.useEffect(() => {
     if (!setReportFn) return;
@@ -6306,7 +6367,7 @@ function PaymentsValoresView({ serviceInvoices, updInv, remInv, f, selectedIds, 
 /* ============================================================
    COSTS
    ============================================================ */
-function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
+function CostsView({ setExportXlsxFn, serviceInvoices, updInv, exchangeRate, setExchangeRate, setReportFn }) {
   const [costSubTab, setCostSubTab] = useState("rateio"); // "rateio" | "dashboard" | "previsao"
   const [expandedRow, setExpandedRow] = useState(null);
   const [categoriaTableCollapsed, setCategoriaTableCollapsed] = useState(false);
@@ -6423,6 +6484,24 @@ function CostsView({ serviceInvoices, updInv, exchangeRate, setExchangeRate, set
 
   /* registra o gerador de PDF desta página — reflete exatamente o filtro/dados atuais da aba Custos,
      com cada parte do relatório bem separada (uma seção por página) */
+  React.useEffect(() => {
+    if (!setExportXlsxFn) return;
+    setExportXlsxFn(() => () => {
+      const categorias = categoryCosts.map((c) => ({ Categoria: c.category, "Ordem": adpServicosLabel(c.category), "Orçado (R$)": c.ilimitado ? "Sem teto" : c.orcadoBrl, "Realizado (R$)": c.realizado }));
+      if (costSubTab === "dashboard") {
+        exportSheets("genesis-custos-dashboard", [["Custo por Categoria", categorias]]);
+      } else {
+        const rateio = [];
+        filtered.forEach((r) => {
+          const al = allocationsOf(r);
+          if (al.length === 0) rateio.push({ Data: r.date, Serviço: r.assunto, Empresa: r.empresa, Status: r.statusPagamento, "Mês Provisionado": r.previsaoMes, "Valor Total": r.valorTotal, Categoria: "(sem rateio)", Ordem: "", "Valor Rateado": 0, "Justificativa Geral": r.justificativaGeral || "" });
+          al.forEach((a) => rateio.push({ Data: r.date, Serviço: r.assunto, Empresa: r.empresa, Status: r.statusPagamento, "Mês Provisionado": r.previsaoMes, "Valor Total": r.valorTotal, Categoria: a.category, Ordem: adpServicosLabel(a.category), "Valor Rateado": a.valor, "Justificativa Geral": r.justificativaGeral || "" }));
+        });
+        exportSheets("genesis-custos-rateio", [["Rateio", rateio], ["Custo por Categoria", categorias]]);
+      }
+    });
+  }, [costSubTab, filtered, categoryCosts, setExportXlsxFn]);
+
   React.useEffect(() => {
     if (!setReportFn || costSubTab !== "rateio") return;
     setReportFn(() => () => {
