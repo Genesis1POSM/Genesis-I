@@ -181,6 +181,30 @@ const Theme = () => (
     }
     .g-kpi-value { font-size: 19px; font-weight: 600; font-family: var(--mono); }
     .g-kpi-value.small { font-size: 16px; }
+    /* ---------- Tabelas modernas (Serviços / Pagamentos) ---------- */
+    .tbl-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+    .tbl-check { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--text-dim); cursor: pointer; }
+    .tbl-modern th { padding: 12px 14px; }
+    .tbl-modern td { padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+    .tbl-modern tr.g-row:nth-child(even) { background: transparent !important; }
+    .tbl-row td.tbl-first { border-left: 4px solid var(--c, transparent); }
+    .tbl-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 6px 0 6px; }
+    .tbl-chip { font-size: 10.5px; background: #F0F2F7; color: var(--text-dim); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+    .tbl-sub { font-size: 11px; color: var(--text-faint); padding: 2px 6px 0 6px; }
+    .tbl-days { display: inline-block; font-weight: 700; padding: 3px 10px; border-radius: 8px; font-size: 12px; white-space: nowrap; }
+    .tbl-days.d1 { background: #E3F8EA; color: #15803D; }
+    .tbl-days.d2 { background: #FFF3DC; color: #B45309; }
+    .tbl-days.d3 { background: #FEE7E7; color: #B91C1C; }
+    .tbl-progress { flex: 1; min-width: 60px; height: 7px; background: #EEF0F4; border-radius: 99px; overflow: hidden; }
+    .tbl-progress > div { height: 100%; background: linear-gradient(90deg, #3B82F6, #22C55E); border-radius: 99px; transition: width .3s; }
+    .tbl-group { cursor: pointer; }
+    .tbl-group td { background: #F1F5FF !important; padding: 10px 14px !important; font-weight: 700; color: #12203A; border-bottom: 1px solid #E1E8FA !important; }
+    .tbl-group:hover td { background: #E8EFFF !important; }
+    .tbl-group-arrow { display: inline-block; width: 18px; color: var(--accent); }
+    .tbl-group-cnt { background: #fff; border: 1px solid #D6E2FB; color: var(--accent); border-radius: 99px; padding: 1px 9px; font-size: 11px; margin-left: 10px; font-weight: 600; }
+    .tbl-group-tot { float: right; color: var(--text-dim); font-weight: 600; font-size: 12px; }
+    .tbl-detail td { background: var(--panel-alt) !important; padding: 14px 14px 18px 14px !important; }
+    .tbl-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 16px; }
     /* ---------- Pagamentos (novo visual) ---------- */
     .pay-hero { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
     .pay-main { padding: 18px 20px; border-top: 3px solid var(--accent); }
@@ -3420,6 +3444,20 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
     });
   }, [workPackages, sf]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+  const [groupByPc, setGroupByPc] = useState(true);
+  const [collapsedWp, setCollapsedWp] = useState(new Set());
+  const toggleWpGroup = (k) => setCollapsedWp((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const wpGroups = useMemo(() => {
+    if (!groupByPc) return [{ key: "todos", label: "Todos", rows: sorted }];
+    const map = new Map();
+    sorted.forEach((w) => {
+      const k = dateKeyOf(w.start) || "sem-data";
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(w);
+    });
+    return [...map.entries()].sort((x, y) => (x[0] === "sem-data") - (y[0] === "sem-data") || x[0].localeCompare(y[0]))
+      .map(([key, rows]) => ({ key, rows, label: key === "sem-data" ? "Sem data definida" : portCallLabel(key) }));
+  }, [sorted, groupByPc]);
 
   const concluidos = filtered.filter((w) => w.status === "Concluído").length;
   const emAndamento = filtered.filter((w) => w.status === "Em andamento").length;
@@ -3532,55 +3570,64 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
           <div className="g-muted">Nenhum serviço encontrado com esses filtros.</div>
         </div>
       ) : (
-      <div className="g-panel">
+      <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="tbl-toolbar">
+          <label className="tbl-check"><input type="checkbox" checked={groupByPc} onChange={(e) => setGroupByPc(e.target.checked)} />Agrupar por Port Call</label>
+          <span className="g-muted" style={{ fontSize: 11 }}>{filtered.length} serviço(s) · clique na seta de uma linha para editar data, categoria, MD, RC e observação</span>
+        </div>
         <div className="g-table-wrap">
-        <table className="g-table">
+        <table className="g-table tbl-modern">
           <thead>
             <tr>
-              <th></th>
-              <SortTh sortKey="start" sort={sort} setSort={setSort}>Data</SortTh>
-              <SortTh sortKey="group" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Categoria</SortTh>
-              <SortTh sortKey="name" sort={sort} setSort={setSort} style={{ minWidth: 220 }}>Manutenção</SortTh>
-              <SortTh sortKey="empresa" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Empresa</SortTh>
-              <SortTh sortKey="md" sort={sort} setSort={setSort}>MD</SortTh>
-              <SortTh sortKey="rc" sort={sort} setSort={setSort} style={{ minWidth: 100 }}>RC</SortTh>
+              <th style={{ width: 34 }}></th>
+              <SortTh sortKey="name" sort={sort} setSort={setSort} style={{ minWidth: 320 }}>Manutenção</SortTh>
+              <SortTh sortKey="empresa" sort={sort} setSort={setSort} style={{ minWidth: 140 }}>Empresa</SortTh>
               <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 170 }}>Status</SortTh>
               <SortTh sortKey="progress" sort={sort} setSort={setSort} style={{ minWidth: 150 }}>Progresso</SortTh>
               <th style={{ minWidth: 80 }}>Desvio</th>
-              <th style={{ minWidth: 200 }}>Observação</th><th></th>
+              <th style={{ width: 90 }}></th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((w) => {
+            {wpGroups.map((g) => (
+              <React.Fragment key={g.key}>
+                {groupByPc && (
+                  <tr className="tbl-group" onClick={() => toggleWpGroup(g.key)}>
+                    <td colSpan={7}>
+                      <span className="tbl-group-arrow">{collapsedWp.has(g.key) ? "▸" : "▾"}</span>
+                      {g.label}
+                      <span className="tbl-group-cnt">{g.rows.length} serviço(s)</span>
+                      <span className="tbl-group-tot">{g.rows.filter((x) => x.status === "Concluído").length} de {g.rows.length} concluído(s)</span>
+                    </td>
+                  </tr>
+                )}
+                {!(groupByPc && collapsedWp.has(g.key)) && g.rows.map((w) => {
               const i = workPackages.indexOf(w);
               const isOpen = expandedWp === w.id;
               return (
                 <React.Fragment key={w.id}>
-                  <tr id={`row-${w.id}`} className={"g-row" + (newRowId === w.id ? " g-row-flash" : "")} style={w.status === "Cancelado" ? { opacity: 0.5 } : undefined}>
-                    <td>
-                      <span className="g-btn ghost" onClick={() => setExpandedWp(isOpen ? null : w.id)}>
-                        {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                      </span>
-                    </td>
-                    <td><EDate value={(w.start || "").slice(0, 10)} onChange={(v) => setDateKeepTime(i, w, v)} /></td>
-                    <td style={{ minWidth: 130 }}><EText value={w.group || ""} onChange={(v) => updWp(i, "group", v)} /></td>
-                    <td style={{ minWidth: 220 }}>
-                      <div className="g-flex" style={{ gap: 4 }}>
-                        {w.repeatOf && <span title="Esta linha é uma repetição de um serviço não concluído anteriormente" style={{ fontSize: 13, flexShrink: 0 }}>🔁</span>}
-                        {w.status === "Cancelado" && <span title="Cancelado — não é mais necessário" style={{ fontSize: 13, flexShrink: 0 }}>🚫</span>}
-                        {w.linkedInvoiceId && <span title="Lançamento gerado automaticamente na aba Pagamentos" style={{ fontSize: 13, flexShrink: 0 }}>💲</span>}
+                  <tr id={`row-${w.id}`} className={"g-row tbl-row" + (newRowId === w.id ? " g-row-flash" : "")} style={{ "--c": ({ "Concluído": "#22C55E", "Em andamento": "#3B82F6", "Planejamento": "#F5A623", "Não iniciado": "#9499A8", "Cancelado": "#CBD0DC" })[w.status] || "#9499A8", ...(w.status === "Cancelado" ? { opacity: 0.5 } : {}) }}>
+                    <td className="tbl-first"></td>
+                    <td style={{ minWidth: 320, whiteSpace: "normal", verticalAlign: "top" }}>
+                      <div className="g-flex" style={{ gap: 4, alignItems: "flex-start" }}>
+                        {w.repeatOf && <span title="Esta linha é uma repetição de um serviço não concluído anteriormente" style={{ fontSize: 13, flexShrink: 0, paddingTop: 5 }}>🔁</span>}
+                        {w.status === "Cancelado" && <span title="Cancelado — não é mais necessário" style={{ fontSize: 13, flexShrink: 0, paddingTop: 5 }}>🚫</span>}
+                        {w.linkedInvoiceId && <span title="Lançamento gerado automaticamente na aba Pagamentos" style={{ fontSize: 13, flexShrink: 0, paddingTop: 5 }}>💲</span>}
                         <ETextArea rows={1} value={w.name} onChange={(v) => updWp(i, "name", v)} />
                       </div>
+                      <div className="tbl-chips">
+                        {w.start && <span className="tbl-chip">📅 {fmtDate((w.start || "").slice(0, 10))}</span>}
+                        {w.group && <span className="tbl-chip">{w.group}</span>}
+                        {w.rc && <span className="tbl-chip">RC {w.rc}</span>}
+                        {w.md === "Sim" && <span className="tbl-chip">MD</span>}
+                      </div>
                     </td>
-                    <td style={{ minWidth: 130 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
-                    <td><ESelect value={w.md || "Não"} onChange={(v) => updWp(i, "md", v)} options={["Sim", "Não"]} /></td>
-                    <td style={{ minWidth: 100 }}><EText value={w.rc || ""} onChange={(v) => updWp(i, "rc", v)} mono /></td>
+                    <td style={{ minWidth: 140 }}><EText value={w.empresa || ""} onChange={(v) => updWp(i, "empresa", v)} /></td>
                     <td style={{ minWidth: 170 }}><StatusServicoSelect value={w.status} onChange={(v) => handleStatusChange(i, v)} /></td>
                     <td style={{ minWidth: 150 }}>
-                      <div className="g-flex" style={{ gap: 6 }}>
-                        <input type="range" min="0" max="100" value={w.progress}
-                          onChange={(e) => updWp(i, "progress", Number(e.target.value))} style={{ width: 70 }} />
-                        <input type="number" min="0" max="100" className="g-edit num" style={{ width: 48 }} value={w.progress}
+                      <div className="g-flex" style={{ gap: 8 }}>
+                        <div className="tbl-progress"><div style={{ width: `${Math.max(0, Math.min(100, Number(w.progress) || 0))}%` }} /></div>
+                        <input type="number" min="0" max="100" className="g-edit num" style={{ width: 52 }} value={w.progress}
                           onChange={(e) => updWp(i, "progress", Number(e.target.value))} />
                         <span style={{ fontSize: 10, color: "var(--text-faint)" }}>%</span>
                       </div>
@@ -3593,7 +3640,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                             <span className="g-muted" style={{ fontSize: 11 }}>—</span>
                           ) : (
                             <span style={{
-                              fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
+                              fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
                               color: d === 0 ? "var(--ok)" : "var(--crit)",
                               background: d === 0 ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
                             }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
@@ -3603,18 +3650,28 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         </td>
                       );
                     })()}
-                    <td style={{ minWidth: 200 }}><EText value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {w.status !== "Concluído" && w.status !== "Cancelado" && (
-                        <span className="g-btn ghost" onClick={() => repeatWp(w)} title="Ainda não concluído — repetir esta linha para outra data (a nova linha mantém o status; troque para Concluído quando terminar)">🔁</span>
+                        <span className="g-btn ghost" onClick={() => repeatWp(w)} title="Ainda não concluído — repetir esta linha para outra data">🔁</span>
                       )}
+                      <span className="g-btn ghost" onClick={() => setExpandedWp(isOpen ? null : w.id)} title="Ver e editar todos os detalhes">
+                        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
                       <span className="g-btn ghost danger" onClick={() => remWp(i)}><Trash2 size={13} /></span>
                     </td>
                   </tr>
                   {isOpen && (
                     <tr className="g-expand-row">
                       <td></td>
-                      <td colSpan={11} style={{ padding: "10px 8px 16px 8px" }}>
+                      <td colSpan={6} style={{ padding: "10px 8px 16px 8px" }}>
+                        <div className="g-panel-title" style={{ marginBottom: 8 }}>Dados Gerais</div>
+                        <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
+                          <div className="g-field"><label>Data</label><EDate value={(w.start || "").slice(0, 10)} onChange={(v) => setDateKeepTime(i, w, v)} /></div>
+                          <div className="g-field" style={{ minWidth: 150 }}><label>Categoria</label><EText value={w.group || ""} onChange={(v) => updWp(i, "group", v)} /></div>
+                          <div className="g-field"><label>MD</label><ESelect value={w.md || "Não"} onChange={(v) => updWp(i, "md", v)} options={["Sim", "Não"]} /></div>
+                          <div className="g-field" style={{ minWidth: 120 }}><label>RC</label><EText value={w.rc || ""} onChange={(v) => updWp(i, "rc", v)} mono /></div>
+                          <div className="g-field" style={{ minWidth: 260, flex: 1 }}><label>Observação</label><ETextArea rows={1} value={w.obs || ""} onChange={(v) => updWp(i, "obs", v)} /></div>
+                        </div>
                         <div className="g-panel-title" style={{ marginBottom: 8 }}>Planejamento</div>
                         <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
                           <div className="g-field"><label>Categoria (custo)</label><ESelect value={w.discipline} onChange={(v) => updWp(i, "discipline", v)} options={CATEGORIES} /></div>
@@ -3674,6 +3731,8 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                 </React.Fragment>
               );
             })}
+              </React.Fragment>
+            ))}
           </tbody>
         </table>
         </div>
@@ -5609,6 +5668,24 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
     );
   }, [serviceInvoices, f]);
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+  const [groupByEmpresa, setGroupByEmpresa] = useState(true);
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const [expandedId, setExpandedId] = useState(null);
+  const toggleGroup = (k) => setCollapsedGroups((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const groups = useMemo(() => {
+    if (!groupByEmpresa) return [{ key: "Todos", rows: sorted, total: 0, atrasados: 0 }];
+    const map = new Map();
+    sorted.forEach((r) => {
+      const k = (r.empresa || "").trim() || "Sem empresa";
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(r);
+    });
+    return [...map.entries()].sort((x, y) => x[0].localeCompare(y[0], "pt-BR")).map(([key, rows]) => ({
+      key, rows,
+      total: rows.reduce((t, r) => t + Number(r.valorTotal || 0), 0),
+      atrasados: rows.filter((r) => r.statusPagamento !== "Pago" && r.statusPagamento !== "Cancelado" && Number(r.daysOpenTotal || 0) > 60).length,
+    }));
+  }, [sorted, groupByEmpresa]);
 
   /* quando há seleção, os KPIs refletem só os serviços selecionados (dentro do filtro atual) */
   const activeRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
@@ -5687,54 +5764,95 @@ function PaymentsTotalView({ serviceInvoices, updInv, remInv, f, selectedIds, to
         </div>
       )}
 
-      <div className="g-panel">
+      <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="tbl-toolbar">
+          <label className="tbl-check"><input type="checkbox" checked={groupByEmpresa} onChange={(e) => setGroupByEmpresa(e.target.checked)} />Agrupar por empresa</label>
+          <span className="g-muted" style={{ fontSize: 11 }}>{filtered.length} registro(s) · clique na seta de uma linha para ver e editar todos os detalhes</span>
+        </div>
         <div className="g-table-wrap">
-        <table className="g-table">
+        <table className="g-table tbl-modern">
           <thead>
             <tr>
-              <th></th>
-              <SortTh sortKey="date" sort={sort} setSort={setSort}>Data</SortTh>
-              <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 260 }}>Manutenção</SortTh>
-              <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
-              <SortTh sortKey="md" sort={sort} setSort={setSort}>MD</SortTh>
-              <SortTh sortKey="mdSentDate" sort={sort} setSort={setSort}>Envio MD</SortTh>
-              <SortTh sortKey="daysOpenTotal" sort={sort} setSort={setSort}>Dias Aberto Total</SortTh>
-              <SortTh sortKey="rc" sort={sort} setSort={setSort}>RC</SortTh>
-              <SortTh sortKey="serviceStatus" sort={sort} setSort={setSort}>Status Serviço</SortTh>
-              <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO/Contrato</SortTh>
-              <SortTh sortKey="medicao" sort={sort} setSort={setSort}>Medição</SortTh>
-              <SortTh sortKey="valorTotal" sort={sort} setSort={setSort}>Valor Total</SortTh>
-              <th style={{ minWidth: 240 }}>Observações</th>
-              <SortTh sortKey="statusPagamento" sort={sort} setSort={setSort} style={{ minWidth: 210 }}>Status Pagamento</SortTh>
-              <SortTh sortKey="dataPagamento" sort={sort} setSort={setSort}>Data Pagamento</SortTh>
-              <th>Exec→Pgto (d)</th><th></th>
+              <th style={{ width: 34 }}></th>
+              <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 320 }}>Serviço</SortTh>
+              <SortTh sortKey="empresa" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Empresa</SortTh>
+              <SortTh sortKey="statusPagamento" sort={sort} setSort={setSort} style={{ minWidth: 210 }}>Status do Pagamento</SortTh>
+              <SortTh sortKey="daysOpenTotal" sort={sort} setSort={setSort}>Tempo em Aberto</SortTh>
+              <SortTh sortKey="valorTotal" sort={sort} setSort={setSort} style={{ minWidth: 120 }}>Valor Total</SortTh>
+              <th style={{ width: 70 }}></th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => {
-              const i = serviceInvoices.indexOf(r);
-              return (
-                <tr id={`row-${r.id}`} className={"g-row" + (newRowId === r.id ? " g-row-flash" : "")} key={r.id} style={selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.06)" } : undefined}>
-                  <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
-                  <td><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></td>
-                  <td style={{ minWidth: 260, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} /></td>
-                  <td style={{ minWidth: 120 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
-                  <td><ESelect value={r.md} onChange={(v) => updInv(i, "md", v)} options={["Sim", "Não"]} /></td>
-                  <td><EDate value={r.mdSentDate} onChange={(v) => updInv(i, "mdSentDate", v)} /></td>
-                  <td><ENum value={r.daysOpenTotal} onChange={(v) => updInv(i, "daysOpenTotal", v)} /></td>
-                  <td style={{ minWidth: 90 }}><EText value={r.rc} onChange={(v) => updInv(i, "rc", v)} mono /></td>
-                  <td><ESelect value={r.serviceStatus} onChange={(v) => updInv(i, "serviceStatus", v)} options={["Aberto", "Fechado"]} /></td>
-                  <td style={{ minWidth: 120 }}><EText value={r.poContrato} onChange={(v) => updInv(i, "poContrato", v)} mono /></td>
-                  <td style={{ minWidth: 90 }}><EText value={r.medicao} onChange={(v) => updInv(i, "medicao", v)} mono /></td>
-                  <td><ENum value={r.valorTotal} onChange={(v) => updInv(i, "valorTotal", v)} /></td>
-                  <td style={{ minWidth: 240, whiteSpace: "normal", verticalAlign: "top" }}><ETextArea value={r.obs} onChange={(v) => updInv(i, "obs", v)} /></td>
-                  <td style={{ minWidth: 210 }}><StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} /></td>
-                  <td><EDate value={r.dataPagamento} onChange={(v) => updInv(i, "dataPagamento", v)} /></td>
-                  <td style={{ fontFamily: "var(--mono)", textAlign: "right" }}>{execToPayDays(r) ?? "—"}</td>
-                  <td><span className="g-btn ghost danger" onClick={() => remInv(i)}><Trash2 size={13} /></span></td>
-                </tr>
-              );
-            })}
+            {groups.map((g) => (
+              <React.Fragment key={g.key}>
+                {groupByEmpresa && (
+                  <tr className="tbl-group" onClick={() => toggleGroup(g.key)}>
+                    <td colSpan={7}>
+                      <span className="tbl-group-arrow">{collapsedGroups.has(g.key) ? "▸" : "▾"}</span>
+                      {g.key}
+                      <span className="tbl-group-cnt">{g.rows.length} serviço(s)</span>
+                      <span className="tbl-group-tot">{fmt(g.total)}{g.atrasados > 0 ? ` · ${g.atrasados} em atraso` : ""}</span>
+                    </td>
+                  </tr>
+                )}
+                {!(groupByEmpresa && collapsedGroups.has(g.key)) && g.rows.map((r) => {
+                  const i = serviceInvoices.indexOf(r);
+                  const isOpen = expandedId === r.id;
+                  const cor = STATUS_PAGAMENTO_COLOR[r.statusPagamento] || "#9499A8";
+                  const dias = Number(r.daysOpenTotal || 0);
+                  const diasCls = r.statusPagamento === "Pago" ? "d1" : dias > 60 ? "d3" : dias > 45 ? "d2" : "d1";
+                  return (
+                    <React.Fragment key={r.id}>
+                      <tr id={`row-${r.id}`} className={"g-row tbl-row" + (newRowId === r.id ? " g-row-flash" : "")} style={{ "--c": cor, ...(selectedIds.has(r.id) ? { background: "rgba(59,130,246,0.08)" } : {}) }}>
+                        <td className="tbl-first"><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                        <td style={{ minWidth: 320, whiteSpace: "normal", verticalAlign: "top" }}>
+                          <ETextArea rows={1} value={r.assunto} onChange={(v) => updInv(i, "assunto", v)} />
+                          <div className="tbl-chips">
+                            {r.date && <span className="tbl-chip">Exec. {fmtDate(r.date)}</span>}
+                            {r.rc && <span className="tbl-chip">RC {r.rc}</span>}
+                            {r.poContrato && <span className="tbl-chip">PO {r.poContrato}</span>}
+                            {r.medicao && <span className="tbl-chip">Medição {r.medicao}</span>}
+                          </div>
+                        </td>
+                        <td style={{ minWidth: 130 }}><EText value={r.empresa} onChange={(v) => updInv(i, "empresa", v)} /></td>
+                        <td style={{ minWidth: 210 }}>
+                          <StatusPagamentoSelect value={r.statusPagamento} onChange={(v) => updInv(i, "statusPagamento", v)} />
+                          {r.statusPagamento === "Pago" && r.dataPagamento && <div className="tbl-sub">Pago em {fmtDate(r.dataPagamento)}</div>}
+                        </td>
+                        <td><span className={`tbl-days ${diasCls}`}>{dias} dias</span></td>
+                        <td style={{ minWidth: 120 }}><ENum value={r.valorTotal} onChange={(v) => updInv(i, "valorTotal", v)} /></td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <span className="g-btn ghost" onClick={() => setExpandedId(isOpen ? null : r.id)} title="Ver todos os detalhes">
+                            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                          <span className="g-btn ghost danger" onClick={() => remInv(i)}><Trash2 size={13} /></span>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="tbl-detail">
+                          <td></td>
+                          <td colSpan={6}>
+                            <div className="tbl-detail-grid">
+                              <div className="g-field"><label>Data de Execução</label><EDate value={r.date} onChange={(v) => updInv(i, "date", v)} /></div>
+                              <div className="g-field"><label>MD</label><ESelect value={r.md} onChange={(v) => updInv(i, "md", v)} options={["Sim", "Não"]} /></div>
+                              <div className="g-field"><label>Envio MD</label><EDate value={r.mdSentDate} onChange={(v) => updInv(i, "mdSentDate", v)} /></div>
+                              <div className="g-field"><label>Dias em Aberto (Total)</label><ENum value={r.daysOpenTotal} onChange={(v) => updInv(i, "daysOpenTotal", v)} /></div>
+                              <div className="g-field"><label>RC</label><EText value={r.rc} onChange={(v) => updInv(i, "rc", v)} mono /></div>
+                              <div className="g-field"><label>Status do Serviço</label><ESelect value={r.serviceStatus} onChange={(v) => updInv(i, "serviceStatus", v)} options={["Aberto", "Fechado"]} /></div>
+                              <div className="g-field"><label>PO / Contrato</label><EText value={r.poContrato} onChange={(v) => updInv(i, "poContrato", v)} mono /></div>
+                              <div className="g-field"><label>Medição</label><EText value={r.medicao} onChange={(v) => updInv(i, "medicao", v)} mono /></div>
+                              <div className="g-field"><label>Data do Pagamento</label><EDate value={r.dataPagamento} onChange={(v) => updInv(i, "dataPagamento", v)} /></div>
+                              <div className="g-field"><label>Execução → Pagamento</label><div style={{ padding: "7px 0", fontWeight: 600 }}>{execToPayDays(r) ?? "—"} {execToPayDays(r) !== null ? "dias" : ""}</div></div>
+                              <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Observações</label><ETextArea value={r.obs} onChange={(v) => updInv(i, "obs", v)} /></div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </React.Fragment>
+            ))}
           </tbody>
         </table>
         </div>
