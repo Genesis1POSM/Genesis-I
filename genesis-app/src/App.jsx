@@ -2711,6 +2711,28 @@ function Genesis({ currentUser, onLogout, users, setUsers,
 /* ============================================================
    DASHBOARD — exact KPI set requested
    ============================================================ */
+const DonutChart = ({ data, center, centerLabel, legend }) => {
+  const dados = data.length ? data : [{ name: "Sem dados", value: 1, color: "#E7E9F0" }];
+  return (
+    <div className="dsh-donut">
+      <div className="dsh-donut-chart">
+        <PieChart width={150} height={150}>
+          <Pie data={dados} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={74} paddingAngle={dados.length > 1 ? 2 : 0} stroke="none" isAnimationActive={false}>
+            {dados.map((d, i) => <Cell key={i} fill={d.color} />)}
+          </Pie>
+          {data.length > 0 && <Tooltip contentStyle={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11 }} />}
+        </PieChart>
+        <div className="dsh-donut-center"><b>{center}</b><span>{centerLabel}</span></div>
+      </div>
+      <div className="dsh-legend">
+        {(legend || data).map((d) => (
+          <div key={d.name}><i style={{ background: d.color }} />{d.name}<b>{d.value}</b></div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, serviceInvoices, exchangeRate, setExchangeRate, setReportFn, tmDue = [] }) {
 
   /* filtro de período do Dashboard — por padrão, o mês vigente */
@@ -2851,12 +2873,13 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
 
   const pctRealizado = totalOrcadoDash > 0 ? Math.min(100, Math.round((totalRealizadoDash / totalOrcadoDash) * 100)) : 0;
   const pctReal = totalOrcadoDash > 0 ? Math.round((totalRealizadoDash / totalOrcadoDash) * 100) : 0;
-  const donutServicos = [
+  const legendServicos = [
     { name: "Concluídos", value: concluidosServicos, color: "#22C55E" },
     { name: "Em andamento", value: emAndamentoServicos, color: "#3B82F6" },
     { name: "Não iniciados", value: naoIniciadosServicos, color: "#9499A8" },
     { name: "Cancelados", value: canceladosServicos, color: "#EF4444" },
-  ].filter((d) => d.value > 0);
+  ];
+  const donutServicos = legendServicos.filter((d) => d.value > 0);
   const donutPagamentos = [
     { name: "Pago", value: pagosDash.length, color: "#22C55E" },
     { name: "Pendente", value: pendentesDash.length, color: "#F5A623" },
@@ -2896,27 +2919,6 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
       ]);
     });
   }, [financeiro, servicos, pagamentos, categoryCostsDash, topOpenInvoices, upcomingMaintenance, lastPortCallServices, tmPorDepto, kpis, setExportXlsxFn]);
-
-  const Donut = ({ data, center, centerLabel }) => (
-    <div className="dsh-donut">
-      <div className="dsh-donut-chart">
-        <ResponsiveContainer>
-          <PieChart>
-            <Pie data={data.length ? data : [{ name: "Sem dados", value: 1, color: "#E7E9F0" }]} dataKey="value" innerRadius={52} outerRadius={74} paddingAngle={data.length > 1 ? 2 : 0} stroke="none">
-              {(data.length ? data : [{ color: "#E7E9F0" }]).map((d, i) => <Cell key={i} fill={d.color} />)}
-            </Pie>
-            {data.length > 0 && <Tooltip contentStyle={tipStyle} />}
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="dsh-donut-center"><b>{center}</b><span>{centerLabel}</span></div>
-      </div>
-      <div className="dsh-legend">
-        {data.map((d) => (
-          <div key={d.name}><i style={{ background: d.color }} />{d.name}<b>{d.value}</b></div>
-        ))}
-      </div>
-    </div>
-  );
 
   return (
     <>
@@ -2962,7 +2964,7 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
       <div className="dsh-row2">
         <div className="dsh-card">
           <div className="dsh-title">Serviços</div>
-          <Donut data={donutServicos} center={`${taxaConclusaoServicos}%`} centerLabel="concluído" />
+          <DonutChart data={donutServicos} legend={legendServicos} center={`${taxaConclusaoServicos}%`} centerLabel="concluído" />
           <div className="dsh-chips">
             <div><b>{totalServicos}</b>Total</div>
             <div><b style={{ color: "var(--ok)" }}>{concluidosServicos}</b>Concluídos</div>
@@ -2971,7 +2973,7 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
         </div>
         <div className="dsh-card">
           <div className="dsh-title">Pagamentos</div>
-          <Donut data={donutPagamentos} center={serviceInvoices.length} centerLabel="registros" />
+          <DonutChart data={donutPagamentos} center={serviceInvoices.length} centerLabel="registros" />
           <div className="dsh-chips">
             <div><b style={{ color: "var(--ok)" }}>{fmt(sumVal(pagosDash))}</b>Pago</div>
             <div><b style={{ color: "var(--warn)" }}>{fmt(sumVal(pendentesDash))}</b>Pendente</div>
