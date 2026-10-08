@@ -672,7 +672,7 @@ const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 
 const WP_STATUS = ["Planejamento", "Não iniciado", "Em andamento", "Concluído", "Cancelado"];
 const WP_STATUS_DEFAULT_PROGRESS = { "Planejamento": 0, "Não iniciado": 0, "Em andamento": 50, "Concluído": 100, "Cancelado": 0 };
-const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo", "Dentro do Prazo", "Fora do Prazo"];
+const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo", "Dentro do Prazo", "Fora do Prazo", "Recusado", "Devolvido"];
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
@@ -2288,8 +2288,6 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     reader.onload = (evt) => {
       try {
         const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
         /* Normaliza cabeçalhos removendo acentos, pontuação e preposições ("de"/"da"/"do"/"dos"/"das"),
            para reconhecer planilhas próprias/externas que não seguem exatamente os nomes deste sistema
@@ -2322,6 +2320,31 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           "data recebimento": "dataRecebimento", "recebido em": "dataRecebimento", "data entrega": "dataRecebimento",
           "status": "status", "situacao": "status",
         };
+        /* Procura a aba e a linha de cabeçalho certas: a planilha pode ter várias abas (ex.: uma base
+           bruta gigante + a aba "PEDIDOS") e títulos acima do cabeçalho. Escolhe a aba/linha em que
+           mais colunas são reconhecidas. */
+        let best = { score: -1, name: null, headerRow: 0 };
+        wb.SheetNames.forEach((name) => {
+          const sh = wb.Sheets[name];
+          const grid = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", range: 0, blankrows: false });
+          for (let ri = 0; ri < Math.min(grid.length, 8); ri++) {
+            const keys = new Set((grid[ri] || []).map((h) => HEADER_MAP[normHeader(h)]).filter(Boolean));
+            const score = keys.size + (keys.has("descricao") ? 1 : 0) + (keys.has("tmMaster") ? 1 : 0);
+            if (score > best.score) best = { score, name, headerRow: ri };
+          }
+        });
+        if (!best.name || best.score < 3) {
+          const nomes = wb.SheetNames.join(", ");
+          setImportMsg(`Não encontrei as colunas de materiais em nenhuma aba (abas: ${nomes}). A planilha precisa ter colunas como "TM Master", "SAP", "Descrição", "Quantidade", "Status".`);
+          setTimeout(() => setImportMsg(null), 12000);
+          e.target.value = "";
+          return;
+        }
+        const sheet = wb.Sheets[best.name];
+        const range = XLSX.utils.decode_range(sheet["!ref"] || "A1");
+        range.s.r = best.headerRow;
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "", range, blankrows: false })
+          .filter((row) => Object.values(row).some((v) => String(v).replace(/\u00a0/g, "").trim() !== ""));
         const rowKeyMap = {};
         if (json.length > 0) {
           Object.keys(json[0]).forEach((h) => {
@@ -2345,20 +2368,29 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         };
         const normPriority = (v) => {
           const s = (v || "").toString().trim();
-          return PRIORITY.includes(s) ? s : (s || "Média");
+          if (s.toLowerCase() === "normal") return "Média";
+          const f = PRIORITY.find((p) => p.toLowerCase() === s.toLowerCase());
+          return f || (s || "Média");
         };
-        const normStatus = (v) => {
+        const normStatus = (v, ctx) => {
           const s = (v || "").toString().trim();
-          return MAT_STATUS.includes(s) ? s : (s || "Solicitado");
+          if (s) {
+            const f = MAT_STATUS.find((m) => m.toLowerCase() === s.toLowerCase());
+            return f || s;
+          }
+          /* sem status na planilha: deduz pelo que já foi preenchido */
+          if (ctx.dataRecebimento) return "Recebido";
+          if (ctx.po) return "PO emitida";
+          return "Solicitado";
         };
 
         const parsedRows = json.map((row) => {
           const r = {};
           Object.keys(row).forEach((h) => { if (rowKeyMap[h]) r[rowKeyMap[h]] = row[h]; });
-          return {
-            tmMaster: (r.tmMaster || "").toString(),
+          const base = {
+            tmMaster: (r.tmMaster || "").toString().trim(),
             departamento: (r.departamento || "").toString(),
-            sap: (r.sap || "").toString(),
+            sap: (r.sap || "").toString().trim(),
             descricao: (r.descricao || "").toString(),
             quantidade: parseQty(r.quantidade),
             priority: normPriority(r.priority),
@@ -2372,8 +2404,9 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             eta: parseDate(r.eta),
             obs: (r.obs || "").toString().trim(),
             dataRecebimento: parseDate(r.dataRecebimento),
-            status: normStatus(r.status),
           };
+          base.status = normStatus(r.status, base);
+          return base;
         }).filter((r) => r.descricao || r.sap || r.tmMaster);
 
         if (parsedRows.length === 0) {
@@ -2384,29 +2417,43 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           return;
         }
 
-        setMaterials((prev) => {
-          const bySap = new Map();
-          prev.forEach((m, idx) => { if (m.sap) bySap.set(String(m.sap), idx); });
+        {
+          const prev = materials;
+          /* casa cada linha da planilha com um item já existente (mesmo TM Master + SAP; em caso de
+             vários, prefere o de mesma RC/PO), sem nunca juntar duas linhas diferentes da planilha
+             num mesmo item — assim pedidos distintos do mesmo material não se sobrescrevem */
+          const keyOf = (m) => `${String(m.tmMaster || "").trim()}|${String(m.sap || "").trim()}`;
+          const byKey = new Map();
+          prev.forEach((m, idx) => {
+            const k = keyOf(m);
+            if (!byKey.has(k)) byKey.set(k, []);
+            byKey.get(k).push(idx);
+          });
+          const claimed = new Set();
           const next = [...prev];
           let updated = 0, added = 0;
           parsedRows.forEach((row) => {
-            const key = row.sap;
-            if (key && bySap.has(key)) {
-              const idx = bySap.get(key);
-              next[idx] = { ...next[idx], ...row, id: next[idx].id, wp: next[idx].wp };
+            const cands = (byKey.get(keyOf(row)) || []).filter((i) => !claimed.has(i));
+            const pick = cands.find((i) => String(next[i].rc || "") === row.rc && String(next[i].po || "") === row.po)
+              || cands.find((i) => String(next[i].rc || "") === row.rc)
+              || cands.find((i) => !next[i].rc || !next[i].po)
+              || cands[0];
+            if (pick !== undefined && (row.tmMaster || row.sap)) {
+              claimed.add(pick);
+              next[pick] = { ...next[pick], ...row, id: next[pick].id, wp: next[pick].wp };
               updated++;
             } else {
               next.push({ id: uid("MAT"), wp: "", ...row });
               added++;
             }
           });
-          setImportMsg(`Pedidos Emergenciais importado: ${added} novo(s), ${updated} atualizado(s).`);
-          return next;
-        });
+          setMaterials(next);
+          setImportMsg(`Planilha importada (aba "${best.name.trim()}"): ${added} novo(s), ${updated} atualizado(s), ${parsedRows.length} linha(s) lida(s).`);
+        }
       } catch (err) {
-        setImportMsg("Erro ao ler a planilha de Pedidos Emergenciais. Confira se o formato de colunas não mudou.");
+        setImportMsg(`Erro ao ler a planilha: ${err && err.message ? err.message : "formato inesperado"}.`);
       }
-      setTimeout(() => setImportMsg(null), 6000);
+      setTimeout(() => setImportMsg(null), 9000);
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
