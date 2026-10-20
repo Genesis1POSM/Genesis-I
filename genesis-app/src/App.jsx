@@ -5113,8 +5113,6 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
             </div>
           </div>
 
-          <PostergadosPorMes history={tmHistory} isPost={isPostergada} ano={metricasFiltro.ano} />
-
           {tmDueSnapshots.length > 1 && (
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">Tendência do backlog — evolução semana a semana</span></div>
@@ -5213,6 +5211,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
             </div>
             {corretivasPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhuma corretiva (Job type ONE) com data de vencimento/fechamento no filtro atual.</div>}
           </div>
+
+          <PostergadosPorMes history={tmHistory} isPost={isPostergada} ano={metricasFiltro.ano} />
 
           <div className="g-section-label">Due — o que está em aberto</div>
           <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
