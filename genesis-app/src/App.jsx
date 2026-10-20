@@ -766,7 +766,7 @@ const TM_DUE_COLS = [
 const TM_HISTORY_COLS = [
   ["jobHistoryNumber", "Job History Number"], ["componentCode", "ComponentCode"], ["componentName", "ComponentName"],
   ["dateDone", "DateDone"], ["jobType", "JobType"], ["jobNo", "JobNo"], ["jobName", "JobName"],
-  ["doneByName", "DoneByName"], ["serviceReport", "ServiceReport"], ["remarks", "Remarks"], ["reason", "Reason"],
+  ["doneByName", "DoneByName"], ["serviceReport", "ServiceReport"], ["remarks", "Remarks"], ["postponed", "Postponed"], ["reason", "Reason"],
   ["jobPriority", "JobPriority"], ["dateSigned", "Date signed"], ["hoursDone", "Hours done"],
   ["dueHours", "Due hours"], ["dueDate", "Due date"], ["interval", "Interval"], ["signedBy", "Signed by"],
 ];
@@ -1654,6 +1654,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           doneByName: (row["DoneByName"] || "").toString(),
           serviceReport: (row["ServiceReport"] || "").toString(),
           remarks: (row["Remarks"] || "").toString(),
+          postponed: (row["Postponed"] || "").toString().trim(),
           reason: (row["Reason"] || "").toString(),
           jobPriority: (row["JobPriority"] || "").toString(),
           dateSigned: parseTmDate(row["Date signed"]),
@@ -4425,6 +4426,43 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
    TM MASTER — importação semanal do sistema de manutenção: "Due" (tudo em aberto,
    vencido ou a vencer) e "History" (tudo que já foi fechado desde o início do ano)
    ============================================================ */
+const PostergadosPorMes = ({ history, isPost, ano }) => {
+  const dados = useMemo(() => {
+    const map = {};
+    (history || []).forEach((h) => {
+      if (!h.dateDone || !isPost(h)) return;
+      if (ano !== "Todos" && h.dateDone.slice(0, 4) !== String(ano)) return;
+      const k = h.dateDone.slice(0, 7);
+      map[k] = (map[k] || 0) + 1;
+    });
+    return Object.keys(map).sort().map((k) => ({ mes: `${MONTH_NAMES[Number(k.slice(5, 7)) - 1].slice(0, 3)}/${k.slice(2, 4)}`, total: map[k] }));
+  }, [history, isPost, ano]);
+  const total = dados.reduce((a, d) => a + d.total, 0);
+  return (
+    <div className="g-panel" style={{ marginBottom: 14 }}>
+      <div className="g-panel-head">
+        <span className="g-panel-title">Postergados Por Mês</span>
+        <span className="g-muted" style={{ fontSize: 12 }}>Total: <b>{total}</b></span>
+      </div>
+      {dados.length === 0 ? (
+        <div className="g-muted" style={{ padding: 24, textAlign: "center" }}>Nenhum postergado no histórico importado.</div>
+      ) : (
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={dados} margin={{ top: 20, right: 12, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip formatter={(v) => [v, "Postergados"]} />
+            <Bar dataKey="total" fill="#F5A623" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              <LabelList dataKey="total" position="top" style={{ fontSize: 12, fontWeight: 600 }} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+};
+
 function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
@@ -4434,7 +4472,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
   const isVencidaOuAte40 = (r) => isVencida(r) || isAteVencer40(r);
   const isCritica = (r) => r.pri === "High";
   const isCorretiva = (r) => (r.jobType || "").toUpperCase() === "ONE";
-  const isPostergada = (h) => (h.remarks || "").toLowerCase().includes("postpon");
+  const isPostergada = (h) => (h.remarks || "").toLowerCase().includes("postpon") || (h.postponed || "").toString().trim().toUpperCase() === "X";
 
   /* mapa Código → Departamento, construído a partir do Due, usado pra descobrir o departamento
      de itens do History (que não tem essa coluna) cruzando pelo código do componente */
@@ -5074,6 +5112,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
                 : "Mostrando todos os períodos. Selecione um mês e/ou ano pra focar as métricas nele."}
             </div>
           </div>
+
+          <PostergadosPorMes history={tmHistory} isPost={isPostergada} ano={metricasFiltro.ano} />
 
           {tmDueSnapshots.length > 1 && (
             <div className="g-panel">
