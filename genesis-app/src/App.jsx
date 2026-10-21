@@ -4471,8 +4471,8 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
   const [qPost, setQPost] = useState("");
   const [qVenc, setQVenc] = useState("");
   const norm = (v) => String(v || "").toLowerCase();
-  const postVis = postergados.filter((r) => !qPost || norm(`${r.componentCode} ${r.componentName} ${r.jobName} ${r.jobNo} ${r.jobType} ${r.doneByName}`).includes(norm(qPost)));
-  const vencVis = vencidos.filter((r) => !qVenc || norm(`${r.code} ${r.component} ${r.jobName} ${r.jobNo} ${r.jobType} ${r.department}`).includes(norm(qVenc)));
+  const postVis = postergados.filter((r) => !qPost || norm(`${r.componentCode} ${r.componentName} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(qPost)));
+  const vencVis = vencidos.filter((r) => !qVenc || norm(`${r.code} ${r.component} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(qVenc)));
   const caixa = { maxHeight: 420, overflowY: "auto" };
   const busca = (v, set, n) => (
     <input value={v} onChange={(e) => set(e.target.value)} placeholder={`Buscar entre ${n}...`}
@@ -4488,7 +4488,7 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
       <div className="g-panel" style={{ marginBottom: 14 }}>
         <div className="g-panel-head" style={{ gap: 12, flexWrap: "wrap" }}>
           <span className="g-panel-title">Planos Postergados — Detalhamento</span>
-          <span className="g-muted" style={{ fontSize: 12 }}>{postergados.length} plano(s) · {totalRegistrosPost} postergação(ões) registrada(s)</span>
+          <span className="g-muted" style={{ fontSize: 12 }}>{postergados.length} plano(s)</span>
           <div style={{ flex: 1 }} />
           {abrePost && busca(qPost, setQPost, postergados.length)}
           <button className="g-btn" onClick={() => setAbrePost((v) => !v)}>{abrePost ? "Recolher" : "Ver detalhes"}</button>
@@ -4498,10 +4498,10 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
             <table className="g-table tbl-modern">
               <thead><tr>
                 <th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th><th>Tipo</th>
-                <th style={{ textAlign: "right" }}>Vezes Postergado</th><th>Última Postergação</th><th>Executado Por</th>
+                <th>Última Postergação</th>
               </tr></thead>
               <tbody>
-                {postVis.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum plano postergado.</td></tr>}
+                {postVis.length === 0 && <tr><td colSpan={6} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum plano postergado.</td></tr>}
                 {postVis.map((r) => (
                   <tr className="g-row tbl-row" key={r.key} style={{ "--c": "#F5A623" }}>
                     <td style={{ fontFamily: "var(--mono)" }}>{r.componentCode || "—"}</td>
@@ -4509,9 +4509,7 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
                     <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
                     <td style={{ whiteSpace: "normal", minWidth: 220 }}>{r.jobName || "—"}</td>
                     <td>{r.jobType || "—"}</td>
-                    <td style={{ textAlign: "right", fontWeight: 600 }}>{r.vezes}</td>
                     <td style={{ fontFamily: "var(--mono)" }}>{fmtDataCompleta(r.ultimaData)}</td>
-                    <td>{r.doneByName || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4532,14 +4530,13 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
           <div className="g-table-wrap" style={caixa}>
             <table className="g-table tbl-modern">
               <thead><tr>
-                <th>Departamento</th><th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th>
+                <th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th>
                 <th>Tipo</th><th>Prioridade</th><th>Due</th><th>Atraso</th>
               </tr></thead>
               <tbody>
-                {vencVis.length === 0 && <tr><td colSpan={9} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum plano vencido.</td></tr>}
+                {vencVis.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum plano vencido.</td></tr>}
                 {vencVis.map((r) => (
                   <tr className="g-row tbl-row" key={r.id} style={{ "--c": "#EF4444" }}>
-                    <td>{r.department || "—"}</td>
                     <td style={{ fontFamily: "var(--mono)" }}>{r.code || "—"}</td>
                     <td>{r.component || "—"}</td>
                     <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
@@ -4647,6 +4644,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
   /* ---------- filtro de Mês/Ano específico da subaba Métricas — escopa todas as métricas abaixo
      (Due pela data de vencimento, History pela data de fechamento) ---------- */
   const [metricasFiltro, setMetricasFiltro] = useState({ mes: "Todos", ano: "Todos" });
+  const [metricasView, setMetricasView] = useState("geral");
   const anosDisponiveis = useMemo(() => {
     const anos = new Set();
     tmDue.forEach((d) => { if (d.dueDate) anos.add(d.dueDate.slice(0, 4)); });
@@ -4926,9 +4924,9 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmHistoryForMetrics, TM_HISTORY_COLS)), "History (filtrado)");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(planosPostergados.map((r) => ({
           "Código": r.componentCode, "Componente": r.componentName, "Job No": r.jobNo, "Plano (Job Name)": r.jobName, "Tipo": r.jobType,
-          "Vezes Postergado": r.vezes, "Última Postergação": r.ultimaData, "Executado Por": r.doneByName }))), "Planos Postergados");
+          "Última Postergação": r.ultimaData }))), "Planos Postergados");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(planosVencidos.map((r) => ({
-          "Departamento": r.department, "Código": r.code, "Componente": r.component, "Job No": r.jobNo, "Plano (Job Name)": r.jobName,
+          "Código": r.code, "Componente": r.component, "Job No": r.jobNo, "Plano (Job Name)": r.jobName,
           "Tipo": r.jobType, "Prioridade": r.pri, "Due": r.dueDate || r.dueRaw, "Atraso": r._atraso }))), "Planos Vencidos");
         XLSX.writeFile(wb, `genesis-tm-master-metricas-${todayISO()}.xlsx`);
       }
@@ -5213,6 +5211,11 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 
       {tmSubTab === "metricas" && (
         <>
+          <div className="g-mode-toggle" style={{ marginBottom: 14, width: "fit-content" }}>
+            <button className={metricasView === "geral" ? "active" : ""} onClick={() => setMetricasView("geral")}>Visão Geral</button>
+            <button className={metricasView === "planos" ? "active" : ""} onClick={() => setMetricasView("planos")}>Planos Postergados e Vencidos</button>
+          </div>
+
           <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
             <div className="g-field">
               <label>Mês</label>
@@ -5243,6 +5246,12 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
             </div>
           </div>
 
+          {metricasView === "planos" && (
+            <PlanosAtencao postergados={planosPostergados} vencidos={planosVencidos} totalRegistrosPost={tmHistoryForMetrics.filter(isPostergada).length} />
+          )}
+
+          {metricasView === "geral" && (
+          <>
           {tmDueSnapshots.length > 1 && (
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">Tendência do backlog — evolução semana a semana</span></div>
@@ -5343,9 +5352,6 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           </div>
 
           <PostergadosPorMes history={tmHistory} isPost={isPostergada} ano={metricasFiltro.ano} />
-
-          <div className="g-section-label">Planos Postergados e Vencidos</div>
-          <PlanosAtencao postergados={planosPostergados} vencidos={planosVencidos} totalRegistrosPost={tmHistoryForMetrics.filter(isPostergada).length} />
 
           <div className="g-section-label">Due — o que está em aberto</div>
           <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
@@ -5579,6 +5585,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
               {bigKpi("Feitos Após o Prazo", prazoStats.atrasado, "var(--crit)", AlertTriangle)}
             </div>
           </div>
+          </>
+          )}
         </>
       )}
     </>
