@@ -4869,6 +4869,25 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
     if (!setReportFn) return;
     setReportFn(() => () => {
       const doc = new jsPDF();
+      if (tmSubTab === "metricas" && metricasView === "planos") {
+        const periodo = hasActiveFiltroMetricas
+          ? `Período: ${metricasFiltro.mes === "Todos" ? "todos os meses" : MONTH_NAMES[Number(metricasFiltro.mes) - 1]} / ${metricasFiltro.ano === "Todos" ? "todos os anos" : metricasFiltro.ano}`
+          : "Todos os períodos";
+        let y = pdfHeader(doc, "TM Master — Planos Postergados e Vencidos",
+          `${periodo} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Planos Postergados", value: planosPostergados.length },
+          { label: "Planos Vencidos", value: planosVencidos.length },
+        ]);
+        y = pdfSectionTitle(doc, y, `Planos Postergados (${planosPostergados.length})`);
+        y = pdfTable(doc, y, ["Código", "Componente", "Job No", "Plano (Job Name)", "Tipo", "Última Postergação"],
+          planosPostergados.map((r) => [r.componentCode || "—", r.componentName || "—", r.jobNo || "—", r.jobName || "—", r.jobType || "—", fmtDataCompleta(r.ultimaData)]));
+        y = pdfSectionTitle(doc, y, `Planos Vencidos (${planosVencidos.length})`);
+        y = pdfTable(doc, y, ["Código", "Componente", "Job No", "Plano (Job Name)", "Tipo", "Prioridade", "Due", "Atraso"],
+          planosVencidos.map((r) => [r.code || "—", r.component || "—", r.jobNo || "—", r.jobName || "—", r.jobType || "—", r.pri || "—", r.dueDate ? fmtDataCompleta(r.dueDate) : (r.dueRaw || "—"), r._atraso]));
+        pdfSave(doc, "relatorio-tm-master-planos-postergados-vencidos");
+        return;
+      }
       if (tmSubTab === "due" || tmSubTab === "metricas") {
         let y = pdfHeader(doc, "TM Master — Due (em aberto)",
           `${filteredDue.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
@@ -4905,7 +4924,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
     });
   }, [tmSubTab, filteredDue, totalDue, vencidas, ateVencer40, criticasVencidasOu40, corretivasDue, duePorDepartamento,
       vencidasPorJobType, aVencerPorJobType, filteredHistory, totalHistory, corretivasFechadas, postergadas, prazoStats,
-      historyPorDepartamento, historyPorUsuario, setReportFn]);
+      historyPorDepartamento, historyPorUsuario, metricasView, planosPostergados, planosVencidos, metricasFiltro, hasActiveFiltroMetricas, setReportFn]);
 
   /* "Exportar planilha" no cabeçalho segue a subaba/filtro ativo aqui — Due exporta o filtro de Due,
      History o filtro de History, e Métricas exporta os dois conjuntos já escopados por mês/ano */
@@ -4920,8 +4939,10 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(filteredHistory, TM_HISTORY_COLS)), "TM Master - History");
         XLSX.writeFile(wb, `genesis-tm-master-history-${todayISO()}.xlsx`);
       } else {
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmHistoryForMetrics, TM_HISTORY_COLS)), "History (filtrado)");
+        if (metricasView !== "planos") {
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmHistoryForMetrics, TM_HISTORY_COLS)), "History (filtrado)");
+        }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(planosPostergados.map((r) => ({
           "Código": r.componentCode, "Componente": r.componentName, "Job No": r.jobNo, "Plano (Job Name)": r.jobName, "Tipo": r.jobType,
           "Última Postergação": r.ultimaData }))), "Planos Postergados");
@@ -4931,7 +4952,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
         XLSX.writeFile(wb, `genesis-tm-master-metricas-${todayISO()}.xlsx`);
       }
     });
-  }, [tmSubTab, filteredDue, filteredHistory, tmDueForMetrics, tmHistoryForMetrics, planosPostergados, planosVencidos, setExportXlsxFn]);
+  }, [tmSubTab, filteredDue, filteredHistory, tmDueForMetrics, tmHistoryForMetrics, planosPostergados, planosVencidos, metricasView, setExportXlsxFn]);
 
   return (
     <>
