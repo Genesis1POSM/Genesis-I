@@ -1513,6 +1513,10 @@ function Genesis({ currentUser, onLogout, users, setUsers,
      própria exportação em Excel, refletindo exatamente o que está filtrado ali. Abas que não
      registram nada continuam usando o exportador global (handleExportXlsx, com tudo do sistema). */
   const [exportXlsxFn, setExportXlsxFn] = useState(null);
+  /* ao trocar de aba principal, limpa os exportadores ANTES dos efeitos da aba nova registrarem os seus
+     (layout effect roda antes dos efeitos passivos). Isso impede que o relatório/planilha da aba anterior
+     "vaze" pra uma aba que não registra nada (ex.: Configurações). */
+  React.useLayoutEffect(() => { setReportFn(null); setExportXlsxFn(null); }, [tab]);
   const fileInputRef = useRef(null);
 
   /* global period filter — present on every page */
@@ -2843,33 +2847,6 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
   ];
 
 
-  React.useEffect(() => {
-    if (!setReportFn) return;
-    setReportFn(() => () => {
-      const doc = new jsPDF();
-      let y = pdfHeader(doc, "Relatório do Dashboard",
-        `Período: ${fmtPeriodDate(dp.dataInicio)} — ${fmtPeriodDate(dp.dataFim)} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-      y = pdfKpis(doc, y, [
-        ...financeiro.map((k) => ({ label: k.label, value: k.value })),
-        ...servicos.map((k) => ({ label: k.label, value: k.value })),
-        ...pagamentos.map((k) => ({ label: k.label, value: k.value })),
-      ]);
-      y = pdfSectionTitle(doc, y, "Custo por categoria (mês selecionado)");
-      y = pdfTable(doc, y,
-        ["Categoria", "Orçado (US$)", "Orçado (R$)", "Realizado (R$)"],
-        categoryCostsDash.map((d) => [d.category, fmtBudgetUsd(d.orcadoUsd), fmtBudgetBrl(d.orcadoUsd, d.orcadoBrl), fmt(d.realizado)]),
-        { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } }
-      );
-      if (y > 220) { doc.addPage(); y = 15; }
-      y = pdfSectionTitle(doc, y, "Pagamentos com Aprovação Pendente há mais tempo");
-      pdfTable(doc, y,
-        ["Data", "Serviço", "Empresa", "Valor", "Dias em Aberto"],
-        topOpenInvoices.map((r) => [fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.daysOpenTotal]),
-        { columnStyles: { 3: { halign: "right" } } }
-      );
-      pdfSave(doc, "relatorio-dashboard");
-    });
-  }, [financeiro, servicos, pagamentos, categoryCostsDash, gastosPorMes, topOpenInvoices, dp, setReportFn]);
 
 
   const pctRealizado = totalOrcadoDash > 0 ? Math.min(100, Math.round((totalRealizadoDash / totalOrcadoDash) * 100)) : 0;
@@ -2909,7 +2886,6 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
     setExportXlsxFn(() => () => {
       exportSheets("genesis-dashboard", [
         ["Financeiro", financeiro.map((k) => ({ Indicador: k.label, Valor: k.value }))],
-        ["Custo por Categoria", categoryCostsDash.map((d) => ({ Categoria: d.category, "Ordem": adpServicosLabel(d.category), "Orçado (US$)": d.orcadoUsd, "Orçado (R$)": d.orcadoBrl, "Realizado (R$)": d.realizado, "Disponível (R$)": d.disponivel }))],
         ["Serviços", servicos.map((k) => ({ Indicador: k.label, Valor: k.value }))],
         ["Pagamentos", pagamentos.map((k) => ({ Situação: k.label, "Quantidade · Valor": k.value }))],
         ["Aprovação Pendente", topOpenInvoices.map((r) => ({ Data: r.date, Serviço: r.assunto, Empresa: r.empresa, "Valor Total": r.valorTotal, "Dias em Aberto": r.daysOpenTotal, Status: r.statusPagamento }))],
@@ -2919,7 +2895,46 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
         ["Materiais Urgentes", kpis.materiaisUrgentes.map((m) => ({ Descrição: m.descricao, Necessidade: m.dataNecessidade, Prioridade: m.priority, Status: m.status }))],
       ]);
     });
-  }, [financeiro, servicos, pagamentos, categoryCostsDash, topOpenInvoices, upcomingMaintenance, lastPortCallServices, tmPorDepto, kpis, setExportXlsxFn]);
+  }, [financeiro, servicos, pagamentos, topOpenInvoices, upcomingMaintenance, lastPortCallServices, tmPorDepto, kpis, setExportXlsxFn]);
+
+  React.useEffect(() => {
+    if (!setReportFn) return;
+    setReportFn(() => () => {
+      const doc = new jsPDF();
+      let y = pdfHeader(doc, "Relatório do Dashboard",
+        `Período: ${fmtPeriodDate(dp.dataInicio)} — ${fmtPeriodDate(dp.dataFim)} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [
+        ...financeiro.map((k) => ({ label: k.label, value: k.value })),
+        ...servicos.map((k) => ({ label: k.label, value: k.value })),
+        ...pagamentos.map((k) => ({ label: k.label, value: k.value })),
+      ]);
+      y = pdfSectionTitle(doc, y, "TM Master — situação por departamento");
+      y = pdfTable(doc, y, ["Departamento", "Vencidas", "Até 40 dias", "No prazo", "Total"],
+        tmPorDepto.map((d) => [d.departamento, d.Vencidas, d["Até 40 dias"], d["No prazo"], d.total]),
+        { columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } });
+      if (y > 220) { doc.addPage(); y = 15; }
+      y = pdfSectionTitle(doc, y, "Próximas manutenções (Planejamento)");
+      y = pdfTable(doc, y, ["Manutenção", "Categoria", "Empresa", "Início", "Status"],
+        upcomingMaintenance.map((w) => [w.name, w.discipline || "—", w.empresa || "—", fmtDate((w.start || "").slice(0, 10)), w.status]));
+      if (y > 220) { doc.addPage(); y = 15; }
+      y = pdfSectionTitle(doc, y, `Último Port Call${lastPortCallLabel ? ` — ${lastPortCallLabel}` : ""}`);
+      y = pdfTable(doc, y, ["Serviço", "Empresa", "Data", "Status"],
+        lastPortCallServices.map((w) => [w.name, w.empresa || "—", fmtDate((w.start || "").slice(0, 10)), w.status]));
+      if (y > 220) { doc.addPage(); y = 15; }
+      y = pdfSectionTitle(doc, y, "Pagamentos com Aprovação Pendente há mais tempo");
+      y = pdfTable(doc, y,
+        ["Data", "Serviço", "Empresa", "Valor", "Dias em Aberto"],
+        topOpenInvoices.map((r) => [fmtDate(r.date), r.assunto, r.empresa, fmt(r.valorTotal), r.daysOpenTotal]),
+        { columnStyles: { 3: { halign: "right" } } }
+      );
+      if (y > 220) { doc.addPage(); y = 15; }
+      y = pdfSectionTitle(doc, y, "Materiais urgentes");
+      pdfTable(doc, y, ["Descrição", "Necessidade", "Prioridade", "Status"],
+        kpis.materiaisUrgentes.map((m) => [m.descricao, fmtDate(m.dataNecessidade), m.priority, m.status]));
+      pdfSave(doc, "relatorio-dashboard");
+    });
+  }, [financeiro, servicos, pagamentos, topOpenInvoices, upcomingMaintenance, lastPortCallServices, lastPortCallLabel, tmPorDepto, kpis, dp, setReportFn]);
+
 
   return (
     <>
@@ -4888,38 +4903,74 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
         pdfSave(doc, "relatorio-tm-master-planos-postergados-vencidos");
         return;
       }
-      if (tmSubTab === "due" || tmSubTab === "metricas") {
+      if (tmSubTab === "due") {
+        const fv = filteredDue;
         let y = pdfHeader(doc, "TM Master — Due (em aberto)",
-          `${filteredDue.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+          `${fv.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Itens no Filtro", value: fv.length },
+          { label: "Vencidas", value: fv.filter(isVencida).length },
+          { label: "A Vencer em 40 dias", value: fv.filter(isAteVencer40).length },
+          { label: "Críticas Vencidas/até 40d", value: fv.filter((d) => isCritica(d) && isVencidaOuAte40(d)).length },
+          { label: "Corretivas (ONE)", value: fv.filter(isCorretiva).length },
+        ]);
+        y = pdfSectionTitle(doc, y, "Itens em aberto");
+        pdfTable(doc, y, ["Departamento", "Código", "Componente", "Job No", "Plano (Job Name)", "Tipo", "Pri", "Due", "Situação"],
+          fv.map((d) => [d.department || "—", d.code || "—", d.component || "—", d.jobNo || "—", d.jobName || "—", d.jobType || "—", d.pri || "—",
+            d.dueDate ? fmtDataCompleta(d.dueDate) : (d.dueRaw || "—"),
+            d.diffValue === null || d.diffValue === undefined ? (d.diffRaw || "—")
+              : isVencida(d) ? `vencida há ${Math.abs(d.diffValue)} ${d.diffUnit === "H" ? "h" : "dias"}` : `vence em ${d.diffValue} ${d.diffUnit === "H" ? "h" : "dias"}`]));
+        pdfSave(doc, "relatorio-tm-master-due");
+      }
+      if (tmSubTab === "history") {
+        const fh = filteredHistory;
+        let y = pdfHeader(doc, "TM Master — History (fechados)",
+          `${fh.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        y = pdfKpis(doc, y, [
+          { label: "Itens no Filtro", value: fh.length },
+          { label: "Corretivas Fechadas", value: fh.filter(isCorretiva).length },
+          { label: "Postergadas", value: fh.filter(isPostergada).length },
+        ]);
+        y = pdfSectionTitle(doc, y, "Itens fechados");
+        pdfTable(doc, y, ["Data", "Componente", "Job No", "Plano (Job Name)", "Tipo", "Executado Por", "Remarks", "Situação"],
+          fh.map((h) => [fmtDataCompleta(h.dateDone), h.componentName || "—", h.jobNo || "—", h.jobName || "—", h.jobType || "—", h.doneByName || "—", h.remarks || "—", isPostergada(h) ? "Postergada" : "Fechada"]));
+        pdfSave(doc, "relatorio-tm-master-history");
+      }
+      if (tmSubTab === "metricas" && metricasView === "geral") {
+        const periodo = hasActiveFiltroMetricas
+          ? `Período: ${metricasFiltro.mes === "Todos" ? "todos os meses" : MONTH_NAMES[Number(metricasFiltro.mes) - 1]} / ${metricasFiltro.ano === "Todos" ? "todos os anos" : metricasFiltro.ano}`
+          : "Todos os períodos";
+        let y = pdfHeader(doc, "TM Master — Métricas", `${periodo} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
         y = pdfKpis(doc, y, [
           { label: "Total em Aberto", value: totalDue },
           { label: "Vencidas", value: vencidas.length },
           { label: "A Vencer em 40 dias", value: ateVencer40.length },
-          { label: "Críticas Vencidas/≤40d", value: criticasVencidasOu40.length },
+          { label: "Críticas Vencidas/até 40d", value: criticasVencidasOu40.length },
           { label: "Corretivas (ONE)", value: corretivasDue.length },
+          { label: "Total Fechado", value: totalHistory },
+          { label: "Corretivas Fechadas", value: corretivasFechadas.length },
+          { label: "Postergadas", value: postergadas.length },
+          { label: "Prazo Médio (dias)", value: `${prazoStats.media}d` },
         ]);
-        y = pdfSectionTitle(doc, y, "Por departamento");
+        const postMes = {};
+        tmHistory.forEach((h) => {
+          if (!h.dateDone || !isPostergada(h)) return;
+          if (metricasFiltro.ano !== "Todos" && h.dateDone.slice(0, 4) !== String(metricasFiltro.ano)) return;
+          const k = h.dateDone.slice(0, 7); postMes[k] = (postMes[k] || 0) + 1;
+        });
+        y = pdfSectionTitle(doc, y, "Postergados por mês");
+        y = pdfTable(doc, y, ["Mês", "Postergados"], Object.keys(postMes).sort().map((k) => [`${MONTH_NAMES[Number(k.slice(5, 7)) - 1]} / ${k.slice(0, 4)}`, postMes[k]]));
+        y = pdfSectionTitle(doc, y, "Due por departamento");
         y = pdfTable(doc, y, ["Departamento", "Quantidade"], duePorDepartamento.map((d) => [d.departamento, d.count]));
         y = pdfSectionTitle(doc, y, "Vencidas por tipo de serviço");
         y = pdfTable(doc, y, ["Tipo", "Quantidade"], vencidasPorJobType.map((d) => [d.tipo, d.count]));
         y = pdfSectionTitle(doc, y, "A vencer (até 40 dias) por tipo de serviço");
         y = pdfTable(doc, y, ["Tipo", "Quantidade"], aVencerPorJobType.map((d) => [d.tipo, d.count]));
-        pdfSave(doc, "relatorio-tm-master-due");
-      }
-      if (tmSubTab === "history") {
-        let y = pdfHeader(doc, "TM Master — History (fechados)",
-          `${filteredHistory.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-        y = pdfKpis(doc, y, [
-          { label: "Total Fechado (ano)", value: totalHistory },
-          { label: "Corretivas Fechadas", value: corretivasFechadas.length },
-          { label: "Postergadas", value: postergadas.length },
-          { label: "Prazo Médio (dias)", value: `${prazoStats.media}d` },
-        ]);
-        y = pdfSectionTitle(doc, y, "Por departamento");
+        y = pdfSectionTitle(doc, y, "Fechados por departamento");
         y = pdfTable(doc, y, ["Departamento", "Quantidade"], historyPorDepartamento.map((d) => [d.departamento, d.count]));
         y = pdfSectionTitle(doc, y, "Fechados por usuário");
         y = pdfTable(doc, y, ["Usuário", "Quantidade"], historyPorUsuario.map((d) => [d.usuario, d.count]));
-        pdfSave(doc, "relatorio-tm-master-history");
+        pdfSave(doc, "relatorio-tm-master-metricas");
       }
     });
   }, [tmSubTab, filteredDue, totalDue, vencidas, ateVencer40, criticasVencidasOu40, corretivasDue, duePorDepartamento,
@@ -4943,12 +4994,14 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmHistoryForMetrics, TM_HISTORY_COLS)), "History (filtrado)");
         }
+        if (metricasView === "planos") {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(planosPostergados.map((r) => ({
           "Código": r.componentCode, "Componente": r.componentName, "Job No": r.jobNo, "Plano (Job Name)": r.jobName, "Tipo": r.jobType,
           "Última Postergação": r.ultimaData }))), "Planos Postergados");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(planosVencidos.map((r) => ({
           "Código": r.code, "Componente": r.component, "Job No": r.jobNo, "Plano (Job Name)": r.jobName,
           "Tipo": r.jobType, "Prioridade": r.pri, "Due": r.dueDate || r.dueRaw, "Atraso": r._atraso }))), "Planos Vencidos");
+        }
         XLSX.writeFile(wb, `genesis-tm-master-metricas-${todayISO()}.xlsx`);
       }
     });
