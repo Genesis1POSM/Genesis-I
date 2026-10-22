@@ -5,7 +5,7 @@ import {
   Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock, ClipboardList, Gauge
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, PieChart, Pie
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, PieChart, Pie, Legend
 } from "recharts";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -4441,43 +4441,6 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
    TM MASTER — importação semanal do sistema de manutenção: "Due" (tudo em aberto,
    vencido ou a vencer) e "History" (tudo que já foi fechado desde o início do ano)
    ============================================================ */
-const PostergadosPorMes = ({ history, isPost, ano }) => {
-  const dados = useMemo(() => {
-    const map = {};
-    (history || []).forEach((h) => {
-      if (!h.dateDone || !isPost(h)) return;
-      if (ano !== "Todos" && h.dateDone.slice(0, 4) !== String(ano)) return;
-      const k = h.dateDone.slice(0, 7);
-      map[k] = (map[k] || 0) + 1;
-    });
-    return Object.keys(map).sort().map((k) => ({ mes: `${MONTH_NAMES[Number(k.slice(5, 7)) - 1].slice(0, 3)}/${k.slice(2, 4)}`, total: map[k] }));
-  }, [history, isPost, ano]);
-  const total = dados.reduce((a, d) => a + d.total, 0);
-  return (
-    <div className="g-panel" style={{ marginBottom: 14 }}>
-      <div className="g-panel-head">
-        <span className="g-panel-title">Postergados Por Mês</span>
-        <span className="g-muted" style={{ fontSize: 12 }}>Total: <b>{total}</b></span>
-      </div>
-      {dados.length === 0 ? (
-        <div className="g-muted" style={{ padding: 24, textAlign: "center" }}>Nenhum postergado no histórico importado.</div>
-      ) : (
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={dados} margin={{ top: 20, right: 12, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v) => [v, "Postergados"]} />
-            <Bar dataKey="total" fill="#F5A623" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-              <LabelList dataKey="total" position="top" style={{ fontSize: 12, fontWeight: 600 }} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-    </div>
-  );
-};
-
 const fmtDataCompleta = (d) => { if (!d) return "—"; const [y, m, day] = String(d).split("-"); return `${day}/${m}/${y}`; };
 
 const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
@@ -4570,6 +4533,251 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
     </>
   );
 };
+
+/* ---------- Visão Geral das Métricas: componentes das novas análises ---------- */
+const CRITICAL_PREFIXES = ["601", "401", "331", "376", "403", "701", "721", "722", "731", "812", "871", "872", "873"];
+const critPrefixOf = (code) => {
+  const c = String(code || "").trim();
+  for (const p of CRITICAL_PREFIXES) { if (c.startsWith(p) && !/\d/.test(c.charAt(p.length))) return p; }
+  return null;
+};
+/* jobs preditivos: tipo + número do job. Vários componentes do mesmo job feitos juntos contam como 1 */
+const PREDITIVOS = [
+  { grupo: "Análise de Vibração", tipo: "CHK", no: "7" },
+  { grupo: "Análise de Vibração", tipo: "INS", no: "2054" },
+  { grupo: "Megagem", tipo: "ANN", no: "28" },
+  { grupo: "Megagem", tipo: "CHK", no: "511" },
+  { grupo: "Megagem", tipo: "INS", no: "2706" },
+  { grupo: "Megagem", tipo: "CHK", no: "101" },
+  { grupo: "Análise de Óleo", tipo: "FSA", no: "1" },
+  { grupo: "Análise de Óleo", tipo: "FSA", no: "2" },
+];
+const AX = { fill: "var(--text-faint)", fontSize: 10 };
+const TT = { background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 };
+
+const MesBarChart = ({ title, subtitle, data, bars, height = 240, headRight, nota }) => (
+  <div className="g-panel">
+    <div className="g-panel-head" style={{ gap: 12, flexWrap: "wrap" }}>
+      <span className="g-panel-title">{title}</span>
+      <div style={{ flex: 1 }} />
+      {headRight}
+    </div>
+    {subtitle && <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{subtitle}</div>}
+    <div style={{ width: "100%", height }}>
+      <ResponsiveContainer>
+        <BarChart data={data} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+          <XAxis dataKey={data[0] && data[0].mes !== undefined ? "mes" : "nome"} tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+          <YAxis allowDecimals={false} tick={AX} axisLine={false} tickLine={false} width={42} />
+          <Tooltip contentStyle={TT} labelStyle={{ color: "var(--text)" }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {bars.map((b) => (
+            <Bar key={b.key} dataKey={b.key} name={b.name} fill={b.color} radius={[3, 3, 0, 0]} isAnimationActive={false}>
+              <LabelList dataKey={b.key} position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+            </Bar>
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+    {data.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Sem dados com data no filtro atual.</div>}
+    {nota && <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>{nota}</div>}
+  </div>
+);
+
+const PostergadosAnalise = ({ analise, porTipo }) => (
+  <div className="g-grid-2">
+    <MesBarChart title="Postergados Por Mês" data={analise.rows}
+      headRight={<span className="g-muted" style={{ fontSize: 12 }}>Total: <b>{analise.total}</b> · realizados após a última postergação: <b>{analise.realizados}</b></span>}
+      subtitle="Barra laranja: postergações registradas no mês. Barra verde: dessas, quantas já foram realizadas depois da última data de postergação do mesmo plano."
+      bars={[{ key: "total", name: "Postergados", color: "#F5A623" }, { key: "realizados", name: "Realizados após a postergação", color: "#22C55E" }]} />
+    <MesBarChart title="Postergados Por Job Type" data={porTipo} subtitle="Postergações do período, por tipo de job."
+      bars={[{ key: "total", name: "Postergados", color: "#F5A623" }]} />
+  </div>
+);
+
+const CumprimentoPrazoPanel = ({ c }) => (
+  <div className="g-panel">
+    <div className="g-panel-head"><span className="g-panel-title">Cumprimento de Prazo — Due Date × Data Assinada</span></div>
+    <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
+      Considera os {c.total} jobs fechados com Due date e Data assinada preenchidas (postergações ficam de fora, pois não são execução).
+      Atraso = Data assinada − Due date; zero ou negativo conta como no prazo.
+    </div>
+    <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+      {bigKpi("% No Prazo", `${c.pct}%`, c.pct >= 80 ? "var(--ok)" : c.pct >= 60 ? "var(--warn)" : "var(--crit)", ClipboardList)}
+      {bigKpi("Feitos no Prazo ou Antes", c.noPrazo, "var(--ok)", ClipboardList)}
+      {bigKpi("Feitos Após o Prazo", c.atrasados, "var(--crit)", AlertTriangle)}
+      {bigKpi("Atraso Médio (dos atrasados)", `${c.atrasoMedio}d`, "var(--warn)", Clock)}
+      {bigKpi("Antecedência Média (dos no prazo)", `${c.antecedenciaMedia}d`, "var(--teal)", Clock)}
+    </div>
+    <div className="g-grid-2">
+      <MesBarChart title="Distribuição Por Faixa de Atraso" height={220} data={c.faixas}
+        bars={[{ key: "total", name: "Jobs", color: "#3B82F6" }]} />
+      <MesBarChart title="% No Prazo Por Mês de Assinatura" height={220} data={c.porMes}
+        bars={[{ key: "pct", name: "% no prazo", color: "#22C55E" }]}
+        nota="Mês em que o job foi assinado. Valores em %." />
+    </div>
+  </div>
+);
+
+const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
+  const [vista, setVista] = useState("abertos");
+  const [grupo, setGrupo] = useState("Todos");
+  const [sit, setSit] = useState("Todos");
+  const [q, setQ] = useState("");
+  const norm = (v) => String(v || "").toLowerCase();
+  const dueVis = due.filter((r) => (grupo === "Todos" || r._grupo === grupo) && (sit === "Todos" || r._sit === sit)
+    && (!q || norm(`${r.code} ${r.component} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(q))));
+  const postVis = post.filter((r) => (grupo === "Todos" || r._grupo === grupo)
+    && (!q || norm(`${r.componentCode} ${r.componentName} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(q))));
+  const sitCls = { "Vencido": "d3", "A vencer (até 40d)": "d2", "No prazo": "d1" };
+  return (
+    <div className="g-panel">
+      <div className="g-panel-head"><span className="g-panel-title">Análise de Jobs Críticos</span></div>
+      <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
+        Jobs cujo código de componente começa com: {CRITICAL_PREFIXES.join(", ")}.
+      </div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {bigKpi("Críticos em Aberto", kpis.abertos, "var(--teal)", ClipboardList)}
+        {bigKpi("Vencidos", kpis.vencidos, "var(--crit)", AlertTriangle)}
+        {bigKpi("A Vencer (até 40 dias)", kpis.aVencer, "var(--warn)", Clock)}
+        {bigKpi("No Prazo (+40 dias)", kpis.noPrazo, "var(--ok)", ClipboardList)}
+        {bigKpi("Críticos Postergados", kpis.postergados, "var(--warn)", AlertTriangle)}
+      </div>
+      <div style={{ width: "100%", height: 260 }}>
+        <ResponsiveContainer>
+          <BarChart data={porGrupo} margin={{ left: 0, right: 8, top: 10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+            <XAxis dataKey="grupo" tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+            <YAxis allowDecimals={false} tick={AX} axisLine={false} tickLine={false} width={30} />
+            <Tooltip contentStyle={TT} labelStyle={{ color: "var(--text)" }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="vencidos" name="Vencidos" stackId="a" fill="#EF4444" isAnimationActive={false} />
+            <Bar dataKey="aVencer" name="A vencer (até 40d)" stackId="a" fill="#F5A623" isAnimationActive={false} />
+            <Bar dataKey="noPrazo" name="No prazo" stackId="a" fill="#22C55E" isAnimationActive={false} />
+            <Bar dataKey="postergados" name="Postergados" fill="#8B5CF6" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="g-muted" style={{ fontSize: 10.5, margin: "4px 0 10px" }}>Por grupo de código. Barras empilhadas: situação dos jobs em aberto. Barra roxa: postergações registradas no período.</div>
+
+      <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+        <div className="g-mode-toggle">
+          <button className={vista === "abertos" ? "active" : ""} onClick={() => setVista("abertos")}>Em aberto ({due.length})</button>
+          <button className={vista === "postergados" ? "active" : ""} onClick={() => setVista("postergados")}>Postergados ({post.length})</button>
+        </div>
+        <select value={grupo} onChange={(e) => setGrupo(e.target.value)} style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+          <option value="Todos">Todos os grupos</option>
+          {CRITICAL_PREFIXES.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        {vista === "abertos" && (
+          <select value={sit} onChange={(e) => setSit(e.target.value)} style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+            <option value="Todos">Todas as situações</option>
+            <option>Vencido</option><option>A vencer (até 40d)</option><option>No prazo</option>
+          </select>
+        )}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar..." style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5, minWidth: 200 }} />
+      </div>
+      <div className="g-table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
+        {vista === "abertos" ? (
+          <table className="g-table tbl-modern">
+            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th><th>Tipo</th><th>Due</th><th>Situação</th></tr></thead>
+            <tbody>
+              {dueVis.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico com esse filtro.</td></tr>}
+              {dueVis.slice(0, 600).map((r) => (
+                <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._sit === "Vencido" ? "#EF4444" : r._sit === "No prazo" ? "#22C55E" : "#F5A623" }}>
+                  <td><b>{r._grupo}</b></td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{r.code || "—"}</td>
+                  <td>{r.component || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
+                  <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.jobName || "—"}</td>
+                  <td>{r.jobType || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{r.dueDate ? fmtDataCompleta(r.dueDate) : (r.dueRaw || "—")}</td>
+                  <td><span className={`tbl-days ${sitCls[r._sit]}`}>{r._sit === "Vencido" ? `Vencido${r._atraso ? ` há ${r._atraso}` : ""}` : r._sit}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <table className="g-table tbl-modern">
+            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th><th>Tipo</th><th>Última Postergação</th></tr></thead>
+            <tbody>
+              {postVis.length === 0 && <tr><td colSpan={7} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico postergado.</td></tr>}
+              {postVis.slice(0, 600).map((r) => (
+                <tr className="g-row tbl-row" key={r.key} style={{ "--c": "#8B5CF6" }}>
+                  <td><b>{r._grupo}</b></td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{r.componentCode || "—"}</td>
+                  <td>{r.componentName || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
+                  <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.jobName || "—"}</td>
+                  <td>{r.jobType || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtDataCompleta(r.ultimaData)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PreditivosPanel = ({ rows, kpis }) => (
+  <div className="g-panel">
+    <div className="g-panel-head"><span className="g-panel-title">Jobs Preditivos</span></div>
+    <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
+      Cada análise reúne seus jobs e conta como um só: vários componentes ou jobs da mesma análise realizados na mesma data valem 1.
+    </div>
+    <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+      {bigKpi("Em Atraso", kpis.vencidos, "var(--crit)", AlertTriangle)}
+      {bigKpi("A Vencer (até 40 dias)", kpis.aVencer, "var(--warn)", Clock)}
+      {bigKpi("Postergados", kpis.postergados, "var(--warn)", AlertTriangle)}
+      {bigKpi("% Executado no Prazo", `${kpis.pctPrazo}%`, kpis.pctPrazo >= 80 ? "var(--ok)" : kpis.pctPrazo >= 60 ? "var(--warn)" : "var(--crit)", ClipboardList)}
+      {bigKpi("Índice de Eficiência", `${kpis.eficiencia}%`, kpis.eficiencia >= 80 ? "var(--ok)" : kpis.eficiencia >= 60 ? "var(--warn)" : "var(--crit)", Gauge)}
+    </div>
+    <div style={{ width: "100%", height: 260 }}>
+      <ResponsiveContainer>
+        <BarChart data={rows} margin={{ left: 0, right: 8, top: 10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+          <XAxis dataKey="grupo" tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+          <YAxis allowDecimals={false} tick={AX} axisLine={false} tickLine={false} width={30} />
+          <Tooltip contentStyle={TT} labelStyle={{ color: "var(--text)" }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="executados" name="Executados" stackId="a" fill="#22C55E" isAnimationActive={false} />
+          <Bar dataKey="postergados" name="Postergados" stackId="a" fill="#8B5CF6" isAnimationActive={false} />
+          <Bar dataKey="vencidos" name="Em atraso" stackId="a" fill="#EF4444" isAnimationActive={false} />
+          <Bar dataKey="aVencer" name="A vencer (até 40d)" stackId="a" fill="#F5A623" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+    <div className="g-table-wrap" style={{ marginTop: 10 }}>
+      <table className="g-table tbl-modern">
+        <thead><tr>
+          <th>Análise</th><th style={{ textAlign: "right" }}>Em Atraso</th><th style={{ textAlign: "right" }}>A Vencer</th>
+          <th style={{ textAlign: "right" }}>Executados</th><th style={{ textAlign: "right" }}>Postergados</th><th style={{ textAlign: "right" }}>% No Prazo</th>
+          <th style={{ textAlign: "right" }}>Taxa de Postergação</th><th style={{ textAlign: "right" }}>Eficiência</th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr className="g-row tbl-row" key={r.grupo} style={{ "--c": r.vencidos > 0 ? "#EF4444" : r.aVencer > 0 ? "#F5A623" : "#22C55E" }}>
+              <td><b>{r.grupo}</b></td>
+              <td style={{ textAlign: "right" }}>{r.vencidos}</td>
+              <td style={{ textAlign: "right" }}>{r.aVencer}</td>
+              <td style={{ textAlign: "right" }}>{r.executados}</td>
+              <td style={{ textAlign: "right" }}>{r.postergados}</td>
+              <td style={{ textAlign: "right" }}>{r.pctPrazo === null ? "—" : `${r.pctPrazo}%`}</td>
+              <td style={{ textAlign: "right" }}>{r.taxaPost === null ? "—" : `${r.taxaPost}%`}</td>
+              <td style={{ textAlign: "right", fontWeight: 600 }}>{r.eficiencia === null ? "—" : `${r.eficiencia}%`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6, lineHeight: 1.5 }}>
+      <b>% No Prazo</b>: executados com Data assinada ≤ Due date ÷ executados com as duas datas. <b>Taxa de Postergação</b>: postergados ÷ (executados + postergados).
+      <b> Eficiência</b>: executados no prazo ÷ (executados + postergados + em atraso) — quanto do que venceu foi realmente feito a tempo.
+    </div>
+  </div>
+);
 
 function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
@@ -4880,6 +5088,169 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
     return { media, noPrazo, atrasado, total: diffs.length };
   }, [tmHistoryForMetrics]);
 
+  /* ---------- novas análises da Visão Geral ---------- */
+  const hojeLocal = (() => { const d0 = new Date(); return `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}-${String(d0.getDate()).padStart(2, "0")}`; })();
+  const semDiffJob = (d) => d.diffValue === null || d.diffValue === undefined;
+  const isVencidoPlano = (d) => isVencida(d) || (semDiffJob(d) && d.dueDate && d.dueDate < hojeLocal);
+  const atrasoDias = (d) => (semDiffJob(d)
+    ? (d.dueDate ? Math.max(0, Math.round((new Date(hojeLocal) - new Date(d.dueDate)) / 86400000)) : null)
+    : (d.diffUnit === "D" ? Math.max(0, -d.diffValue) : null));
+  const jtOf = (x) => String(x.jobType || "").trim().toUpperCase();
+  const jobNoOf = (x) => String(x.jobNo === undefined || x.jobNo === null ? "" : x.jobNo).trim();
+  const codeOfJob = (x) => String(x.code !== undefined ? x.code : (x.componentCode || "")).trim();
+  const ymOf = (iso) => (iso || "").slice(0, 7);
+  const ymLabel = (k) => `${MONTH_NAMES[Number(k.slice(5, 7)) - 1].slice(0, 3)}/${k.slice(2, 4)}`;
+  const avgOf = (arr) => (arr.length ? Math.round(arr.reduce((a, v) => a + v, 0) / arr.length) : 0);
+
+  /* por mês de vencimento: Due (abertos / vencidos / a vencer) + History (executados / postergados, pelo mês do Due date;
+     sem Due date cai no mês em que foi fechado) */
+  /* Due date do History só vale como referência se estiver a menos de 180 dias da data de fechamento (a planilha traz placeholders tipo 1900-01-01) */
+  const dueValidoHist = (h) => {
+    if (!h.dueDate || !h.dateDone) return "";
+    const gap = (new Date(h.dueDate) - new Date(h.dateDone)) / 86400000;
+    return gap >= -180 && gap <= 180 ? h.dueDate : "";
+  };
+  const monthlyJobs = (test, comHistory = true) => {
+    const map = {};
+    const row = (k) => (map[k] = map[k] || { mesKey: k, abertos: 0, vencidos: 0, aVencer: 0, executados: 0, postergados: 0 });
+    tmDueForMetrics.filter(test).forEach((d) => {
+      if (!d.dueDate || d.dueDate < "2020-01-01") return;
+      const r = row(ymOf(d.dueDate)); r.abertos++;
+      if (isVencidoPlano(d)) r.vencidos++; else r.aVencer++;
+    });
+    if (comHistory) tmHistoryForMetrics.filter(test).forEach((h) => {
+      const k = ymOf(dueValidoHist(h) || h.dateDone); if (!k) return;
+      const r = row(k);
+      if (isPostergada(h)) r.postergados++; else r.executados++;
+    });
+    return Object.values(map).sort((a, b) => a.mesKey.localeCompare(b.mesKey))
+      .map((r) => ({ ...r, mes: ymLabel(r.mesKey), previsto: r.abertos + r.executados + r.postergados, realizado: r.executados }));
+  };
+  const planejamentoMensal = useMemo(() => monthlyJobs(() => true, false), [tmDueForMetrics, hojeLocal]);
+  const corretivasMensal = useMemo(() => monthlyJobs(isCorretiva, false), [tmDueForMetrics, hojeLocal]);
+  const aderenciaMensal = useMemo(() => monthlyJobs(() => true), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+  const inspecaoMensal = useMemo(() => monthlyJobs((x) => jtOf(x) === "INS"), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+  const overhaulMensal = useMemo(() => monthlyJobs((x) => jtOf(x) === "OVH"), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+  const aderenciaDue = useMemo(() => {
+    const prev = aderenciaMensal.reduce((a, r) => a + r.previsto, 0);
+    const aver = aderenciaMensal.reduce((a, r) => a + r.aVencer, 0);
+    const real = aderenciaMensal.reduce((a, r) => a + r.realizado, 0);
+    const vencidoJa = prev - aver;
+    return { pct: vencidoJa > 0 ? Math.round((real / vencidoJa) * 100) : 0 };
+  }, [aderenciaMensal]);
+
+  /* postergados: por mês (+ quantos já foram realizados depois da última postergação do mesmo plano) e por job type */
+  const postergadosAnalise = useMemo(() => {
+    const planKey = (h) => `${codeOfJob(h)}|${jtOf(h)}|${jobNoOf(h)}`;
+    const lastPost = new Map(); const lastDone = new Map();
+    tmHistory.forEach((h) => {
+      if (!h.dateDone) return;
+      const k = planKey(h);
+      if (isPostergada(h)) { if (!lastPost.has(k) || h.dateDone > lastPost.get(k)) lastPost.set(k, h.dateDone); }
+      else if (!lastDone.has(k) || h.dateDone > lastDone.get(k)) lastDone.set(k, h.dateDone);
+    });
+    const map = {};
+    tmHistory.forEach((h) => {
+      if (!h.dateDone || !isPostergada(h)) return;
+      if (metricasFiltro.ano !== "Todos" && h.dateDone.slice(0, 4) !== String(metricasFiltro.ano)) return;
+      const k = ymOf(h.dateDone); const pk = planKey(h);
+      const r = (map[k] = map[k] || { total: 0, realizados: 0 });
+      r.total++;
+      if (lastDone.has(pk) && lastDone.get(pk) > lastPost.get(pk)) r.realizados++;
+    });
+    const rows = Object.keys(map).sort().map((k) => ({ mes: ymLabel(k), mesKey: k, total: map[k].total, realizados: map[k].realizados }));
+    return { rows, total: rows.reduce((a, r) => a + r.total, 0), realizados: rows.reduce((a, r) => a + r.realizados, 0) };
+  }, [tmHistory, metricasFiltro.ano]);
+  const postergadosPorTipo = useMemo(() => {
+    const map = {};
+    tmHistoryForMetrics.filter(isPostergada).forEach((h) => { const k = jtOf(h) || "—"; map[k] = (map[k] || 0) + 1; });
+    return Object.entries(map).map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total).slice(0, 15);
+  }, [tmHistoryForMetrics]);
+  const postergadosDoMes = useMemo(() => {
+    const d0 = new Date();
+    const ano = metricasFiltro.ano !== "Todos" ? String(metricasFiltro.ano) : String(d0.getFullYear());
+    const mes = metricasFiltro.mes !== "Todos" ? String(metricasFiltro.mes).padStart(2, "0") : String(d0.getMonth() + 1).padStart(2, "0");
+    const key = `${ano}-${mes}`;
+    return { key, label: ymLabel(key), total: tmHistory.filter((h) => isPostergada(h) && ymOf(h.dateDone) === key).length };
+  }, [tmHistory, metricasFiltro]);
+
+  /* cumprimento de prazo: Due date x Data assinada (só execuções, sem postergações) */
+  const cumprimentoPrazo = useMemo(() => {
+    const rows = tmHistoryForMetrics.filter((h) => !isPostergada(h) && dueValidoHist(h) && h.dateSigned)
+      .map((h) => ({ h, atraso: Math.round((new Date(h.dateSigned) - new Date(h.dueDate)) / 86400000) }));
+    const noPrazo = rows.filter((r) => r.atraso <= 0); const atrasados = rows.filter((r) => r.atraso > 0);
+    const faixaDef = [["No prazo / antecipado", (v) => v <= 0], ["1 a 7 dias", (v) => v >= 1 && v <= 7], ["8 a 30 dias", (v) => v >= 8 && v <= 30], ["31 a 60 dias", (v) => v >= 31 && v <= 60], ["Mais de 60 dias", (v) => v > 60]];
+    const faixas = faixaDef.map(([nome, f]) => ({ nome, total: rows.filter((r) => f(r.atraso)).length }));
+    const mm = {};
+    rows.forEach((r) => { const k = ymOf(r.h.dateSigned); const m = (mm[k] = mm[k] || { t: 0, n: 0 }); m.t++; if (r.atraso <= 0) m.n++; });
+    const porMes = Object.keys(mm).sort().map((k) => ({ mes: ymLabel(k), pct: Math.round((mm[k].n / mm[k].t) * 100), total: mm[k].t }));
+    return {
+      total: rows.length, noPrazo: noPrazo.length, atrasados: atrasados.length,
+      pct: rows.length ? Math.round((noPrazo.length / rows.length) * 100) : 0,
+      atrasoMedio: avgOf(atrasados.map((r) => r.atraso)), antecedenciaMedia: avgOf(noPrazo.map((r) => -r.atraso)),
+      faixas, porMes,
+    };
+  }, [tmHistoryForMetrics]);
+
+  /* jobs críticos (pelo código do componente) */
+  const criticosAnalise = useMemo(() => {
+    const due = tmDueForMetrics.filter((d) => critPrefixOf(d.code)).map((d) => {
+      const venc = isVencidoPlano(d);
+      const a = atrasoDias(d);
+      return { ...d, _grupo: critPrefixOf(d.code), _sit: venc ? "Vencido" : isAteVencer40(d) ? "A vencer (até 40d)" : "No prazo",
+        _atraso: venc ? (a === null ? "" : `${a} dias`) : "", _ord: venc ? -(a || 0) : (semDiffJob(d) ? 1e9 : d.diffValue) };
+    }).sort((x, y) => x._ord - y._ord);
+    const map = new Map();
+    tmHistoryForMetrics.filter((h) => isPostergada(h) && critPrefixOf(h.componentCode)).forEach((h) => {
+      const key = `${h.componentCode || ""}|${h.jobNo || ""}|${h.jobName || ""}`;
+      const cur = map.get(key);
+      if (!cur) map.set(key, { key, _grupo: critPrefixOf(h.componentCode), componentCode: h.componentCode, componentName: h.componentName, jobNo: h.jobNo, jobName: h.jobName, jobType: h.jobType, ultimaData: h.dateDone || "", registros: 1 });
+      else { cur.registros++; if ((h.dateDone || "") > cur.ultimaData) cur.ultimaData = h.dateDone || ""; }
+    });
+    const post = [...map.values()].sort((a, b) => b.ultimaData.localeCompare(a.ultimaData));
+    const registrosPost = tmHistoryForMetrics.filter((h) => isPostergada(h) && critPrefixOf(h.componentCode)).length;
+    const porGrupo = CRITICAL_PREFIXES.map((g) => {
+      const dd = due.filter((r) => r._grupo === g);
+      return { grupo: g, vencidos: dd.filter((r) => r._sit === "Vencido").length, aVencer: dd.filter((r) => r._sit === "A vencer (até 40d)").length,
+        noPrazo: dd.filter((r) => r._sit === "No prazo").length,
+        postergados: tmHistoryForMetrics.filter((h) => isPostergada(h) && critPrefixOf(h.componentCode) === g).length };
+    });
+    return {
+      due, post, porGrupo,
+      kpis: { abertos: due.length, vencidos: due.filter((r) => r._sit === "Vencido").length, aVencer: due.filter((r) => r._sit === "A vencer (até 40d)").length,
+        noPrazo: due.filter((r) => r._sit === "No prazo").length, postergados: post.length, registrosPost },
+    };
+  }, [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+
+  /* jobs preditivos: cada job (tipo + nº) é contado uma vez por data, mesmo com vários componentes */
+  const preditivosAnalise = useMemo(() => {
+    const uniq = (arr, keyFn) => { const m = new Map(); arr.forEach((x) => { const k = keyFn(x); if (!m.has(k)) m.set(k, x); }); return [...m.values()]; };
+    const grupos = [...new Set(PREDITIVOS.map((p) => p.grupo))];
+    const rows = grupos.map((grupo) => {
+      const jobs = PREDITIVOS.filter((p) => p.grupo === grupo);
+      const isJob = (x) => jobs.some((p) => jtOf(x) === p.tipo && jobNoOf(x) === p.no);
+      const due = uniq(tmDueForMetrics.filter(isJob), (d) => d.dueDate || d.dueRaw || d.id);
+      const hist = uniq(tmHistoryForMetrics.filter(isJob), (h) => `${h.dateDone}|${isPostergada(h) ? "P" : "E"}`);
+      const exec = hist.filter((h) => !isPostergada(h)); const post = hist.filter(isPostergada);
+      const comDatas = exec.filter((h) => dueValidoHist(h) && h.dateSigned);
+      const noPrazo = comDatas.filter((h) => h.dateSigned <= h.dueDate).length;
+      const venc = due.filter(isVencidoPlano).length;
+      const aVencer = due.filter((d) => !isVencidoPlano(d) && isAteVencer40(d)).length;
+      const base = exec.length + post.length + venc;
+      return {
+        grupo, vencidos: venc, aVencer, executados: exec.length, postergados: post.length,
+        noPrazoN: noPrazo, comDatasN: comDatas.length,
+        pctPrazo: comDatas.length ? Math.round((noPrazo / comDatas.length) * 100) : null,
+        taxaPost: exec.length + post.length ? Math.round((post.length / (exec.length + post.length)) * 100) : null,
+        eficiencia: base ? Math.round((noPrazo / base) * 100) : null, baseN: base,
+      };
+    });
+    const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
+    const cd = sum("comDatasN"); const base = sum("baseN");
+    return { rows, kpis: { vencidos: sum("vencidos"), aVencer: sum("aVencer"), postergados: sum("postergados"),
+      pctPrazo: cd ? Math.round((sum("noPrazoN") / cd) * 100) : 0, eficiencia: base ? Math.round((sum("noPrazoN") / base) * 100) : 0 } };
+  }, [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
@@ -4942,7 +5313,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           : "Todos os períodos";
         let y = pdfHeader(doc, "TM Master — Métricas", `${periodo} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
         y = pdfKpis(doc, y, [
-          { label: "Total em Aberto", value: totalDue },
+          { label: "Total de Jobs", value: totalDue },
           { label: "Vencidas", value: vencidas.length },
           { label: "A Vencer em 40 dias", value: ateVencer40.length },
           { label: "Críticas Vencidas/até 40d", value: criticasVencidasOu40.length },
@@ -4950,16 +5321,23 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           { label: "Total Fechado", value: totalHistory },
           { label: "Corretivas Fechadas", value: corretivasFechadas.length },
           { label: "Postergadas", value: postergadas.length },
-          { label: "Prazo Médio (dias)", value: `${prazoStats.media}d` },
+          { label: `Postergados em ${postergadosDoMes.label}`, value: postergadosDoMes.total },
+          { label: "% No Prazo (Due × Assinada)", value: `${cumprimentoPrazo.pct}%` },
         ]);
-        const postMes = {};
-        tmHistory.forEach((h) => {
-          if (!h.dateDone || !isPostergada(h)) return;
-          if (metricasFiltro.ano !== "Todos" && h.dateDone.slice(0, 4) !== String(metricasFiltro.ano)) return;
-          const k = h.dateDone.slice(0, 7); postMes[k] = (postMes[k] || 0) + 1;
-        });
-        y = pdfSectionTitle(doc, y, "Postergados por mês");
-        y = pdfTable(doc, y, ["Mês", "Postergados"], Object.keys(postMes).sort().map((k) => [`${MONTH_NAMES[Number(k.slice(5, 7)) - 1]} / ${k.slice(0, 4)}`, postMes[k]]));
+        const secao = (titulo, cols, rows) => { if (y > 235) { doc.addPage(); y = 15; } y = pdfSectionTitle(doc, y, titulo); y = pdfTable(doc, y, cols, rows); };
+        secao("Planejamento mensal", ["Mês", "Abertos", "Vencidos", "A Vencer"], planejamentoMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer]));
+        secao("Corretivas (Job Type = One)", ["Mês", "Abertos", "Vencidos", "A Vencer"], corretivasMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer]));
+        secao("Postergados por mês", ["Mês", "Postergados", "Realizados após a postergação"], postergadosAnalise.rows.map((r) => [r.mes, r.total, r.realizados]));
+        secao("Postergados por Job Type", ["Job Type", "Postergados"], postergadosPorTipo.map((r) => [r.nome, r.total]));
+        secao("Aderência no Due", ["Mês", "Previsto", "Realizado", "A Vencer"], aderenciaMensal.map((r) => [r.mes, r.previsto, r.realizado, r.aVencer]));
+        secao("Jobs de Inspeção", ["Mês", "Previstos", "Executados"], inspecaoMensal.map((r) => [r.mes, r.previsto, r.realizado]));
+        secao("Jobs de Overhaul", ["Mês", "Previstos", "Executados", "Postergados"], overhaulMensal.map((r) => [r.mes, r.previsto, r.realizado, r.postergados]));
+        secao(`Jobs críticos — ${criticosAnalise.kpis.abertos} em aberto · ${criticosAnalise.kpis.vencidos} vencidos · ${criticosAnalise.kpis.aVencer} a vencer (40d) · ${criticosAnalise.kpis.postergados} postergados`,
+          ["Grupo", "Vencidos", "A vencer (40d)", "No prazo", "Postergados"], criticosAnalise.porGrupo.map((r) => [r.grupo, r.vencidos, r.aVencer, r.noPrazo, r.postergados]));
+        secao(`Jobs preditivos — eficiência ${preditivosAnalise.kpis.eficiencia}%`,
+          ["Análise", "Em atraso", "A vencer", "Executados", "Postergados", "% no prazo", "Eficiência"],
+          preditivosAnalise.rows.map((r) => [r.grupo, r.vencidos, r.aVencer, r.executados, r.postergados, r.pctPrazo === null ? "—" : `${r.pctPrazo}%`, r.eficiencia === null ? "—" : `${r.eficiencia}%`]));
+        secao(`Cumprimento de prazo — ${cumprimentoPrazo.pct}% no prazo · atraso médio ${cumprimentoPrazo.atrasoMedio}d`, ["Faixa", "Jobs"], cumprimentoPrazo.faixas.map((r) => [r.nome, r.total]));
         y = pdfSectionTitle(doc, y, "Due por departamento");
         y = pdfTable(doc, y, ["Departamento", "Quantidade"], duePorDepartamento.map((d) => [d.departamento, d.count]));
         y = pdfSectionTitle(doc, y, "Vencidas por tipo de serviço");
@@ -4975,7 +5353,9 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
     });
   }, [tmSubTab, filteredDue, totalDue, vencidas, ateVencer40, criticasVencidasOu40, corretivasDue, duePorDepartamento,
       vencidasPorJobType, aVencerPorJobType, filteredHistory, totalHistory, corretivasFechadas, postergadas, prazoStats,
-      historyPorDepartamento, historyPorUsuario, metricasView, planosPostergados, planosVencidos, metricasFiltro, hasActiveFiltroMetricas, setReportFn]);
+      historyPorDepartamento, historyPorUsuario, metricasView, planosPostergados, planosVencidos, metricasFiltro, hasActiveFiltroMetricas,
+      postergadosDoMes, cumprimentoPrazo, planejamentoMensal, aderenciaMensal, corretivasMensal, postergadosAnalise, postergadosPorTipo, inspecaoMensal, overhaulMensal,
+      criticosAnalise, preditivosAnalise, setReportFn]);
 
   /* "Exportar planilha" no cabeçalho segue a subaba/filtro ativo aqui — Due exporta o filtro de Due,
      History o filtro de History, e Métricas exporta os dois conjuntos já escopados por mês/ano */
@@ -4991,6 +5371,18 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
         XLSX.writeFile(wb, `genesis-tm-master-history-${todayISO()}.xlsx`);
       } else {
         if (metricasView !== "planos") {
+          const add = (nome, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), nome);
+          add("Planejamento Mensal", planejamentoMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer })));
+          add("Aderência no Due", aderenciaMensal.map((r) => ({ "Mês": r.mes, Previsto: r.previsto, Realizado: r.realizado, "A Vencer": r.aVencer })));
+          add("Corretivas Mensal", corretivasMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer })));
+          add("Postergados por Mês", postergadosAnalise.rows.map((r) => ({ "Mês": r.mes, Postergados: r.total, "Realizados após a postergação": r.realizados })));
+          add("Postergados por Job Type", postergadosPorTipo.map((r) => ({ "Job Type": r.nome, Postergados: r.total })));
+          add("Jobs de Inspeção", inspecaoMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado })));
+          add("Jobs de Overhaul", overhaulMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado, Postergados: r.postergados })));
+          add("Jobs Críticos (abertos)", criticosAnalise.due.map((r) => ({ Grupo: r._grupo, "Código": r.code, Componente: r.component, "Job No": r.jobNo, Plano: r.jobName, Tipo: r.jobType, Due: r.dueDate || r.dueRaw, "Situação": r._sit, Atraso: r._atraso })));
+          add("Jobs Críticos (postergados)", criticosAnalise.post.map((r) => ({ Grupo: r._grupo, "Código": r.componentCode, Componente: r.componentName, "Job No": r.jobNo, Plano: r.jobName, Tipo: r.jobType, "Última Postergação": r.ultimaData })));
+          add("Jobs Preditivos", preditivosAnalise.rows.map((r) => ({ "Análise": r.grupo, "Em Atraso": r.vencidos, "A Vencer": r.aVencer, Executados: r.executados, Postergados: r.postergados, "% No Prazo": r.pctPrazo, "Taxa de Postergação %": r.taxaPost, "Eficiência %": r.eficiencia })));
+          add("Cumprimento de Prazo", cumprimentoPrazo.faixas.map((r) => ({ Faixa: r.nome, Jobs: r.total })));
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmHistoryForMetrics, TM_HISTORY_COLS)), "History (filtrado)");
         }
@@ -5002,10 +5394,11 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           "Código": r.code, "Componente": r.component, "Job No": r.jobNo, "Plano (Job Name)": r.jobName,
           "Tipo": r.jobType, "Prioridade": r.pri, "Due": r.dueDate || r.dueRaw, "Atraso": r._atraso }))), "Planos Vencidos");
         }
-        XLSX.writeFile(wb, `genesis-tm-master-metricas-${todayISO()}.xlsx`);
+        XLSX.writeFile(wb, `genesis-tm-master-${metricasView === "planos" ? "planos-postergados-vencidos" : "metricas"}-${todayISO()}.xlsx`);
       }
     });
-  }, [tmSubTab, filteredDue, filteredHistory, tmDueForMetrics, tmHistoryForMetrics, planosPostergados, planosVencidos, metricasView, setExportXlsxFn]);
+  }, [tmSubTab, filteredDue, filteredHistory, tmDueForMetrics, tmHistoryForMetrics, planosPostergados, planosVencidos, metricasView, planejamentoMensal, aderenciaMensal, corretivasMensal, postergadosAnalise, postergadosPorTipo,
+      inspecaoMensal, overhaulMensal, criticosAnalise, preditivosAnalise, cumprimentoPrazo, setExportXlsxFn]);
 
   return (
     <>
@@ -5326,134 +5719,45 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 
           {metricasView === "geral" && (
           <>
-          {tmDueSnapshots.length > 1 && (
-            <div className="g-panel">
-              <div className="g-panel-head"><span className="g-panel-title">Tendência do backlog — evolução semana a semana</span></div>
-              <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
-                Uma fotografia é registrada automaticamente a cada vez que você importa a planilha Due — isso mostra se o
-                backlog de manutenção está crescendo ou diminuindo ao longo das semanas.
-              </div>
-              <div style={{ width: "100%", height: 220 }}>
-                <ResponsiveContainer>
-                  <BarChart data={tmDueSnapshots.map((s) => ({ ...s, dataLabel: fmtDate(s.date) }))} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                    <XAxis dataKey="dataLabel" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                    <Bar dataKey="total" name="Total em Aberto" radius={[3, 3, 0, 0]} fill="var(--text-faint)" />
-                    <Bar dataKey="vencidas" name="Vencidas" radius={[3, 3, 0, 0]} fill="var(--crit)" />
-                    <Bar dataKey="ateVencer40" name="A Vencer ≤40d" radius={[3, 3, 0, 0]} fill="var(--warn)" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
+          <MesBarChart title="Planejamento Mensal" data={planejamentoMensal}
+            subtitle="Jobs do Due agrupados pelo mês de vencimento: total em aberto, quantos já estão vencidos e quantos ainda estão a vencer."
+            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }]} />
 
-          {tmDueSnapshots.length > 1 && (
-            <div className="g-panel">
-              <div className="g-panel-head">
-                <span className="g-panel-title">Backlog total de jobs vencidos</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 700, color: "var(--crit)" }}>{vencidas.length}</span>
-              </div>
-              <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
-                Somente os itens já vencidos (Diff negativo), a cada fotografia da planilha Due — mostra se o
-                backlog vencido está aumentando ou sendo reduzido ao longo do tempo.
-              </div>
-              <div style={{ width: "100%", height: 200 }}>
-                <ResponsiveContainer>
-                  <BarChart data={tmDueSnapshots.map((s) => ({ ...s, dataLabel: fmtDate(s.date) }))} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                    <XAxis dataKey="dataLabel" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                    <Bar dataKey="vencidas" name="Backlog Vencido" radius={[3, 3, 0, 0]} fill="var(--crit)">
-                      <LabelList dataKey="vencidas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
+          <MesBarChart title="Corretivas (Job Type = One)" data={corretivasMensal}
+            subtitle="Corretivas (Job type ONE) do Due, agrupadas pelo mês de vencimento: abertas, vencidas e a vencer."
+            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }]} />
 
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Abertos (vencidos + a vencer) x Fechados por mês</span></div>
-            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
-              Barra cinza: itens do Due vencidos ou a vencer, agrupados pelo mês de vencimento. Barra verde: itens do
-              History fechados naquele mês, agrupados pela data de fechamento.
-            </div>
-            <div style={{ width: "100%", height: 240 }}>
-              <ResponsiveContainer>
-                <BarChart data={abertosVsFechadosPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                  <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                  <Bar dataKey="abertos" name="Abertos (vencidos + a vencer)" radius={[3, 3, 0, 0]} fill="var(--text-faint)">
-                    <LabelList dataKey="abertos" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
-                  </Bar>
-                  <Bar dataKey="fechados" name="Fechados" radius={[3, 3, 0, 0]} fill="var(--ok)">
-                    <LabelList dataKey="fechados" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {abertosVsFechadosPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Sem dados suficientes com data de vencimento/fechamento no filtro atual.</div>}
+          <PostergadosAnalise analise={postergadosAnalise} porTipo={postergadosPorTipo} />
+
+          <div className="g-grid-2">
+            <MesBarChart title="Jobs de Inspeção" data={inspecaoMensal}
+              subtitle="Job Type INS: previstos no mês (pelo Due date) x executados."
+              bars={[{ key: "previsto", name: "Previstos", color: "#94A3B8" }, { key: "realizado", name: "Executados", color: "#22C55E" }]} />
+            <MesBarChart title="Jobs de Overhaul" data={overhaulMensal}
+              subtitle="Job Type OVH: previstos no mês (pelo Due date), executados e postergados."
+              bars={[{ key: "previsto", name: "Previstos", color: "#94A3B8" }, { key: "realizado", name: "Executados", color: "#22C55E" }, { key: "postergados", name: "Postergados", color: "#F5A623" }]} />
           </div>
 
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Corretivas — vencidas/a vencer x fechadas por mês (Job type = ONE)</span></div>
-            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
-              Mesma comparação acima, restrita só às manutenções corretivas (Job type ONE). Barra vermelha: corretivas
-              vencidas ou a vencer, agrupadas pelo mês de vencimento. Barra verde: corretivas fechadas naquele mês.
-            </div>
-            <div style={{ width: "100%", height: 240 }}>
-              <ResponsiveContainer>
-                <BarChart data={corretivasPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                  <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
-                  <Bar dataKey="vencidasOuAVencer" name="Vencidas / A Vencer" radius={[3, 3, 0, 0]} fill="var(--crit)">
-                    <LabelList dataKey="vencidasOuAVencer" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
-                  </Bar>
-                  <Bar dataKey="fechadas" name="Fechadas" radius={[3, 3, 0, 0]} fill="var(--accent)">
-                    <LabelList dataKey="fechadas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {corretivasPorMes.length === 0 && <div className="g-muted" style={{ fontSize: 11.5 }}>Nenhuma corretiva (Job type ONE) com data de vencimento/fechamento no filtro atual.</div>}
-          </div>
+          <CriticosPanel kpis={criticosAnalise.kpis} porGrupo={criticosAnalise.porGrupo} due={criticosAnalise.due} post={criticosAnalise.post} />
 
-          <PostergadosPorMes history={tmHistory} isPost={isPostergada} ano={metricasFiltro.ano} />
+          <PreditivosPanel rows={preditivosAnalise.rows} kpis={preditivosAnalise.kpis} />
 
           <div className="g-section-label">Due — o que está em aberto</div>
-          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
-            {bigKpi("Total em Aberto", totalDue, "var(--teal)", ClipboardList)}
+          <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+            {bigKpi("Total de Jobs", totalDue, "var(--teal)", ClipboardList)}
             {bigKpi("Vencidas", vencidas.length, "var(--crit)", AlertTriangle)}
             {bigKpi("A Vencer em 40 dias", ateVencer40.length, "var(--warn)", Clock)}
             {bigKpi("Críticas Vencidas/≤40d", criticasVencidasOu40.length, "var(--crit)", AlertTriangle)}
             {bigKpi("Corretivas (ONE)", corretivasDue.length, "var(--text-dim)", Wrench)}
+            {bigKpi(`Postergados em ${postergadosDoMes.label}`, postergadosDoMes.total, "var(--warn)", AlertTriangle)}
           </div>
 
           <div className="g-grid-2">
-            <div className="g-panel">
-              <div className="g-panel-head"><span className="g-panel-title">Aderência por mês — itens a vencer</span></div>
-              <div style={{ width: "100%", height: 240 }}>
-                <ResponsiveContainer>
-                  <BarChart data={duePorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                    <XAxis dataKey="mes" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} formatter={(v, n, p) => [`${v} (${p.payload.pct}%)`, "Itens"]} />
-                    <Bar dataKey="count" name="Itens" radius={[3, 3, 0, 0]} fill="var(--accent)">
-                      <LabelList dataKey="count" position="top" formatter={(v, entry) => `${v}`} style={{ fill: "var(--text-dim)", fontSize: 10 }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="g-muted" style={{ fontSize: 10.5, marginTop: 4 }}>% indica a fatia de cada mês sobre o total de itens com data de vencimento definida.</div>
-            </div>
+            <MesBarChart title="Aderência no Due" data={aderenciaMensal}
+              headRight={<span className="g-muted" style={{ fontSize: 12 }}>Aderência: <b>{aderenciaDue.pct}%</b></span>}
+              subtitle="Por mês de vencimento: o que estava previsto, quanto foi realizado e quanto ainda está a vencer."
+              nota="Aderência = realizado ÷ (previsto − a vencer), ou seja, do que já venceu, quanto foi feito. Previsto = abertos + executados + postergados."
+              bars={[{ key: "previsto", name: "Previsto", color: "#94A3B8" }, { key: "realizado", name: "Realizado", color: "#22C55E" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }]} />
 
             <div className="g-panel">
               <div className="g-panel-head"><span className="g-panel-title">Urgência — vencidas ou a vencer em 40 dias (%)</span></div>
@@ -5575,11 +5879,11 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
             {bigKpi("Total Fechado (ano)", totalHistory, "var(--ok)", ClipboardList)}
             {bigKpi("Corretivas Fechadas", corretivasFechadas.length, "var(--text-dim)", Wrench)}
             {bigKpi("Postergadas", postergadas.length, "var(--warn)", AlertTriangle)}
-            {bigKpi("Prazo Médio de Execução", `${prazoStats.media}d`, prazoStats.media < 0 ? "var(--crit)" : "var(--ok)", Clock)}
+            {bigKpi("% No Prazo (Due × Assinada)", `${cumprimentoPrazo.pct}%`, cumprimentoPrazo.pct >= 80 ? "var(--ok)" : cumprimentoPrazo.pct >= 60 ? "var(--warn)" : "var(--crit)", Clock)}
           </div>
 
           <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Aderência — jobs fechados por mês</span></div>
+            <div className="g-panel-head"><span className="g-panel-title">Fechados por Mês</span></div>
             <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer>
                 <BarChart data={historyPorMes} margin={{ left: 0, right: 8, top: 20, bottom: 0 }}>
@@ -5648,17 +5952,57 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
             <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6 }}>Clique numa barra pra filtrar a tabela por esse usuário.</div>
           </div>
 
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Cumprimento de prazo — Due date × Data assinada</span></div>
-            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
-              Considera só os {prazoStats.total} jobs do History que têm Due date e Data assinada preenchidas.
-              Prazo médio de {prazoStats.media} dia(s) {prazoStats.media >= 0 ? "de antecedência" : "de atraso"} em relação ao prazo.
+          <CumprimentoPrazoPanel c={cumprimentoPrazo} />
+
+          {tmDueSnapshots.length > 1 && (
+            <div className="g-panel">
+              <div className="g-panel-head"><span className="g-panel-title">Tendência do backlog — evolução semana a semana</span></div>
+              <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+                Uma fotografia é registrada automaticamente a cada vez que você importa a planilha Due — isso mostra se o
+                backlog de manutenção está crescendo ou diminuindo ao longo das semanas.
+              </div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={tmDueSnapshots.map((s) => ({ ...s, dataLabel: fmtDate(s.date) }))} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="dataLabel" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="total" name="Total em Aberto" radius={[3, 3, 0, 0]} fill="var(--text-faint)" />
+                    <Bar dataKey="vencidas" name="Vencidas" radius={[3, 3, 0, 0]} fill="var(--crit)" />
+                    <Bar dataKey="ateVencer40" name="A Vencer ≤40d" radius={[3, 3, 0, 0]} fill="var(--warn)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-              {bigKpi("Feitos no Prazo ou Antes", prazoStats.noPrazo, "var(--ok)", ClipboardList)}
-              {bigKpi("Feitos Após o Prazo", prazoStats.atrasado, "var(--crit)", AlertTriangle)}
+          )}
+
+          {tmDueSnapshots.length > 1 && (
+            <div className="g-panel">
+              <div className="g-panel-head">
+                <span className="g-panel-title">Backlog total de jobs vencidos</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 700, color: "var(--crit)" }}>{vencidas.length}</span>
+              </div>
+              <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+                Somente os itens já vencidos (Diff negativo), a cada fotografia da planilha Due — mostra se o
+                backlog vencido está aumentando ou sendo reduzido ao longo do tempo.
+              </div>
+              <div style={{ width: "100%", height: 200 }}>
+                <ResponsiveContainer>
+                  <BarChart data={tmDueSnapshots.map((s) => ({ ...s, dataLabel: fmtDate(s.date) }))} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+                    <XAxis dataKey="dataLabel" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} />
+                    <Bar dataKey="vencidas" name="Backlog Vencido" radius={[3, 3, 0, 0]} fill="var(--crit)">
+                      <LabelList dataKey="vencidas" position="top" style={{ fill: "var(--text-dim)", fontSize: 10 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
+
           </>
           )}
         </>
@@ -5758,7 +6102,9 @@ function MaterialsView({ setExportXlsxFn, materials, updMat, remMat, workPackage
     if (!setReportFn) return;
     setReportFn(() => () => {
       const doc = new jsPDF();
-      let y = pdfHeader(doc, "Relatório de Materiais", `${filtered.length} material(is) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      const analises = matSubTab === "analises";
+      let y = pdfHeader(doc, analises ? "Relatório de Materiais — Análises" : "Relatório de Materiais — Requisições",
+        `${filtered.length} material(is) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       y = pdfKpis(doc, y, [
         { label: "Total de Materiais", value: filtered.length },
         { label: "Materiais Urgentes", value: urgentes.length },
@@ -5766,21 +6112,23 @@ function MaterialsView({ setExportXlsxFn, materials, updMat, remMat, workPackage
         { label: "Sem ETA", value: semEta.length },
         { label: "Sem PO", value: semPo.length },
       ]);
-      y = pdfSectionTitle(doc, y, "Por Status");
-      y = pdfTable(doc, y, ["Status", "Quantidade"], porStatus.map((d) => [d.status, d.count]), { columnStyles: { 1: { halign: "right" } } });
-      y = pdfSectionTitle(doc, y, "Por Prioridade");
-      y = pdfTable(doc, y, ["Prioridade", "Quantidade"], porPrioridade.map((d) => [d.priority, d.count]), { columnStyles: { 1: { halign: "right" } } });
-      y = pdfSectionTitle(doc, y, "Por Departamento");
-      y = pdfTable(doc, y, ["Departamento", "Quantidade"], porDepartamento.map((d) => [d.departamento, d.count]), { columnStyles: { 1: { halign: "right" } } });
-      if (y > 220) { doc.addPage(); y = 15; }
-      y = pdfSectionTitle(doc, y, "Materiais");
-      pdfTable(doc, y,
-        ["TM Master", "Descrição", "Qtd", "Prioridade", "Necessidade", "PO", "ETA", "Status"],
-        filtered.map((m) => [m.tmMaster || "—", m.descricao, m.quantidade, m.priority, fmtDate(m.dataNecessidade), m.po || "—", m.eta ? fmtDate(m.eta) : "sem ETA", m.status])
-      );
-      pdfSave(doc, "relatorio-materiais");
+      if (analises) {
+        y = pdfSectionTitle(doc, y, "Por Status");
+        y = pdfTable(doc, y, ["Status", "Quantidade"], porStatus.map((d) => [d.status, d.count]), { columnStyles: { 1: { halign: "right" } } });
+        y = pdfSectionTitle(doc, y, "Por Prioridade");
+        y = pdfTable(doc, y, ["Prioridade", "Quantidade"], porPrioridade.map((d) => [d.priority, d.count]), { columnStyles: { 1: { halign: "right" } } });
+        y = pdfSectionTitle(doc, y, "Por Departamento");
+        pdfTable(doc, y, ["Departamento", "Quantidade"], porDepartamento.map((d) => [d.departamento, d.count]), { columnStyles: { 1: { halign: "right" } } });
+      } else {
+        y = pdfSectionTitle(doc, y, "Materiais");
+        pdfTable(doc, y,
+          ["TM Master", "Descrição", "Qtd", "Prioridade", "Necessidade", "PO", "ETA", "Status"],
+          sorted.map((m) => [m.tmMaster || "—", m.descricao, m.quantidade, m.priority, fmtDate(m.dataNecessidade), m.po || "—", m.eta ? fmtDate(m.eta) : "sem ETA", m.status])
+        );
+      }
+      pdfSave(doc, analises ? "relatorio-materiais-analises" : "relatorio-materiais");
     });
-  }, [filtered, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
+  }, [matSubTab, filtered, sorted, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
 
   return (
     <>
