@@ -4535,7 +4535,15 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
 };
 
 /* ---------- Visão Geral das Métricas: componentes das novas análises ---------- */
-const CRITICAL_PREFIXES = ["601", "401", "331", "376", "403", "701", "721", "722", "731", "812", "871", "872", "873"];
+const CRITICAL_GROUPS = [
+  { cod: "601", nome: "Motores Principais" }, { cod: "404", nome: "Side Thrusters" }, { cod: "403", nome: "Steering Gear" },
+  { cod: "331", nome: "Offshore Crane" }, { cod: "376", nome: "Inert Gas Systems" }, { cod: "571", nome: "AC Accommodation" },
+  { cod: "701", nome: "FO Transfer" }, { cod: "721", nome: "Sea Water Cooling" }, { cod: "722", nome: "Fresh Water Cooling" },
+  { cod: "731", nome: "Starting Air System" }, { cod: "812", nome: "Emergency Shutdown" }, { cod: "871", nome: "Main Switchboards" },
+  { cod: "872", nome: "Emergency Switchboards" }, { cod: "865", nome: "Transformers" },
+];
+const CRITICAL_PREFIXES = CRITICAL_GROUPS.map((g) => g.cod);
+const critLabel = (cod) => { const g = CRITICAL_GROUPS.find((x) => x.cod === cod); return g ? `${g.cod} - ${g.nome}` : cod; };
 const critPrefixOf = (code) => {
   const c = String(code || "").trim();
   for (const p of CRITICAL_PREFIXES) { if (c.startsWith(p) && !/\d/.test(c.charAt(p.length))) return p; }
@@ -4587,9 +4595,9 @@ const MesBarChart = ({ title, subtitle, data, bars, height = 240, headRight, not
 const PostergadosAnalise = ({ analise, porTipo }) => (
   <div className="g-grid-2">
     <MesBarChart title="Postergados Por Mês" data={analise.rows}
-      headRight={<span className="g-muted" style={{ fontSize: 12 }}>Total: <b>{analise.total}</b> · realizados após a última postergação: <b>{analise.realizados}</b></span>}
-      subtitle="Barra laranja: postergações registradas no mês. Barra verde: dessas, quantas já foram realizadas depois da última data de postergação do mesmo plano."
-      bars={[{ key: "total", name: "Postergados", color: "#F5A623" }, { key: "realizados", name: "Realizados após a postergação", color: "#22C55E" }]} />
+      headRight={<span className="g-muted" style={{ fontSize: 12 }}>Total: <b>{analise.total}</b> · realizados: <b>{analise.realizados}</b> · ainda em aberto: <b>{analise.emAberto}</b> · vencidos: <b>{analise.vencidos}</b></span>}
+      subtitle="Postergações registradas em cada mês e, dessas: quantas já foram realizadas depois da última postergação do plano, quantas ainda estão em aberto no Due e quantas dessas já estão vencidas."
+      bars={[{ key: "total", name: "Postergados", color: "#F5A623" }, { key: "realizados", name: "Realizados após a postergação", color: "#22C55E" }, { key: "emAberto", name: "Ainda em aberto", color: "#3B82F6" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }]} />
     <MesBarChart title="Postergados Por Job Type" data={porTipo} subtitle="Postergações do período, por tipo de job."
       bars={[{ key: "total", name: "Postergados", color: "#F5A623" }]} />
   </div>
@@ -4630,11 +4638,14 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
   const postVis = post.filter((r) => (grupo === "Todos" || r._grupo === grupo)
     && (!q || norm(`${r.componentCode} ${r.componentName} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(q))));
   const sitCls = { "Vencido": "d3", "A vencer (até 40d)": "d2", "No prazo": "d1" };
+  const corPct = (v) => (v >= 80 ? "var(--ok)" : v >= 60 ? "var(--warn)" : "var(--crit)");
+  const selStyle = { padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 };
+  const fmtD = (iso, raw) => (iso ? fmtDataCompleta(iso) : (raw || "—"));
   return (
     <div className="g-panel">
       <div className="g-panel-head"><span className="g-panel-title">Análise de Jobs Críticos</span></div>
       <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
-        Jobs cujo código de componente começa com: {CRITICAL_PREFIXES.join(", ")}.
+        Jobs cujo código de componente começa com: {CRITICAL_GROUPS.map((g) => g.cod).join(", ")}.
       </div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {bigKpi("Críticos em Aberto", kpis.abertos, "var(--teal)", ClipboardList)}
@@ -4643,55 +4654,87 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
         {bigKpi("No Prazo (+40 dias)", kpis.noPrazo, "var(--ok)", ClipboardList)}
         {bigKpi("Críticos Postergados", kpis.postergados, "var(--warn)", AlertTriangle)}
       </div>
-      <div style={{ width: "100%", height: 260 }}>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {bigKpi("Executados no Período", kpis.executados, "var(--ok)", ClipboardList)}
+        {bigKpi("% Executado no Prazo", `${kpis.pctPrazo}%`, corPct(kpis.pctPrazo), ClipboardList)}
+        {bigKpi("Taxa de Postergação", `${kpis.taxaPost}%`, kpis.taxaPost <= 5 ? "var(--ok)" : kpis.taxaPost <= 15 ? "var(--warn)" : "var(--crit)", AlertTriangle)}
+        {bigKpi("Índice de Eficiência", `${kpis.eficiencia}%`, corPct(kpis.eficiencia), Gauge)}
+      </div>
+      <div style={{ width: "100%", height: 340 }}>
         <ResponsiveContainer>
-          <BarChart data={porGrupo} margin={{ left: 0, right: 8, top: 10, bottom: 0 }}>
+          <BarChart data={porGrupo} margin={{ left: 50, right: 8, top: 20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-            <XAxis dataKey="grupo" tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-            <YAxis allowDecimals={false} tick={AX} axisLine={false} tickLine={false} width={30} />
+            <XAxis dataKey="nome" tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={78} />
+            <YAxis allowDecimals={false} tick={AX} axisLine={false} tickLine={false} width={36} />
             <Tooltip contentStyle={TT} labelStyle={{ color: "var(--text)" }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="vencidos" name="Vencidos" stackId="a" fill="#EF4444" isAnimationActive={false} />
-            <Bar dataKey="aVencer" name="A vencer (até 40d)" stackId="a" fill="#F5A623" isAnimationActive={false} />
-            <Bar dataKey="noPrazo" name="No prazo" stackId="a" fill="#22C55E" isAnimationActive={false} />
-            <Bar dataKey="postergados" name="Postergados" fill="#8B5CF6" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+            <Bar dataKey="vencidos" name="Vencidos" fill="#EF4444" radius={[3, 3, 0, 0]} isAnimationActive={false}><LabelList dataKey="vencidos" position="top" style={{ fill: "var(--text-dim)", fontSize: 9 }} /></Bar>
+            <Bar dataKey="aVencer" name="A vencer (até 40d)" fill="#F5A623" radius={[3, 3, 0, 0]} isAnimationActive={false}><LabelList dataKey="aVencer" position="top" style={{ fill: "var(--text-dim)", fontSize: 9 }} /></Bar>
+            <Bar dataKey="noPrazo" name="No prazo" fill="#22C55E" radius={[3, 3, 0, 0]} isAnimationActive={false}><LabelList dataKey="noPrazo" position="top" style={{ fill: "var(--text-dim)", fontSize: 9 }} /></Bar>
+            <Bar dataKey="postergados" name="Postergados" fill="#8B5CF6" radius={[3, 3, 0, 0]} isAnimationActive={false}><LabelList dataKey="postergados" position="top" style={{ fill: "var(--text-dim)", fontSize: 9 }} /></Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="g-muted" style={{ fontSize: 10.5, margin: "4px 0 10px" }}>Por grupo de código. Barras empilhadas: situação dos jobs em aberto. Barra roxa: postergações registradas no período.</div>
+      <div className="g-muted" style={{ fontSize: 10.5, margin: "4px 0 10px" }}>Por grupo de sistema. Vencidos / a vencer / no prazo: jobs em aberto. Postergados: postergações registradas no período.</div>
+
+      <div className="g-table-wrap" style={{ marginBottom: 12 }}>
+        <table className="g-table tbl-modern">
+          <thead><tr>
+            <th>Grupo</th><th style={{ textAlign: "right" }}>Em Atraso</th><th style={{ textAlign: "right" }}>A Vencer</th><th style={{ textAlign: "right" }}>No Prazo</th>
+            <th style={{ textAlign: "right" }}>Executados</th><th style={{ textAlign: "right" }}>Postergados</th><th style={{ textAlign: "right" }}>% No Prazo</th>
+            <th style={{ textAlign: "right" }}>Taxa de Postergação</th><th style={{ textAlign: "right" }}>Eficiência</th>
+          </tr></thead>
+          <tbody>
+            {porGrupo.map((r) => (
+              <tr className="g-row tbl-row" key={r.grupo} style={{ "--c": r.vencidos > 0 ? "#EF4444" : r.aVencer > 0 ? "#F5A623" : "#22C55E" }}>
+                <td><b>{r.nome}</b></td>
+                <td style={{ textAlign: "right" }}>{r.vencidos}</td><td style={{ textAlign: "right" }}>{r.aVencer}</td><td style={{ textAlign: "right" }}>{r.noPrazo}</td>
+                <td style={{ textAlign: "right" }}>{r.executados}</td><td style={{ textAlign: "right" }}>{r.postergados}</td>
+                <td style={{ textAlign: "right" }}>{r.pctPrazo === null ? "—" : `${r.pctPrazo}%`}</td>
+                <td style={{ textAlign: "right" }}>{r.taxaPost === null ? "—" : `${r.taxaPost}%`}</td>
+                <td style={{ textAlign: "right", fontWeight: 600 }}>{r.eficiencia === null ? "—" : `${r.eficiencia}%`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="g-muted" style={{ fontSize: 10.5, marginBottom: 12, lineHeight: 1.5 }}>
+        <b>% No Prazo</b>: executados com Data assinada ≤ Due date ÷ executados com as duas datas. <b>Taxa de Postergação</b>: postergados ÷ (executados + postergados).
+        <b> Eficiência</b>: executados no prazo ÷ (executados + postergados + em atraso).
+      </div>
 
       <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
         <div className="g-mode-toggle">
           <button className={vista === "abertos" ? "active" : ""} onClick={() => setVista("abertos")}>Em aberto ({due.length})</button>
           <button className={vista === "postergados" ? "active" : ""} onClick={() => setVista("postergados")}>Postergados ({post.length})</button>
         </div>
-        <select value={grupo} onChange={(e) => setGrupo(e.target.value)} style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+        <select value={grupo} onChange={(e) => setGrupo(e.target.value)} style={selStyle}>
           <option value="Todos">Todos os grupos</option>
-          {CRITICAL_PREFIXES.map((p) => <option key={p} value={p}>{p}</option>)}
+          {CRITICAL_GROUPS.map((g) => <option key={g.cod} value={g.cod}>{critLabel(g.cod)}</option>)}
         </select>
         {vista === "abertos" && (
-          <select value={sit} onChange={(e) => setSit(e.target.value)} style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+          <select value={sit} onChange={(e) => setSit(e.target.value)} style={selStyle}>
             <option value="Todos">Todas as situações</option>
             <option>Vencido</option><option>A vencer (até 40d)</option><option>No prazo</option>
           </select>
         )}
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar..." style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5, minWidth: 200 }} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar..." style={{ ...selStyle, minWidth: 200 }} />
       </div>
       <div className="g-table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
         {vista === "abertos" ? (
           <table className="g-table tbl-modern">
-            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th><th>Tipo</th><th>Due</th><th>Situação</th></tr></thead>
+            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Job Type</th><th>Plano (Job Name)</th><th>Due</th><th>Situação</th></tr></thead>
             <tbody>
               {dueVis.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico com esse filtro.</td></tr>}
               {dueVis.slice(0, 600).map((r) => (
                 <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._sit === "Vencido" ? "#EF4444" : r._sit === "No prazo" ? "#22C55E" : "#F5A623" }}>
-                  <td><b>{r._grupo}</b></td>
+                  <td><b>{critLabel(r._grupo)}</b></td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.code || "—"}</td>
                   <td>{r.component || "—"}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
-                  <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.jobName || "—"}</td>
                   <td>{r.jobType || "—"}</td>
-                  <td style={{ fontFamily: "var(--mono)" }}>{r.dueDate ? fmtDataCompleta(r.dueDate) : (r.dueRaw || "—")}</td>
+                  <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.jobName || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtD(r.dueDate, r.dueRaw)}</td>
                   <td><span className={`tbl-days ${sitCls[r._sit]}`}>{r._sit === "Vencido" ? `Vencido${r._atraso ? ` há ${r._atraso}` : ""}` : r._sit}</span></td>
                 </tr>
               ))}
@@ -4699,18 +4742,20 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
           </table>
         ) : (
           <table className="g-table tbl-modern">
-            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Plano (Job Name)</th><th>Tipo</th><th>Última Postergação</th></tr></thead>
+            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Job Type</th><th>Plano (Job Name)</th><th>1ª Postergação</th><th>Última Postergação</th><th>Próximo Due Date</th></tr></thead>
             <tbody>
-              {postVis.length === 0 && <tr><td colSpan={7} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico postergado.</td></tr>}
+              {postVis.length === 0 && <tr><td colSpan={9} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico postergado.</td></tr>}
               {postVis.slice(0, 600).map((r) => (
                 <tr className="g-row tbl-row" key={r.key} style={{ "--c": "#8B5CF6" }}>
-                  <td><b>{r._grupo}</b></td>
+                  <td><b>{critLabel(r._grupo)}</b></td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.componentCode || "—"}</td>
                   <td>{r.componentName || "—"}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
-                  <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.jobName || "—"}</td>
                   <td>{r.jobType || "—"}</td>
-                  <td style={{ fontFamily: "var(--mono)" }}>{fmtDataCompleta(r.ultimaData)}</td>
+                  <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.jobName || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtD(r.primeiraData)}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtD(r.ultimaData)}</td>
+                  <td style={{ fontFamily: "var(--mono)" }}>{fmtD(r.proximoDue, r.proximoDueRaw)}</td>
                 </tr>
               ))}
             </tbody>
@@ -5110,7 +5155,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
     const gap = (new Date(h.dueDate) - new Date(h.dateDone)) / 86400000;
     return gap >= -180 && gap <= 180 ? h.dueDate : "";
   };
-  const monthlyJobs = (test, comHistory = true) => {
+  const monthlyJobs = (test, comHistory = true, histKey = null) => {
     const map = {};
     const row = (k) => (map[k] = map[k] || { mesKey: k, abertos: 0, vencidos: 0, aVencer: 0, executados: 0, postergados: 0 });
     tmDueForMetrics.filter(test).forEach((d) => {
@@ -5119,15 +5164,15 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
       if (isVencidoPlano(d)) r.vencidos++; else r.aVencer++;
     });
     if (comHistory) tmHistoryForMetrics.filter(test).forEach((h) => {
-      const k = ymOf(dueValidoHist(h) || h.dateDone); if (!k) return;
+      const k = histKey ? histKey(h) : ymOf(dueValidoHist(h) || h.dateDone); if (!k) return;
       const r = row(k);
       if (isPostergada(h)) r.postergados++; else r.executados++;
     });
     return Object.values(map).sort((a, b) => a.mesKey.localeCompare(b.mesKey))
       .map((r) => ({ ...r, mes: ymLabel(r.mesKey), previsto: r.abertos + r.executados + r.postergados, realizado: r.executados }));
   };
-  const planejamentoMensal = useMemo(() => monthlyJobs(() => true, false), [tmDueForMetrics, hojeLocal]);
-  const corretivasMensal = useMemo(() => monthlyJobs(isCorretiva, false), [tmDueForMetrics, hojeLocal]);
+  const planejamentoMensal = useMemo(() => monthlyJobs(() => true, true, (h) => ymOf(h.dateDone)), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+  const corretivasMensal = useMemo(() => monthlyJobs(isCorretiva, true, (h) => ymOf(h.dateDone)), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
   const aderenciaMensal = useMemo(() => monthlyJobs(() => true), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
   const inspecaoMensal = useMemo(() => monthlyJobs((x) => jtOf(x) === "INS"), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
   const overhaulMensal = useMemo(() => monthlyJobs((x) => jtOf(x) === "OVH"), [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
@@ -5149,30 +5194,33 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
       if (isPostergada(h)) { if (!lastPost.has(k) || h.dateDone > lastPost.get(k)) lastPost.set(k, h.dateDone); }
       else if (!lastDone.has(k) || h.dateDone > lastDone.get(k)) lastDone.set(k, h.dateDone);
     });
+    /* planos que ainda estão no Due: em aberto, e quais deles já estão vencidos */
+    const abertoPlano = new Map();
+    tmDue.forEach((d) => { const k = planKey(d); const cur = abertoPlano.get(k) || { aberto: true, vencido: false }; if (isVencidoPlano(d)) cur.vencido = true; abertoPlano.set(k, cur); });
     const map = {};
     tmHistory.forEach((h) => {
       if (!h.dateDone || !isPostergada(h)) return;
       if (metricasFiltro.ano !== "Todos" && h.dateDone.slice(0, 4) !== String(metricasFiltro.ano)) return;
       const k = ymOf(h.dateDone); const pk = planKey(h);
-      const r = (map[k] = map[k] || { total: 0, realizados: 0 });
+      const r = (map[k] = map[k] || { total: 0, realizados: 0, emAberto: 0, vencidos: 0 });
       r.total++;
       if (lastDone.has(pk) && lastDone.get(pk) > lastPost.get(pk)) r.realizados++;
+      const ab = abertoPlano.get(pk);
+      if (ab) { r.emAberto++; if (ab.vencido) r.vencidos++; }
     });
-    const rows = Object.keys(map).sort().map((k) => ({ mes: ymLabel(k), mesKey: k, total: map[k].total, realizados: map[k].realizados }));
-    return { rows, total: rows.reduce((a, r) => a + r.total, 0), realizados: rows.reduce((a, r) => a + r.realizados, 0) };
-  }, [tmHistory, metricasFiltro.ano]);
+    const rows = Object.keys(map).sort().map((k) => ({ mes: ymLabel(k), mesKey: k, ...map[k] }));
+    const sm = (f) => rows.reduce((a, r) => a + r[f], 0);
+    return { rows, total: sm("total"), realizados: sm("realizados"), emAberto: sm("emAberto"), vencidos: sm("vencidos") };
+  }, [tmHistory, tmDue, metricasFiltro.ano, hojeLocal]);
   const postergadosPorTipo = useMemo(() => {
     const map = {};
     tmHistoryForMetrics.filter(isPostergada).forEach((h) => { const k = jtOf(h) || "—"; map[k] = (map[k] || 0) + 1; });
     return Object.entries(map).map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total).slice(0, 15);
   }, [tmHistoryForMetrics]);
   const postergadosDoMes = useMemo(() => {
-    const d0 = new Date();
-    const ano = metricasFiltro.ano !== "Todos" ? String(metricasFiltro.ano) : String(d0.getFullYear());
-    const mes = metricasFiltro.mes !== "Todos" ? String(metricasFiltro.mes).padStart(2, "0") : String(d0.getMonth() + 1).padStart(2, "0");
-    const key = `${ano}-${mes}`;
+    const key = hojeLocal.slice(0, 7);
     return { key, label: ymLabel(key), total: tmHistory.filter((h) => isPostergada(h) && ymOf(h.dateDone) === key).length };
-  }, [tmHistory, metricasFiltro]);
+  }, [tmHistory, hojeLocal]);
 
   /* cumprimento de prazo: Due date x Data assinada (só execuções, sem postergações) */
   const cumprimentoPrazo = useMemo(() => {
@@ -5194,33 +5242,61 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
 
   /* jobs críticos (pelo código do componente) */
   const criticosAnalise = useMemo(() => {
+    const planoKey = (x) => `${codeOfJob(x)}|${jtOf(x)}|${jobNoOf(x)}`;
+    const proxDue = new Map(); /* próximo Due em aberto de cada plano (o mais antigo) */
+    tmDue.forEach((d) => {
+      const k = planoKey(d); const cur = proxDue.get(k); const v = d.dueDate || "";
+      if (!cur) proxDue.set(k, { dueDate: v, dueRaw: d.dueRaw || "" });
+      else if (v && (!cur.dueDate || v < cur.dueDate)) proxDue.set(k, { dueDate: v, dueRaw: d.dueRaw || "" });
+    });
     const due = tmDueForMetrics.filter((d) => critPrefixOf(d.code)).map((d) => {
       const venc = isVencidoPlano(d);
       const a = atrasoDias(d);
       return { ...d, _grupo: critPrefixOf(d.code), _sit: venc ? "Vencido" : isAteVencer40(d) ? "A vencer (até 40d)" : "No prazo",
         _atraso: venc ? (a === null ? "" : `${a} dias`) : "", _ord: venc ? -(a || 0) : (semDiffJob(d) ? 1e9 : d.diffValue) };
     }).sort((x, y) => x._ord - y._ord);
+    const histCrit = tmHistoryForMetrics.filter((h) => critPrefixOf(h.componentCode));
+    const postRegs = histCrit.filter(isPostergada);
+    const execs = histCrit.filter((h) => !isPostergada(h));
     const map = new Map();
-    tmHistoryForMetrics.filter((h) => isPostergada(h) && critPrefixOf(h.componentCode)).forEach((h) => {
-      const key = `${h.componentCode || ""}|${h.jobNo || ""}|${h.jobName || ""}`;
+    postRegs.forEach((h) => {
+      const key = planoKey(h);
       const cur = map.get(key);
-      if (!cur) map.set(key, { key, _grupo: critPrefixOf(h.componentCode), componentCode: h.componentCode, componentName: h.componentName, jobNo: h.jobNo, jobName: h.jobName, jobType: h.jobType, ultimaData: h.dateDone || "", registros: 1 });
-      else { cur.registros++; if ((h.dateDone || "") > cur.ultimaData) cur.ultimaData = h.dateDone || ""; }
+      if (!cur) {
+        const pd = proxDue.get(key);
+        map.set(key, { key, _grupo: critPrefixOf(h.componentCode), componentCode: h.componentCode, componentName: h.componentName, jobNo: h.jobNo, jobName: h.jobName, jobType: h.jobType,
+          primeiraData: h.dateDone || "", ultimaData: h.dateDone || "", registros: 1, proximoDue: pd ? pd.dueDate : "", proximoDueRaw: pd ? pd.dueRaw : "" });
+      } else {
+        cur.registros++;
+        if ((h.dateDone || "") > cur.ultimaData) cur.ultimaData = h.dateDone || "";
+        if (h.dateDone && (!cur.primeiraData || h.dateDone < cur.primeiraData)) cur.primeiraData = h.dateDone;
+      }
     });
     const post = [...map.values()].sort((a, b) => b.ultimaData.localeCompare(a.ultimaData));
-    const registrosPost = tmHistoryForMetrics.filter((h) => isPostergada(h) && critPrefixOf(h.componentCode)).length;
-    const porGrupo = CRITICAL_PREFIXES.map((g) => {
-      const dd = due.filter((r) => r._grupo === g);
-      return { grupo: g, vencidos: dd.filter((r) => r._sit === "Vencido").length, aVencer: dd.filter((r) => r._sit === "A vencer (até 40d)").length,
-        noPrazo: dd.filter((r) => r._sit === "No prazo").length,
-        postergados: tmHistoryForMetrics.filter((h) => isPostergada(h) && critPrefixOf(h.componentCode) === g).length };
-    });
+    const metricas = (dd, ex, ps) => {
+      const comDatas = ex.filter((h) => dueValidoHist(h) && h.dateSigned);
+      const noPrazoN = comDatas.filter((h) => h.dateSigned <= h.dueDate).length;
+      const venc = dd.filter((r) => r._sit === "Vencido").length;
+      const base = ex.length + ps.length + venc;
+      return {
+        vencidos: venc, aVencer: dd.filter((r) => r._sit === "A vencer (até 40d)").length, noPrazo: dd.filter((r) => r._sit === "No prazo").length,
+        executados: ex.length, postergados: ps.length,
+        pctPrazo: comDatas.length ? Math.round((noPrazoN / comDatas.length) * 100) : null,
+        taxaPost: ex.length + ps.length ? Math.round((ps.length / (ex.length + ps.length)) * 100) : null,
+        eficiencia: base ? Math.round((noPrazoN / base) * 100) : null, noPrazoN, comDatasN: comDatas.length, baseN: base,
+      };
+    };
+    const porGrupo = CRITICAL_GROUPS.map((g) => ({
+      grupo: g.cod, nome: critLabel(g.cod),
+      ...metricas(due.filter((r) => r._grupo === g.cod), execs.filter((h) => critPrefixOf(h.componentCode) === g.cod), postRegs.filter((h) => critPrefixOf(h.componentCode) === g.cod)),
+    }));
+    const total = metricas(due, execs, postRegs);
     return {
       due, post, porGrupo,
-      kpis: { abertos: due.length, vencidos: due.filter((r) => r._sit === "Vencido").length, aVencer: due.filter((r) => r._sit === "A vencer (até 40d)").length,
-        noPrazo: due.filter((r) => r._sit === "No prazo").length, postergados: post.length, registrosPost },
+      kpis: { abertos: due.length, vencidos: total.vencidos, aVencer: total.aVencer, noPrazo: total.noPrazo, postergados: post.length, registrosPost: postRegs.length,
+        executados: total.executados, pctPrazo: total.pctPrazo === null ? 0 : total.pctPrazo, taxaPost: total.taxaPost === null ? 0 : total.taxaPost, eficiencia: total.eficiencia === null ? 0 : total.eficiencia },
     };
-  }, [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
+  }, [tmDue, tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
 
   /* jobs preditivos: cada job (tipo + nº) é contado uma vez por data, mesmo com vários componentes */
   const preditivosAnalise = useMemo(() => {
@@ -5321,19 +5397,20 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           { label: "Total Fechado", value: totalHistory },
           { label: "Corretivas Fechadas", value: corretivasFechadas.length },
           { label: "Postergadas", value: postergadas.length },
-          { label: `Postergados em ${postergadosDoMes.label}`, value: postergadosDoMes.total },
+          { label: "Postergados no Mês Atual", value: postergadosDoMes.total },
           { label: "% No Prazo (Due × Assinada)", value: `${cumprimentoPrazo.pct}%` },
         ]);
         const secao = (titulo, cols, rows) => { if (y > 235) { doc.addPage(); y = 15; } y = pdfSectionTitle(doc, y, titulo); y = pdfTable(doc, y, cols, rows); };
-        secao("Planejamento mensal", ["Mês", "Abertos", "Vencidos", "A Vencer"], planejamentoMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer]));
-        secao("Corretivas (Job Type = One)", ["Mês", "Abertos", "Vencidos", "A Vencer"], corretivasMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer]));
-        secao("Postergados por mês", ["Mês", "Postergados", "Realizados após a postergação"], postergadosAnalise.rows.map((r) => [r.mes, r.total, r.realizados]));
+        secao("Planejamento mensal", ["Mês", "Abertos", "Vencidos", "A Vencer", "Fechados"], planejamentoMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer, r.executados]));
+        secao("Corretivas (Job Type = One)", ["Mês", "Abertos", "Vencidos", "A Vencer", "Fechados"], corretivasMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer, r.executados]));
+        secao("Postergados por mês", ["Mês", "Postergados", "Realizados após", "Ainda em aberto", "Vencidos"], postergadosAnalise.rows.map((r) => [r.mes, r.total, r.realizados, r.emAberto, r.vencidos]));
         secao("Postergados por Job Type", ["Job Type", "Postergados"], postergadosPorTipo.map((r) => [r.nome, r.total]));
         secao("Aderência no Due", ["Mês", "Previsto", "Realizado", "A Vencer"], aderenciaMensal.map((r) => [r.mes, r.previsto, r.realizado, r.aVencer]));
-        secao("Jobs de Inspeção", ["Mês", "Previstos", "Executados"], inspecaoMensal.map((r) => [r.mes, r.previsto, r.realizado]));
+        secao("Jobs de Inspeção", ["Mês", "Previstos", "Executados", "Postergados"], inspecaoMensal.map((r) => [r.mes, r.previsto, r.realizado, r.postergados]));
         secao("Jobs de Overhaul", ["Mês", "Previstos", "Executados", "Postergados"], overhaulMensal.map((r) => [r.mes, r.previsto, r.realizado, r.postergados]));
-        secao(`Jobs críticos — ${criticosAnalise.kpis.abertos} em aberto · ${criticosAnalise.kpis.vencidos} vencidos · ${criticosAnalise.kpis.aVencer} a vencer (40d) · ${criticosAnalise.kpis.postergados} postergados`,
-          ["Grupo", "Vencidos", "A vencer (40d)", "No prazo", "Postergados"], criticosAnalise.porGrupo.map((r) => [r.grupo, r.vencidos, r.aVencer, r.noPrazo, r.postergados]));
+        secao(`Jobs críticos — ${criticosAnalise.kpis.abertos} em aberto · ${criticosAnalise.kpis.vencidos} vencidos · ${criticosAnalise.kpis.aVencer} a vencer (40d) · ${criticosAnalise.kpis.postergados} postergados · eficiência ${criticosAnalise.kpis.eficiencia}%`,
+          ["Grupo", "Em atraso", "A vencer", "No prazo", "Executados", "Postergados", "% no prazo", "Taxa postergação", "Eficiência"],
+          criticosAnalise.porGrupo.map((r) => [r.nome, r.vencidos, r.aVencer, r.noPrazo, r.executados, r.postergados, r.pctPrazo === null ? "—" : `${r.pctPrazo}%`, r.taxaPost === null ? "—" : `${r.taxaPost}%`, r.eficiencia === null ? "—" : `${r.eficiencia}%`]));
         secao(`Jobs preditivos — eficiência ${preditivosAnalise.kpis.eficiencia}%`,
           ["Análise", "Em atraso", "A vencer", "Executados", "Postergados", "% no prazo", "Eficiência"],
           preditivosAnalise.rows.map((r) => [r.grupo, r.vencidos, r.aVencer, r.executados, r.postergados, r.pctPrazo === null ? "—" : `${r.pctPrazo}%`, r.eficiencia === null ? "—" : `${r.eficiencia}%`]));
@@ -5372,15 +5449,16 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
       } else {
         if (metricasView !== "planos") {
           const add = (nome, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), nome);
-          add("Planejamento Mensal", planejamentoMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer })));
+          add("Planejamento Mensal", planejamentoMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer, Fechados: r.executados })));
           add("Aderência no Due", aderenciaMensal.map((r) => ({ "Mês": r.mes, Previsto: r.previsto, Realizado: r.realizado, "A Vencer": r.aVencer })));
-          add("Corretivas Mensal", corretivasMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer })));
-          add("Postergados por Mês", postergadosAnalise.rows.map((r) => ({ "Mês": r.mes, Postergados: r.total, "Realizados após a postergação": r.realizados })));
+          add("Corretivas Mensal", corretivasMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer, Fechados: r.executados })));
+          add("Postergados por Mês", postergadosAnalise.rows.map((r) => ({ "Mês": r.mes, Postergados: r.total, "Realizados após a postergação": r.realizados, "Ainda em aberto": r.emAberto, Vencidos: r.vencidos })));
           add("Postergados por Job Type", postergadosPorTipo.map((r) => ({ "Job Type": r.nome, Postergados: r.total })));
-          add("Jobs de Inspeção", inspecaoMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado })));
+          add("Jobs de Inspeção", inspecaoMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado, Postergados: r.postergados })));
           add("Jobs de Overhaul", overhaulMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado, Postergados: r.postergados })));
-          add("Jobs Críticos (abertos)", criticosAnalise.due.map((r) => ({ Grupo: r._grupo, "Código": r.code, Componente: r.component, "Job No": r.jobNo, Plano: r.jobName, Tipo: r.jobType, Due: r.dueDate || r.dueRaw, "Situação": r._sit, Atraso: r._atraso })));
-          add("Jobs Críticos (postergados)", criticosAnalise.post.map((r) => ({ Grupo: r._grupo, "Código": r.componentCode, Componente: r.componentName, "Job No": r.jobNo, Plano: r.jobName, Tipo: r.jobType, "Última Postergação": r.ultimaData })));
+          add("Jobs Críticos por Grupo", criticosAnalise.porGrupo.map((r) => ({ Grupo: r.nome, "Em Atraso": r.vencidos, "A Vencer": r.aVencer, "No Prazo": r.noPrazo, Executados: r.executados, Postergados: r.postergados, "% No Prazo": r.pctPrazo, "Taxa de Postergação %": r.taxaPost, "Eficiência %": r.eficiencia })));
+          add("Jobs Críticos (abertos)", criticosAnalise.due.map((r) => ({ Grupo: critLabel(r._grupo), "Código": r.code, Componente: r.component, "Job No": r.jobNo, "Job Type": r.jobType, Plano: r.jobName, Due: r.dueDate || r.dueRaw, "Situação": r._sit, Atraso: r._atraso })));
+          add("Jobs Críticos (postergados)", criticosAnalise.post.map((r) => ({ Grupo: critLabel(r._grupo), "Código": r.componentCode, Componente: r.componentName, "Job No": r.jobNo, "Job Type": r.jobType, Plano: r.jobName, "1ª Postergação": r.primeiraData, "Última Postergação": r.ultimaData, "Próximo Due Date": r.proximoDue || r.proximoDueRaw })));
           add("Jobs Preditivos", preditivosAnalise.rows.map((r) => ({ "Análise": r.grupo, "Em Atraso": r.vencidos, "A Vencer": r.aVencer, Executados: r.executados, Postergados: r.postergados, "% No Prazo": r.pctPrazo, "Taxa de Postergação %": r.taxaPost, "Eficiência %": r.eficiencia })));
           add("Cumprimento de Prazo", cumprimentoPrazo.faixas.map((r) => ({ Faixa: r.nome, Jobs: r.total })));
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
@@ -5720,19 +5798,19 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           {metricasView === "geral" && (
           <>
           <MesBarChart title="Planejamento Mensal" data={planejamentoMensal}
-            subtitle="Jobs do Due agrupados pelo mês de vencimento: total em aberto, quantos já estão vencidos e quantos ainda estão a vencer."
-            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }]} />
+            subtitle="Abertos, vencidos e a vencer: jobs do Due pelo mês de vencimento. Fechados: jobs do History fechados naquele mês (sem contar postergações)."
+            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }, { key: "executados", name: "Fechados", color: "#22C55E" }] } />
 
           <MesBarChart title="Corretivas (Job Type = One)" data={corretivasMensal}
-            subtitle="Corretivas (Job type ONE) do Due, agrupadas pelo mês de vencimento: abertas, vencidas e a vencer."
-            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }]} />
+            subtitle="Corretivas (Job type ONE). Abertos, vencidos e a vencer pelo mês de vencimento; fechados pelo mês de fechamento (sem contar postergações)."
+            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }, { key: "executados", name: "Fechados", color: "#22C55E" }] } />
 
           <PostergadosAnalise analise={postergadosAnalise} porTipo={postergadosPorTipo} />
 
           <div className="g-grid-2">
             <MesBarChart title="Jobs de Inspeção" data={inspecaoMensal}
-              subtitle="Job Type INS: previstos no mês (pelo Due date) x executados."
-              bars={[{ key: "previsto", name: "Previstos", color: "#94A3B8" }, { key: "realizado", name: "Executados", color: "#22C55E" }]} />
+              subtitle="Job Type INS: previstos no mês (pelo Due date), executados e postergados."
+              bars={[{ key: "previsto", name: "Previstos", color: "#94A3B8" }, { key: "realizado", name: "Executados", color: "#22C55E" }, { key: "postergados", name: "Postergados", color: "#F5A623" }]} />
             <MesBarChart title="Jobs de Overhaul" data={overhaulMensal}
               subtitle="Job Type OVH: previstos no mês (pelo Due date), executados e postergados."
               bars={[{ key: "previsto", name: "Previstos", color: "#94A3B8" }, { key: "realizado", name: "Executados", color: "#22C55E" }, { key: "postergados", name: "Postergados", color: "#F5A623" }]} />
@@ -5749,7 +5827,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
             {bigKpi("A Vencer em 40 dias", ateVencer40.length, "var(--warn)", Clock)}
             {bigKpi("Críticas Vencidas/≤40d", criticasVencidasOu40.length, "var(--crit)", AlertTriangle)}
             {bigKpi("Corretivas (ONE)", corretivasDue.length, "var(--text-dim)", Wrench)}
-            {bigKpi(`Postergados em ${postergadosDoMes.label}`, postergadosDoMes.total, "var(--warn)", AlertTriangle)}
+            {bigKpi("Postergados no Mês Atual", postergadosDoMes.total, "var(--warn)", AlertTriangle)}
           </div>
 
           <div className="g-grid-2">
