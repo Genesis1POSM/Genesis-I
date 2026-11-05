@@ -97,6 +97,8 @@ const Theme = () => (
     .g-bell-item { display: grid; grid-template-columns: 104px 1fr; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; align-items: center; }
     .g-bell-days { white-space: nowrap; font-weight: 700; text-align: center; padding: 4px 6px; border-radius: 6px; font-size: 11.5px; }
     .g-bell-days.d1 { background: #FEE2E2; color: #B91C1C; } .g-bell-days.d2 { background: #FEF3C7; color: #B45309; } .g-bell-days.d3 { background: #E0E7FF; color: #3730A3; }
+    .g-ro .g-btn.primary:not(.g-keep), .g-ro .g-btn.ghost.danger, .g-ro .g-edit-only { display: none !important; }
+    .g-ro .g-table tbody input, .g-ro .g-table tbody select, .g-ro .g-table tbody textarea { pointer-events: none; }
     .g-alert-banner { margin: 10px 22px 0 22px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: #FFF7E6; border: 1px solid #F5C77A; color: #8A5300; font-size: 13px; }
     .g-nav-item { border-radius: 8px !important; }
     .g-nav-item.active { border-bottom-color: transparent !important; background: var(--accent-dim) !important; font-weight: 600; }
@@ -949,7 +951,7 @@ const AlertaVencimentos = ({ itens, dias, setDias, incluirVencidos, setIncluirVe
             </div>
             <div style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center" }}>
               <span className="g-muted" style={{ fontSize: 11.5 }}>Jobs em horas de máquina não entram (não têm data).</span>
-              <button className="g-btn primary" style={{ marginLeft: "auto" }} onClick={() => { setAberto(false); onAbrir(); }}>Abrir TM Master</button>
+              <button className="g-btn primary g-keep" style={{ marginLeft: "auto" }} onClick={() => { setAberto(false); onAbrir(); }}>Abrir TM Master</button>
             </div>
           </div>
         </>
@@ -1101,10 +1103,30 @@ function applySort(rows, sort, getters = {}) {
    LOGIN SCREEN (client-side demo gate — no real backend/security)
    ============================================================ */
 const DEFAULT_USERS = [
-  { id: uid("USR"), name: "Lethicia", username: "lethicia", password: "GenesisI" },
+  { id: uid("USR"), name: "Lethicia", username: "lethicia", password: "GenesisI", admin: true },
   { id: uid("USR"), name: "Davi", username: "davi", password: "GenesisI" },
   { id: uid("USR"), name: "Mariana", username: "mariana", password: "GenesisI" },
 ];
+
+/* PERMISSÕES — admin (só a Lethicia) vê Configurações e gerencia usuários.
+   role "viewer" = somente leitura; tabs = abas liberadas (sem o campo = todas). */
+const PERM_TABS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "services", label: "Serviços" },
+  { key: "planejamento", label: "Planejamento" },
+  { key: "tmmaster", label: "TM Master" },
+  { key: "materials", label: "Materiais" },
+  { key: "payments", label: "Pagamentos" },
+  { key: "costs", label: "Custos" },
+];
+const isAdminUser = (u) => !!u && (u.admin === true || (u.admin === undefined && String(u.username || "").toLowerCase() === "lethicia"));
+const isViewerUser = (u) => !!u && !isAdminUser(u) && u.role === "viewer";
+const allowedTabsOf = (u) => {
+  const all = PERM_TABS.map((t) => t.key);
+  if (!u || isAdminUser(u) || !Array.isArray(u.tabs)) return all;
+  const ok = all.filter((k) => u.tabs.includes(k));
+  return ok.length ? ok : all.slice(0, 1);
+};
 
 function LoginScreen({ users, onLogin }) {
   const [u, setU] = useState("");
@@ -1437,7 +1459,10 @@ export default function Root() {
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [users, setUsers] = useState(DEFAULT_USERS);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUserRaw, setCurrentUser] = useState(null);
+  const currentUser = currentUserRaw ? (users.find((x) => x.id === currentUserRaw.id) || currentUserRaw) : null;
+  const roMode = isViewerUser(currentUser);
+  const noop = () => {};
 
   const [workPackages, setWorkPackages] = useState(INITIAL_WORK_PACKAGES);
   const [materials, setMaterials] = useState(INITIAL_MATERIALS);
@@ -1502,7 +1527,7 @@ export default function Root() {
      independente de qual usuário fez a alteração. Só roda depois de um load bem-sucedido
      (saveEnabled) — nunca com dados ainda não confirmados vindos do servidor. */
   React.useEffect(() => {
-    if (!loaded || !saveEnabled) return;
+    if (!loaded || !saveEnabled || roMode) return;
     const t = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
@@ -1513,7 +1538,7 @@ export default function Root() {
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
+  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots]);
 
   if (!loaded) {
     return (
@@ -1543,18 +1568,19 @@ export default function Root() {
     <Genesis
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
-      users={users} setUsers={setUsers}
-      workPackages={workPackages} setWorkPackages={setWorkPackages}
-      materials={materials} setMaterials={setMaterials}
-      payments={payments} setPayments={setPayments}
-      serviceInvoices={serviceInvoices} setServiceInvoices={setServiceInvoices}
-      portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta}
-      opCategories={opCategories} setOpCategories={setOpCategories}
-      exchangeRate={exchangeRate} setExchangeRate={setExchangeRate}
-      planningItems={planningItems} setPlanningItems={setPlanningItems}
-      docagemItems={docagemItems} setDocagemItems={setDocagemItems}
-      tmDue={tmDue} setTmDue={setTmDue} tmHistory={tmHistory} setTmHistory={setTmHistory}
-      tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={setTmDueSnapshots}
+      readOnly={roMode}
+      users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop}
+      workPackages={workPackages} setWorkPackages={roMode ? noop : setWorkPackages}
+      materials={materials} setMaterials={roMode ? noop : setMaterials}
+      payments={payments} setPayments={roMode ? noop : setPayments}
+      serviceInvoices={serviceInvoices} setServiceInvoices={roMode ? noop : setServiceInvoices}
+      portCallMeta={portCallMeta} setPortCallMeta={roMode ? noop : setPortCallMeta}
+      opCategories={opCategories} setOpCategories={roMode ? noop : setOpCategories}
+      exchangeRate={exchangeRate} setExchangeRate={roMode ? noop : setExchangeRate}
+      planningItems={planningItems} setPlanningItems={roMode ? noop : setPlanningItems}
+      docagemItems={docagemItems} setDocagemItems={roMode ? noop : setDocagemItems}
+      tmDue={tmDue} setTmDue={roMode ? noop : setTmDue} tmHistory={tmHistory} setTmHistory={roMode ? noop : setTmHistory}
+      tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       loadError={loadError}
     />
   );
@@ -1563,13 +1589,16 @@ export default function Root() {
 /* ============================================================
    MAIN APP
    ============================================================ */
-function Genesis({ currentUser, onLogout, users, setUsers,
+function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
   tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, loadError }) {
-  const [tab, setTab] = useState("dashboard");
+  const isAdmin = isAdminUser(currentUser);
+  const allowedTabs = allowedTabsOf(currentUser);
+  const [tabState, setTab] = useState(allowedTabs[0]);
+  const tab = tabState === "settings" ? (isAdmin ? "settings" : allowedTabs[0]) : (allowedTabs.includes(tabState) ? tabState : allowedTabs[0]);
   const [newRowId, setNewRowId] = useState(null);
   /* usado sempre que uma linha nova é criada (novo serviço, novo material, novo registro de pagamento):
      guarda o id por alguns segundos pra a linha poder ser destacada e "scrollada" até a visão do usuário */
@@ -2616,10 +2645,10 @@ function Genesis({ currentUser, onLogout, users, setUsers,
     { key: "payments", label: "Pagamentos", icon: Wallet },
     { key: "costs", label: "Custos", icon: Calculator },
     { key: "settings", label: "Configurações", icon: Settings },
-  ];
+  ].filter((n) => (n.key === "settings" ? isAdmin : allowedTabs.includes(n.key)));
 
   return (
-    <div className="genesis">
+    <div className={`genesis${readOnly ? " g-ro" : ""}`}>
       <Theme />
 
       {/* Horizontal top nav */}
@@ -2639,8 +2668,8 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             </div>
           ))}
         </div>
-        <AlertaVencimentos itens={alertaItens} dias={alertaDias} setDias={setAlertaDias} incluirVencidos={alertaVencidos} setIncluirVencidos={setAlertaVencidos} onAbrir={abrirTmMaster} />
-        {currentUser && <span style={{ fontSize: 12, whiteSpace: "nowrap", color: "var(--navbar-text)" }}>{currentUser.name}</span>}
+        {allowedTabs.includes("tmmaster") && <AlertaVencimentos itens={alertaItens} dias={alertaDias} setDias={setAlertaDias} incluirVencidos={alertaVencidos} setIncluirVencidos={setAlertaVencidos} onAbrir={abrirTmMaster} />}
+        {currentUser && <span style={{ fontSize: 12, whiteSpace: "nowrap", color: "var(--navbar-text)" }}>{currentUser.name}{readOnly ? " (somente leitura)" : ""}</span>}
         {onLogout && <div className="g-logout" onClick={onLogout}><LogOut size={14} />Sair</div>}
       </div>
 
@@ -2716,7 +2745,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         </div>
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
-          {tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
+          {tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
           <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
@@ -2727,7 +2756,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
         </div>
       </div>
 
-      {!alertaBannerFechado && alertaVinte.length > 0 && (
+      {allowedTabs.includes("tmmaster") && !alertaBannerFechado && alertaVinte.length > 0 && (
         <div className="g-alert-banner">
           <Bell size={16} />
           <span><b>{alertaVinte.length} job(s)</b> vencem em até {alertaDias} dias. Clique no sino para ver a lista.</span>
@@ -4309,7 +4338,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
             </div>
             <div className="g-flex" style={{ gap: 8 }}>
               <input ref={docagemFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportDocagem} />
-              <button className="g-btn" onClick={() => docagemFileRef.current?.click()}>
+              <button className="g-btn g-edit-only" onClick={() => docagemFileRef.current?.click()}>
                 <Upload size={14} />Importar planilha DNV
               </button>
               <button className="g-btn primary" onClick={addDocagemItem}>
@@ -7889,40 +7918,70 @@ function CostsView({ setExportXlsxFn, serviceInvoices, updInv, exchangeRate, set
 function SettingsView({ currentUser, users, setUsers }) {
   const updUser = (i, field, value) => setUsers((r) => r.map((u, idx) => (idx === i ? { ...u, [field]: value } : u)));
   const remUser = (i) => {
+    if (isAdminUser(users[i])) { window.alert("O administrador não pode ser removido."); return; }
     if (users.length <= 1) { window.alert("É preciso manter pelo menos um usuário cadastrado."); return; }
     setUsers((r) => r.filter((_, idx) => idx !== i));
   };
-  const addUser = () => setUsers((r) => [...r, { id: uid("USR"), name: "Novo usuário", username: `usuario${r.length + 1}`, password: "GenesisI" }]);
+  const addUser = () => setUsers((r) => [...r, { id: uid("USR"), name: "Novo usuário", username: `usuario${r.length + 1}`, password: "GenesisI", role: "viewer", tabs: ["dashboard"] }]);
+  const toggleTab = (i, key) => {
+    const u = users[i];
+    const cur = Array.isArray(u.tabs) ? u.tabs : PERM_TABS.map((t) => t.key);
+    const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
+    updUser(i, "tabs", next);
+  };
 
   return (
     <>
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Conta atual</span></div>
-        <div className="g-muted">Conectado como <strong style={{ color: "var(--text)" }}>{currentUser?.name}</strong> (usuário: {currentUser?.username})</div>
+        <div className="g-muted">Conectado como <strong style={{ color: "var(--text)" }}>{currentUser?.name}</strong> (usuário: {currentUser?.username}) — administrador</div>
       </div>
 
       <div className="g-panel">
         <div className="g-panel-head">
-          <span className="g-panel-title">Usuários e senhas de acesso</span>
+          <span className="g-panel-title">Usuários, senhas e permissões</span>
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
         <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
-          Login local ao navegador, apenas para separar o acesso entre as pessoas — não é uma autenticação segura de servidor.
+          Somente o administrador acessa Configurações. "Visualizador" só consulta (não edita, não importa, não exclui) e vê apenas as abas marcadas. Login local ao navegador — não é uma autenticação segura de servidor.
         </div>
         <table className="g-table">
           <thead>
-            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th></th></tr>
+            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Abas liberadas</th><th></th></tr>
           </thead>
           <tbody>
-            {users.map((u, i) => (
-              <tr className="g-row" key={u.id}>
-                <td style={{ minWidth: 160 }}><EText value={u.name} onChange={(v) => updUser(i, "name", v)} /></td>
-                <td style={{ minWidth: 140 }}><EText value={u.username} onChange={(v) => updUser(i, "username", v)} mono /></td>
-                <td style={{ minWidth: 140 }}><EText value={u.password} onChange={(v) => updUser(i, "password", v)} mono /></td>
-                <td><span className="g-btn ghost danger" onClick={() => remUser(i)}><Trash2 size={13} /></span></td>
-              </tr>
-            ))}
+            {users.map((u, i) => {
+              const adm = isAdminUser(u);
+              const tabs = Array.isArray(u.tabs) ? u.tabs : PERM_TABS.map((t) => t.key);
+              return (
+                <tr className="g-row" key={u.id}>
+                  <td style={{ minWidth: 150 }}><EText value={u.name} onChange={(v) => updUser(i, "name", v)} /></td>
+                  <td style={{ minWidth: 120 }}>{adm ? <span className="g-mono">{u.username}</span> : <EText value={u.username} onChange={(v) => updUser(i, "username", v)} mono />}</td>
+                  <td style={{ minWidth: 120 }}><EText value={u.password} onChange={(v) => updUser(i, "password", v)} mono /></td>
+                  <td style={{ minWidth: 150 }}>
+                    {adm ? <strong>Administrador</strong> : (
+                      <select value={u.role === "viewer" ? "viewer" : "editor"} onChange={(e) => updUser(i, "role", e.target.value)}>
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Visualizador</option>
+                      </select>
+                    )}
+                  </td>
+                  <td style={{ minWidth: 330 }}>
+                    {adm ? <span className="g-muted">Todas + Configurações</span> : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                        {PERM_TABS.map((t) => (
+                          <label key={t.key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+                            <input type="checkbox" checked={tabs.includes(t.key)} onChange={() => toggleTab(i, t.key)} />{t.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td>{!adm && <span className="g-btn ghost danger" onClick={() => remUser(i)}><Trash2 size={13} /></span>}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
