@@ -4654,14 +4654,65 @@ const PlanosAtencao = ({ postergados, vencidos, totalRegistrosPost }) => {
 };
 
 /* ---------- Visão Geral das Métricas: componentes das novas análises ---------- */
+/* grupos críticos = 3 primeiros dígitos do código do componente (planilha PMS Change Request 011/2026 - Critical) */
 const CRITICAL_GROUPS = [
-  { cod: "601", nome: "Motores Principais" }, { cod: "404", nome: "Side Thrusters" }, { cod: "403", nome: "Steering Gear" },
-  { cod: "331", nome: "Offshore Crane" }, { cod: "376", nome: "Inert Gas Systems" }, { cod: "571", nome: "AC Accommodation" },
-  { cod: "701", nome: "FO Transfer" }, { cod: "721", nome: "Sea Water Cooling" }, { cod: "722", nome: "Fresh Water Cooling" },
-  { cod: "731", nome: "Starting Air System" }, { cod: "812", nome: "Emergency Shutdown" }, { cod: "871", nome: "Main Switchboards" },
-  { cod: "872", nome: "Emergency Switchboards" }, { cod: "865", nome: "Transformers" },
+  { cod: "331", nome: "Offshore Crane", crit: "Operação" },
+  { cod: "403", nome: "Steering Gear", crit: "Segurança" },
+  { cod: "404", nome: "Side Thrusters", crit: "Operação" },
+  { cod: "408", nome: "K-Pos (Sistema de Posicionamento)", crit: "Operação" },
+  { cod: "411", nome: "Radares", crit: "Segurança" },
+  { cod: "412", nome: "DP Demodulators", crit: "Operação / Segurança" },
+  { cod: "413", nome: "Gyro Compasses", crit: "Segurança" },
+  { cod: "414", nome: "Navigational Echo Sounder", crit: "Segurança" },
+  { cod: "415", nome: "Loading Computer", crit: "Segurança" },
+  { cod: "417", nome: "Wind Indicators", crit: "Segurança" },
+  { cod: "421", nome: "GMDSS MF/HF - DSC Radio", crit: "Segurança" },
+  { cod: "422", nome: "GMDSS Portable VHF", crit: "Segurança" },
+  { cod: "427", nome: "Navigation Light Switchboards", crit: "Segurança" },
+  { cod: "433", nome: "Windlass / Mooring Winch", crit: "Operação" },
+  { cod: "434", nome: "Capstans", crit: "Operação" },
+  { cod: "501", nome: "FRC / MOB Boats", crit: "Segurança" },
+  { cod: "502", nome: "Inflatable Liferafts", crit: "Segurança" },
+  { cod: "503", nome: "Life Buoys", crit: "Segurança" },
+  { cod: "505", nome: "Smoke Diving Equipment", crit: "Segurança" },
+  { cod: "506", nome: "Portable Gas Detector", crit: "Segurança" },
+  { cod: "513", nome: "Watertight Doors", crit: "Segurança" },
+  { cod: "571", nome: "AC Accommodation", crit: "Operação" },
+  { cod: "573", nome: "Air Condition Units", crit: "Operação" },
+  { cod: "574", nome: "Ventilation / Air Cond.", crit: "Operação" },
+  { cod: "582", nome: "Sewage Treatment Unit", crit: "Meio Ambiente" },
+  { cod: "601", nome: "Motores Principais", crit: "Operação" },
+  { cod: "625", nome: "Main Generators", crit: "Operação" },
+  { cod: "632", nome: "Shaft Brake", crit: "Operação" },
+  { cod: "634", nome: "Pitch Propeller", crit: "Operação" },
+  { cod: "635", nome: "Azimuth Thruster", crit: "Operação" },
+  { cod: "637", nome: "Main Reduction Gear", crit: "Operação" },
+  { cod: "665", nome: "Emergency Engine", crit: "Segurança" },
+  { cod: "701", nome: "FO Transfer", crit: "Operação" },
+  { cod: "703", nome: "Diesel Oil Filters", crit: "Operação" },
+  { cod: "711", nome: "LO Transfer / Filters", crit: "Operação" },
+  { cod: "713", nome: "Lub Oil System", crit: "Operação" },
+  { cod: "721", nome: "Sea Water Cooling", crit: "Operação" },
+  { cod: "722", nome: "Fresh Water Cooling", crit: "Operação" },
+  { cod: "731", nome: "Starting Air System", crit: "Operação" },
+  { cod: "801", nome: "Anti Heeling Pump", crit: "Segurança / Meio Ambiente" },
+  { cod: "803", nome: "Bilge / Oily Water Separator", crit: "Segurança / Meio Ambiente" },
+  { cod: "811", nome: "Fire Alarm Central", crit: "Segurança" },
+  { cod: "812", nome: "Emergency Shutdown", crit: "Segurança" },
+  { cod: "813", nome: "Fire / Wash Down Pump", crit: "Segurança" },
+  { cod: "815", nome: "CO2 Plant", crit: "Segurança" },
+  { cod: "816", nome: "Deep Fat Fire-Extinguishing", crit: "Segurança" },
+  { cod: "865", nome: "Transformers", crit: "Operação" },
+  { cod: "866", nome: "Batteries", crit: "Segurança" },
+  { cod: "871", nome: "Main Switchboards", crit: "Operação" },
+  { cod: "872", nome: "Emergency Switchboards", crit: "Segurança" },
+  { cod: "875", nome: "Section & Distribution Boards", crit: "Operação" },
+  { cod: "891", nome: "Emergency Lights - Engine Rooms", crit: "Segurança" },
+  { cod: "892", nome: "Emergency Lights - Accommodation", crit: "Segurança" },
+  { cod: "893", nome: "Emergency Lights - Outside Decks", crit: "Segurança" },
 ];
 const CRITICAL_PREFIXES = CRITICAL_GROUPS.map((g) => g.cod);
+const critOf = (cod) => CRITICAL_GROUPS.find((x) => x.cod === cod)?.crit || "";
 const critLabel = (cod) => { const g = CRITICAL_GROUPS.find((x) => x.cod === cod); return g ? `${g.cod} - ${g.nome}` : cod; };
 const critPrefixOf = (code) => {
   const c = String(code || "").trim();
@@ -4749,12 +4800,17 @@ const CumprimentoPrazoPanel = ({ c }) => (
 const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
   const [vista, setVista] = useState("abertos");
   const [grupo, setGrupo] = useState("Todos");
+  const [criticidade, setCriticidade] = useState("Todas");
   const [sit, setSit] = useState("Todos");
   const [q, setQ] = useState("");
   const norm = (v) => String(v || "").toLowerCase();
-  const dueVis = due.filter((r) => (grupo === "Todos" || r._grupo === grupo) && (sit === "Todos" || r._sit === sit)
+  const okCrit = (cod) => criticidade === "Todas" || critOf(cod).includes(criticidade);
+  const gruposVis = CRITICAL_GROUPS.filter((g) => okCrit(g.cod));
+  const porGrupoVis = porGrupo.filter((r) => okCrit(r.grupo));
+  const porGrupoGrafico = porGrupoVis.filter((r) => r.vencidos + r.aVencer + r.noPrazo + r.postergados > 0);
+  const dueVis = due.filter((r) => okCrit(r._grupo) && (grupo === "Todos" || r._grupo === grupo) && (sit === "Todos" || r._sit === sit)
     && (!q || norm(`${r.code} ${r.component} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(q))));
-  const postVis = post.filter((r) => (grupo === "Todos" || r._grupo === grupo)
+  const postVis = post.filter((r) => okCrit(r._grupo) && (grupo === "Todos" || r._grupo === grupo)
     && (!q || norm(`${r.componentCode} ${r.componentName} ${r.jobName} ${r.jobNo} ${r.jobType}`).includes(norm(q))));
   const sitCls = { "Vencido": "d3", "A vencer (até 40d)": "d2", "No prazo": "d1" };
   const corPct = (v) => (v >= 80 ? "var(--ok)" : v >= 60 ? "var(--warn)" : "var(--crit)");
@@ -4764,7 +4820,7 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
     <div className="g-panel">
       <div className="g-panel-head"><span className="g-panel-title">Análise de Jobs Críticos</span></div>
       <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
-        Jobs cujo código de componente começa com: {CRITICAL_GROUPS.map((g) => g.cod).join(", ")}.
+        Componentes críticos conforme a planilha PMS Change Request 011/2026 (Critical to Operation / Safety / Environment) — {CRITICAL_GROUPS.length} grupos, identificados pelos 3 primeiros dígitos do código do componente. O gráfico mostra só os grupos com jobs.
       </div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         {bigKpi("Críticos em Aberto", kpis.abertos, "var(--teal)", ClipboardList)}
@@ -4779,11 +4835,11 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
         {bigKpi("Taxa de Postergação", `${kpis.taxaPost}%`, kpis.taxaPost <= 5 ? "var(--ok)" : kpis.taxaPost <= 15 ? "var(--warn)" : "var(--crit)", AlertTriangle)}
         {bigKpi("Índice de Eficiência", `${kpis.eficiencia}%`, corPct(kpis.eficiencia), Gauge)}
       </div>
-      <div style={{ width: "100%", height: 340 }}>
+      <div style={{ width: "100%", height: 400 }}>
         <ResponsiveContainer>
-          <BarChart data={porGrupo} margin={{ left: 50, right: 8, top: 20, bottom: 0 }}>
+          <BarChart data={porGrupoGrafico} margin={{ left: 70, right: 8, top: 20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-            <XAxis dataKey="nome" tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={78} />
+            <XAxis dataKey="nome" tick={AX} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-40} textAnchor="end" height={120} />
             <YAxis allowDecimals={false} tick={AX} axisLine={false} tickLine={false} width={36} />
             <Tooltip contentStyle={TT} labelStyle={{ color: "var(--text)" }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -4799,14 +4855,14 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
       <div className="g-table-wrap" style={{ marginBottom: 12 }}>
         <table className="g-table tbl-modern">
           <thead><tr>
-            <th>Grupo</th><th style={{ textAlign: "right" }}>Em Atraso</th><th style={{ textAlign: "right" }}>A Vencer</th><th style={{ textAlign: "right" }}>No Prazo</th>
+            <th>Grupo</th><th>Criticidade</th><th style={{ textAlign: "right" }}>Em Atraso</th><th style={{ textAlign: "right" }}>A Vencer</th><th style={{ textAlign: "right" }}>No Prazo</th>
             <th style={{ textAlign: "right" }}>Executados</th><th style={{ textAlign: "right" }}>Postergados</th><th style={{ textAlign: "right" }}>% No Prazo</th>
             <th style={{ textAlign: "right" }}>Taxa de Postergação</th><th style={{ textAlign: "right" }}>Eficiência</th>
           </tr></thead>
           <tbody>
-            {porGrupo.map((r) => (
+            {porGrupoVis.map((r) => (
               <tr className="g-row tbl-row" key={r.grupo} style={{ "--c": r.vencidos > 0 ? "#EF4444" : r.aVencer > 0 ? "#F5A623" : "#22C55E" }}>
-                <td><b>{r.nome}</b></td>
+                <td><b>{r.nome}</b></td><td>{critOf(r.grupo)}</td>
                 <td style={{ textAlign: "right" }}>{r.vencidos}</td><td style={{ textAlign: "right" }}>{r.aVencer}</td><td style={{ textAlign: "right" }}>{r.noPrazo}</td>
                 <td style={{ textAlign: "right" }}>{r.executados}</td><td style={{ textAlign: "right" }}>{r.postergados}</td>
                 <td style={{ textAlign: "right" }}>{r.pctPrazo === null ? "—" : `${r.pctPrazo}%`}</td>
@@ -4827,9 +4883,15 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
           <button className={vista === "abertos" ? "active" : ""} onClick={() => setVista("abertos")}>Em aberto ({due.length})</button>
           <button className={vista === "postergados" ? "active" : ""} onClick={() => setVista("postergados")}>Postergados ({post.length})</button>
         </div>
+        <select value={criticidade} onChange={(e) => { setCriticidade(e.target.value); setGrupo("Todos"); }} style={selStyle}>
+          <option value="Todas">Todas as criticidades</option>
+          <option value="Operação">Critical to Operation</option>
+          <option value="Segurança">Critical to Safety</option>
+          <option value="Meio Ambiente">Critical to Environment</option>
+        </select>
         <select value={grupo} onChange={(e) => setGrupo(e.target.value)} style={selStyle}>
           <option value="Todos">Todos os grupos</option>
-          {CRITICAL_GROUPS.map((g) => <option key={g.cod} value={g.cod}>{critLabel(g.cod)}</option>)}
+          {gruposVis.map((g) => <option key={g.cod} value={g.cod}>{critLabel(g.cod)}</option>)}
         </select>
         {vista === "abertos" && (
           <select value={sit} onChange={(e) => setSit(e.target.value)} style={selStyle}>
@@ -4842,12 +4904,12 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
       <div className="g-table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
         {vista === "abertos" ? (
           <table className="g-table tbl-modern">
-            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Job Type</th><th>Plano (Job Name)</th><th>Due</th><th>Situação</th></tr></thead>
+            <thead><tr><th>Grupo</th><th>Criticidade</th><th>Código</th><th>Componente</th><th>Job No</th><th>Job Type</th><th>Plano (Job Name)</th><th>Due</th><th>Situação</th></tr></thead>
             <tbody>
-              {dueVis.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico com esse filtro.</td></tr>}
+              {dueVis.length === 0 && <tr><td colSpan={9} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico com esse filtro.</td></tr>}
               {dueVis.slice(0, 600).map((r) => (
                 <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._sit === "Vencido" ? "#EF4444" : r._sit === "No prazo" ? "#22C55E" : "#F5A623" }}>
-                  <td><b>{critLabel(r._grupo)}</b></td>
+                  <td><b>{critLabel(r._grupo)}</b></td><td>{critOf(r._grupo)}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.code || "—"}</td>
                   <td>{r.component || "—"}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
@@ -4861,12 +4923,12 @@ const CriticosPanel = ({ kpis, porGrupo, due, post }) => {
           </table>
         ) : (
           <table className="g-table tbl-modern">
-            <thead><tr><th>Grupo</th><th>Código</th><th>Componente</th><th>Job No</th><th>Job Type</th><th>Plano (Job Name)</th><th>1ª Postergação</th><th>Última Postergação</th><th>Próximo Due Date</th></tr></thead>
+            <thead><tr><th>Grupo</th><th>Criticidade</th><th>Código</th><th>Componente</th><th>Job No</th><th>Job Type</th><th>Plano (Job Name)</th><th>1ª Postergação</th><th>Última Postergação</th><th>Próximo Due Date</th></tr></thead>
             <tbody>
-              {postVis.length === 0 && <tr><td colSpan={9} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico postergado.</td></tr>}
+              {postVis.length === 0 && <tr><td colSpan={10} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum job crítico postergado.</td></tr>}
               {postVis.slice(0, 600).map((r) => (
                 <tr className="g-row tbl-row" key={r.key} style={{ "--c": "#8B5CF6" }}>
-                  <td><b>{critLabel(r._grupo)}</b></td>
+                  <td><b>{critLabel(r._grupo)}</b></td><td>{critOf(r._grupo)}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.componentCode || "—"}</td>
                   <td>{r.componentName || "—"}</td>
                   <td style={{ fontFamily: "var(--mono)" }}>{r.jobNo || "—"}</td>
@@ -5406,7 +5468,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
       };
     };
     const porGrupo = CRITICAL_GROUPS.map((g) => ({
-      grupo: g.cod, nome: critLabel(g.cod),
+      grupo: g.cod, nome: critLabel(g.cod), crit: g.crit,
       ...metricas(due.filter((r) => r._grupo === g.cod), execs.filter((h) => critPrefixOf(h.componentCode) === g.cod), postRegs.filter((h) => critPrefixOf(h.componentCode) === g.cod)),
     }));
     const total = metricas(due, execs, postRegs);
@@ -5528,8 +5590,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
         secao("Jobs de Inspeção", ["Mês", "Previstos", "Executados", "Postergados"], inspecaoMensal.map((r) => [r.mes, r.previsto, r.realizado, r.postergados]));
         secao("Jobs de Overhaul", ["Mês", "Previstos", "Executados", "Postergados"], overhaulMensal.map((r) => [r.mes, r.previsto, r.realizado, r.postergados]));
         secao(`Jobs críticos — ${criticosAnalise.kpis.abertos} em aberto · ${criticosAnalise.kpis.vencidos} vencidos · ${criticosAnalise.kpis.aVencer} a vencer (40d) · ${criticosAnalise.kpis.postergados} postergados · eficiência ${criticosAnalise.kpis.eficiencia}%`,
-          ["Grupo", "Em atraso", "A vencer", "No prazo", "Executados", "Postergados", "% no prazo", "Taxa postergação", "Eficiência"],
-          criticosAnalise.porGrupo.map((r) => [r.nome, r.vencidos, r.aVencer, r.noPrazo, r.executados, r.postergados, r.pctPrazo === null ? "—" : `${r.pctPrazo}%`, r.taxaPost === null ? "—" : `${r.taxaPost}%`, r.eficiencia === null ? "—" : `${r.eficiencia}%`]));
+          ["Grupo", "Criticidade", "Em atraso", "A vencer", "No prazo", "Executados", "Postergados", "% no prazo", "Taxa postergação", "Eficiência"],
+          criticosAnalise.porGrupo.filter((r) => r.vencidos + r.aVencer + r.noPrazo + r.executados + r.postergados > 0).map((r) => [r.nome, r.crit, r.vencidos, r.aVencer, r.noPrazo, r.executados, r.postergados, r.pctPrazo === null ? "—" : `${r.pctPrazo}%`, r.taxaPost === null ? "—" : `${r.taxaPost}%`, r.eficiencia === null ? "—" : `${r.eficiencia}%`]));
         secao(`Jobs preditivos — eficiência ${preditivosAnalise.kpis.eficiencia}%`,
           ["Análise", "Em atraso", "A vencer", "Executados", "Postergados", "% no prazo", "Eficiência"],
           preditivosAnalise.rows.map((r) => [r.grupo, r.vencidos, r.aVencer, r.executados, r.postergados, r.pctPrazo === null ? "—" : `${r.pctPrazo}%`, r.eficiencia === null ? "—" : `${r.eficiencia}%`]));
@@ -5575,9 +5637,9 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, setReportFn, setExport
           add("Postergados por Job Type", postergadosPorTipo.map((r) => ({ "Job Type": r.nome, Postergados: r.total })));
           add("Jobs de Inspeção", inspecaoMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado, Postergados: r.postergados })));
           add("Jobs de Overhaul", overhaulMensal.map((r) => ({ "Mês": r.mes, Previstos: r.previsto, Executados: r.realizado, Postergados: r.postergados })));
-          add("Jobs Críticos por Grupo", criticosAnalise.porGrupo.map((r) => ({ Grupo: r.nome, "Em Atraso": r.vencidos, "A Vencer": r.aVencer, "No Prazo": r.noPrazo, Executados: r.executados, Postergados: r.postergados, "% No Prazo": r.pctPrazo, "Taxa de Postergação %": r.taxaPost, "Eficiência %": r.eficiencia })));
-          add("Jobs Críticos (abertos)", criticosAnalise.due.map((r) => ({ Grupo: critLabel(r._grupo), "Código": r.code, Componente: r.component, "Job No": r.jobNo, "Job Type": r.jobType, Plano: r.jobName, Due: r.dueDate || r.dueRaw, "Situação": r._sit, Atraso: r._atraso })));
-          add("Jobs Críticos (postergados)", criticosAnalise.post.map((r) => ({ Grupo: critLabel(r._grupo), "Código": r.componentCode, Componente: r.componentName, "Job No": r.jobNo, "Job Type": r.jobType, Plano: r.jobName, "1ª Postergação": r.primeiraData, "Última Postergação": r.ultimaData, "Próximo Due Date": r.proximoDue || r.proximoDueRaw })));
+          add("Jobs Críticos por Grupo", criticosAnalise.porGrupo.map((r) => ({ Grupo: r.nome, Criticidade: r.crit, "Em Atraso": r.vencidos, "A Vencer": r.aVencer, "No Prazo": r.noPrazo, Executados: r.executados, Postergados: r.postergados, "% No Prazo": r.pctPrazo, "Taxa de Postergação %": r.taxaPost, "Eficiência %": r.eficiencia })));
+          add("Jobs Críticos (abertos)", criticosAnalise.due.map((r) => ({ Grupo: critLabel(r._grupo), Criticidade: critOf(r._grupo), "Código": r.code, Componente: r.component, "Job No": r.jobNo, "Job Type": r.jobType, Plano: r.jobName, Due: r.dueDate || r.dueRaw, "Situação": r._sit, Atraso: r._atraso })));
+          add("Jobs Críticos (postergados)", criticosAnalise.post.map((r) => ({ Grupo: critLabel(r._grupo), Criticidade: critOf(r._grupo), "Código": r.componentCode, Componente: r.componentName, "Job No": r.jobNo, "Job Type": r.jobType, Plano: r.jobName, "1ª Postergação": r.primeiraData, "Última Postergação": r.ultimaData, "Próximo Due Date": r.proximoDue || r.proximoDueRaw })));
           add("Jobs Preditivos", preditivosAnalise.rows.map((r) => ({ "Análise": r.grupo, "Em Atraso": r.vencidos, "A Vencer": r.aVencer, Executados: r.executados, Postergados: r.postergados, "% No Prazo": r.pctPrazo, "Taxa de Postergação %": r.taxaPost, "Eficiência %": r.eficiencia })));
           add("Cumprimento de Prazo", cumprimentoPrazo.faixas.map((r) => ({ Faixa: r.nome, Jobs: r.total })));
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(tmDueForMetrics, TM_DUE_COLS)), "Due (filtrado)");
