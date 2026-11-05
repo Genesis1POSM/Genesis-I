@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from "react";
 import {
   LayoutGrid, Ship, Wrench, Package, Wallet, Calculator,
   Plus, Trash2, ChevronDown, ChevronUp, ChevronRight, AlertTriangle,
-  Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock, ClipboardList, Gauge
+  Download, Upload, FileText, LogOut, Lock, User, X, Settings, DollarSign, Clock, ClipboardList, Gauge, Bell
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, PieChart, Pie, Legend
@@ -87,6 +87,17 @@ const Theme = () => (
     .g-brand-name b { color: #E11D2E; font-weight: 800; }
     .g-brand-tag { font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint); margin-top: 3px; font-weight: 600; }
     .g-brand-sep { width: 1px; height: 30px; background: var(--border); flex-shrink: 0; }
+    .g-bell-wrap { position: relative; flex-shrink: 0; }
+    .g-bell { position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9px; cursor: pointer; color: #3A4A66; border: 1px solid transparent; background: transparent; }
+    .g-bell:hover { background: var(--navbar-alt); }
+    .g-bell-badge { position: absolute; top: -4px; right: -8px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 8px; background: #E11D2E; color: #fff; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-sizing: content-box; line-height: 1; }
+    .g-bell-panel { position: absolute; right: 0; top: 44px; width: 560px; max-width: 92vw; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 50px rgba(18,32,58,.22); z-index: 60; overflow: hidden; }
+    .g-bell-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+    .g-bell-list { max-height: 380px; overflow-y: auto; }
+    .g-bell-item { display: grid; grid-template-columns: 104px 1fr; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; align-items: center; }
+    .g-bell-days { white-space: nowrap; font-weight: 700; text-align: center; padding: 4px 6px; border-radius: 6px; font-size: 11.5px; }
+    .g-bell-days.d1 { background: #FEE2E2; color: #B91C1C; } .g-bell-days.d2 { background: #FEF3C7; color: #B45309; } .g-bell-days.d3 { background: #E0E7FF; color: #3730A3; }
+    .g-alert-banner { margin: 10px 22px 0 22px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: #FFF7E6; border: 1px solid #F5C77A; color: #8A5300; font-size: 13px; }
     .g-nav-item { border-radius: 8px !important; }
     .g-nav-item.active { border-bottom-color: transparent !important; background: var(--accent-dim) !important; font-weight: 600; }
     .g-login-logo { display: block; width: 190px; height: auto; margin: 0 auto 10px auto; }
@@ -884,6 +895,69 @@ const ESelect = ({ value, onChange, options, style }) => (
 );
 /* KPI "cartão grande" compartilhado por todas as abas — versão única (antes estava duplicada
    localmente em vários componentes, o que impedia componentes novos de usá-la) */
+/* ---------- alerta de vencimento (sino) ---------- */
+const diasParaVencer = (d) => {
+  if (d.dueDate && d.dueDate >= "2020-01-01") {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const [y, m, day] = d.dueDate.split("-").map(Number);
+    return Math.round((new Date(y, m - 1, day) - hoje) / 86400000);
+  }
+  if (d.diffUnit === "D" && d.diffValue !== null && d.diffValue !== undefined) return d.diffValue;
+  return null; /* jobs em horas de máquina não têm data */
+};
+const jobsAVencer = (tmDue, dias, incluirVencidos) => (tmDue || [])
+  .map((d) => ({ d, dias: diasParaVencer(d) }))
+  .filter((x) => x.dias !== null && x.dias <= dias && (incluirVencidos || x.dias >= 0))
+  .sort((a, b) => a.dias - b.dias);
+
+const AlertaVencimentos = ({ itens, dias, setDias, incluirVencidos, setIncluirVencidos, onAbrir }) => {
+  const [aberto, setAberto] = useState(false);
+  const cls = (n) => (n < 0 ? "d1" : n <= 7 ? "d1" : n <= 14 ? "d2" : "d3");
+  const rotulo = (n) => (n < 0 ? `Vencido há ${-n}d` : n === 0 ? "Vence hoje" : `Vence em ${n}d`);
+  return (
+    <div className="g-bell-wrap">
+      <button className="g-bell" onClick={() => setAberto((v) => !v)} title={`Jobs que vencem em até ${dias} dias`} aria-label="Alertas de vencimento">
+        <Bell size={18} />
+        {itens.length > 0 && <span className="g-bell-badge">{itens.length > 99 ? "99+" : itens.length}</span>}
+      </button>
+      {aberto && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 55 }} onClick={() => setAberto(false)} />
+          <div className="g-bell-panel">
+            <div className="g-bell-head">
+              <b style={{ fontSize: 14 }}>{itens.length} job(s) {incluirVencidos ? "vencidos ou a vencer" : "a vencer"} em até</b>
+              <select value={dias} onChange={(e) => setDias(Number(e.target.value))} style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+                {[7, 10, 15, 20, 30, 40].map((n) => <option key={n} value={n}>{n} dias</option>)}
+              </select>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
+                <input type="checkbox" checked={incluirVencidos} onChange={(e) => setIncluirVencidos(e.target.checked)} />Incluir vencidos
+              </label>
+            </div>
+            <div className="g-bell-list">
+              {itens.length === 0 && <div className="g-muted" style={{ padding: 22, textAlign: "center", fontSize: 13 }}>Nenhum job nessa janela.</div>}
+              {itens.slice(0, 300).map(({ d, dias: n }) => (
+                <div className="g-bell-item" key={d.id || `${d.code}-${d.jobNo}-${d.dueDate}`}>
+                  <span className={`g-bell-days ${cls(n)}`}>{rotulo(n)}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.jobName || "—"}</div>
+                    <div className="g-muted" style={{ fontSize: 11.5 }}>
+                      {d.code || "—"} · {d.component || "—"} · {d.jobType || "—"} {d.jobNo || ""} · Due {d.dueDate ? `${d.dueDate.slice(8, 10)}/${d.dueDate.slice(5, 7)}/${d.dueDate.slice(0, 4)}` : (d.dueRaw || "—")}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center" }}>
+              <span className="g-muted" style={{ fontSize: 11.5 }}>Jobs em horas de máquina não entram (não têm data).</span>
+              <button className="g-btn primary" style={{ marginLeft: "auto" }} onClick={() => { setAberto(false); onAbrir(); }}>Abrir TM Master</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const bigKpi = (label, value, color, Icon) => (
   <div className="g-kpi" style={{ "--kpi-accent": color, padding: "16px" }}>
     <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -1507,6 +1581,12 @@ function Genesis({ currentUser, onLogout, users, setUsers,
   const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
   const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "docagem" | "board"
   const [tmSubTab, setTmSubTab] = useState("due"); // "due" | "history" | "metricas"
+  const [alertaDias, setAlertaDias] = useState(20);
+  const [alertaVencidos, setAlertaVencidos] = useState(false);
+  const [alertaBannerFechado, setAlertaBannerFechado] = useState(false);
+  const alertaItens = useMemo(() => jobsAVencer(tmDue, alertaDias, alertaVencidos), [tmDue, alertaDias, alertaVencidos]);
+  const alertaVinte = useMemo(() => jobsAVencer(tmDue, alertaDias, false), [tmDue, alertaDias]);
+  const abrirTmMaster = () => { setReportFn(null); setExportXlsxFn(null); setTmSubTab("due"); setTab("tmmaster"); };
   const [importMsg, setImportMsg] = useState(null);
   const [reportFn, setReportFn] = useState(null);
   /* mesmo princípio do reportFn (PDF), mas pra "Exportar planilha": cada aba pode registrar sua
@@ -2559,6 +2639,7 @@ function Genesis({ currentUser, onLogout, users, setUsers,
             </div>
           ))}
         </div>
+        <AlertaVencimentos itens={alertaItens} dias={alertaDias} setDias={setAlertaDias} incluirVencidos={alertaVencidos} setIncluirVencidos={setAlertaVencidos} onAbrir={abrirTmMaster} />
         {currentUser && <span style={{ fontSize: 12, whiteSpace: "nowrap", color: "var(--navbar-text)" }}>{currentUser.name}</span>}
         {onLogout && <div className="g-logout" onClick={onLogout}><LogOut size={14} />Sair</div>}
       </div>
@@ -2645,6 +2726,15 @@ function Genesis({ currentUser, onLogout, users, setUsers,
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
         </div>
       </div>
+
+      {!alertaBannerFechado && alertaVinte.length > 0 && (
+        <div className="g-alert-banner">
+          <Bell size={16} />
+          <span><b>{alertaVinte.length} job(s)</b> vencem em até {alertaDias} dias. Clique no sino para ver a lista.</span>
+          <button className="g-btn" style={{ marginLeft: "auto" }} onClick={abrirTmMaster}>Abrir TM Master</button>
+          <button className="g-btn" onClick={() => setAlertaBannerFechado(true)} title="Dispensar aviso"><X size={13} /></button>
+        </div>
+      )}
 
       {importMsg && (
         <div style={{ margin: "10px 22px 0 22px" }}>
@@ -6499,7 +6589,8 @@ function MultiSelectStatus({ options, selected, onChange, labelFor }) {
     onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
   };
   const getLabel = labelFor || ((o) => o);
-  const label = selected.length === 0 ? "Todos" : selected.length === 1 ? getLabel(selected[0]) : `${selected.length} selecionados`;
+  const todosMarcados = options.length > 0 && options.every((o) => selected.includes(o));
+  const label = selected.length === 0 || todosMarcados ? "Todos" : selected.length === 1 ? getLabel(selected[0]) : `${selected.length} selecionados`;
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button type="button" className="g-btn" onClick={() => setOpen((o) => !o)} style={{ minWidth: 170, justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: 12 }}>
@@ -6511,6 +6602,10 @@ function MultiSelectStatus({ options, selected, onChange, labelFor }) {
           background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4,
           padding: 8, boxShadow: "0 12px 30px rgba(0,0,0,0.4)",
         }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 4px 7px", fontSize: 12, cursor: "pointer", fontWeight: 700, borderBottom: "1px solid var(--border-soft)", marginBottom: 4 }}>
+            <input type="checkbox" checked={todosMarcados} onChange={() => onChange(todosMarcados ? [] : [...options])} />
+            Selecionar todos
+          </label>
           {options.map((opt) => (
             <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 4px", fontSize: 12, cursor: "pointer" }}>
               <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
@@ -6541,6 +6636,7 @@ function PaymentsSection({ setExportXlsxFn, paySubTab, setPaySubTab, serviceInvo
     return next;
   });
   const clearSelection = () => setSelectedIds(new Set());
+  const selectAllIds = (ids) => setSelectedIds(new Set(ids));
 
   return (
     <div className="pay-view">
@@ -6596,7 +6692,7 @@ function PaymentsSection({ setExportXlsxFn, paySubTab, setPaySubTab, serviceInvo
       )}
 
       {paySubTab === "total" && <PaymentsTotalView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
-      {paySubTab === "status" && <PaymentsStatusView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
+      {paySubTab === "status" && <PaymentsStatusView selectAllIds={selectAllIds} setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} setF={setF} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
       {paySubTab === "dashboard" && <PaymentsValoresView setExportXlsxFn={setExportXlsxFn} serviceInvoices={serviceInvoices} updInv={updInv} remInv={remInv} f={f} selectedIds={selectedIds} toggleSelect={toggleSelect} setReportFn={setReportFn} newRowId={newRowId} />}
     </div>
   );
@@ -6837,7 +6933,7 @@ function PaymentsTotalView({ setExportXlsxFn, serviceInvoices, updInv, remInv, f
 }
 
 /* ---------- Página 2: Status dos Pagamentos (baseada na planilha "Pagamento Pendente") ---------- */
-function PaymentsStatusView({ setExportXlsxFn, serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
+function PaymentsStatusView({ selectAllIds, setExportXlsxFn, serviceInvoices, updInv, remInv, f, setF, selectedIds, toggleSelect, setReportFn }) {
   const [sort, setSort] = useState({ key: "date", dir: 1 });
   const kpiStatuses = ["Aguardando Medição", "Aguardando Suprimentos", "Aprovação Pendente", "Aguardando NF"];
   const statusColorMap = STATUS_PAGAMENTO_COLOR;
@@ -6919,7 +7015,11 @@ function PaymentsStatusView({ setExportXlsxFn, serviceInvoices, updInv, remInv, 
         <table className="g-table">
           <thead>
             <tr>
-              <th></th>
+              <th style={{ width: 28 }}>
+                <input type="checkbox" title="Selecionar todos os registros listados"
+                  checked={sorted.length > 0 && sorted.every((r) => selectedIds.has(r.id))}
+                  onChange={(e) => selectAllIds(e.target.checked ? sorted.map((r) => r.id) : [])} />
+              </th>
               <SortTh sortKey="assunto" sort={sort} setSort={setSort} style={{ minWidth: 260 }}>Manutenção</SortTh>
               <SortTh sortKey="empresa" sort={sort} setSort={setSort}>Empresa</SortTh>
               <SortTh sortKey="poContrato" sort={sort} setSort={setSort}>PO/Contrato</SortTh>
