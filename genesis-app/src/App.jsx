@@ -5485,95 +5485,193 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
 };
 
 /* ============================================================
-   TM MASTER — RESUMO PARA ENVIAR POR E-MAIL (manual: abre o seu e-mail com o texto pronto)
+   TM MASTER — RESUMO EM TABELAS PARA E-MAIL (cada tópico explicado, com coluna Observação editável).
+   O e-mail comum (mailto) não aceita tabelas: por isso o resumo é COPIADO já formatado e colado no e-mail.
    ============================================================ */
+const escHtml = (v) => String(v === null || v === undefined ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
   const [aberto, setAberto] = useState(false);
   const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_resumo_para") || ""; } catch (e) { return ""; } });
-  const [copiado, setCopiado] = useState(false);
+  const [limite, setLimite] = useState(20);
+  const [obs, setObs] = useState({});
+  const [msg, setMsg] = useState("");
   const hoje = todayISO();
   const fmt = (iso) => (iso ? fmtDataCompleta(iso) : "—");
 
-  const texto = useMemo(() => {
-    if (!aberto) return "";
+  const secoes = useMemo(() => {
+    if (!aberto) return [];
     const F = tmFailures || FR_EMPTY;
+    const lim = limite === 0 ? 1e9 : limite;
     const isVenc = (d) => (d.diffValue !== null && d.diffValue !== undefined ? d.diffValue < 0 : !!d.dueDate && d.dueDate < hoje);
-    const ate40 = (d) => d.diffUnit === "D" && d.diffValue !== null && d.diffValue >= 0 && d.diffValue <= 40;
-    const atraso = (d) => (d.diffValue !== null && d.diffValue !== undefined ? (d.diffUnit === "D" ? Math.max(0, -d.diffValue) : 0) : (d.dueDate ? Math.max(0, frDias(d.dueDate, hoje)) : 0));
-    const venc = tmDue.filter(isVenc);
-    const a40 = tmDue.filter((d) => !isVenc(d) && ate40(d));
+    const dias = (d) => (d.diffValue !== null && d.diffValue !== undefined && d.diffUnit === "D" ? d.diffValue : (d.dueDate ? -frDias(d.dueDate, hoje) : null)); // negativo = atrasado
+    const ate40 = (d) => !isVenc(d) && ((d.diffUnit === "D" && d.diffValue !== null && d.diffValue >= 0 && d.diffValue <= 40) || (d.diffValue === null && d.dueDate && dias(d) >= 0 && dias(d) <= 40));
+    const jobTxt = (d) => `${d.jobType || ""} ${d.jobNo || ""}`.trim() || "—";
+    const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "0%");
+    const venc = tmDue.filter(isVenc).sort((a, b) => (dias(a) ?? 0) - (dias(b) ?? 0));
+    const a40 = tmDue.filter(ate40).sort((a, b) => (dias(a) ?? 0) - (dias(b) ?? 0));
     const crit = tmDue.filter((d) => d.pri === "High" && (isVenc(d) || ate40(d)));
     const one = tmDue.filter((d) => String(d.jobType || "").toUpperCase() === "ONE");
+    const critJobs = tmDue.filter((d) => critPrefixOf(d.code));
+    const obsJob = (d, vencido) => {
+      const p = [];
+      if (vencido) p.push(`Vencido há ${Math.abs(dias(d) ?? 0)} dias`); else p.push(`Vence em ${dias(d)} dias`);
+      if (d.pri === "High") p.push("prioridade alta");
+      if (critPrefixOf(d.code)) p.push("componente crítico (PMS)");
+      if (String(d.jobType || "").toUpperCase() === "ONE") p.push("corretiva");
+      return p.join(" · ");
+    };
+    const S = [];
+    S.push({ id: "geral", titulo: "1. Situação geral do Due (planos em aberto)", explicacao: "Fotografia dos planos de manutenção que ainda não foram executados. “Vencido” = prazo (Due/Diff) já passou; “A vencer” = vence nos próximos 40 dias.",
+      cols: ["Indicador", "Quantidade"], rows: [
+        { key: "t", cells: ["Total de planos em aberto", tmDue.length], auto: "Base de todos os percentuais abaixo" },
+        { key: "v", cells: ["Vencidos", venc.length], auto: `${pct(venc.length, tmDue.length)} do total — exigem ação imediata` },
+        { key: "a", cells: ["A vencer em até 40 dias", a40.length], auto: `${pct(a40.length, tmDue.length)} do total — programar execução para não virarem vencidos` },
+        { key: "c", cells: ["Críticos (prioridade High) vencidos ou a vencer", crit.length], auto: "Tratar primeiro" },
+        { key: "o", cells: ["Corretivas (Job Type ONE) em aberto", one.length], auto: "Reparos/falhas ainda pendentes" },
+        { key: "p", cells: ["Jobs críticos PMS (em aberto / vencidos)", `${critJobs.length} / ${critJobs.filter(isVenc).length}`], auto: "Componentes críticos para operação, segurança ou meio ambiente" },
+      ] });
+    S.push({ id: "venc", titulo: `2. Jobs vencidos (${Math.min(lim, venc.length)} de ${venc.length}, do mais atrasado)`, explicacao: "Planos cujo prazo já passou. Ordenados pelo maior atraso. Use a coluna Observação para registrar o motivo, o responsável ou a nova data prevista.",
+      cols: ["Departamento", "Job", "Plano", "Componente", "Due", "Atraso (dias)", "Prioridade"],
+      rows: venc.slice(0, lim).map((d, i) => ({ key: `${d.id || i}`, cells: [d.department || "—", jobTxt(d), d.jobName || "—", `${d.code || ""} ${d.component || ""}`.trim() || "—", d.dueDate ? fmt(d.dueDate) : (d.dueRaw || "—"), Math.abs(dias(d) ?? 0), d.pri || "—"], auto: obsJob(d, true) })) });
+    S.push({ id: "a40", titulo: `3. A vencer em até 40 dias (${Math.min(lim, a40.length)} de ${a40.length}, os mais próximos)`, explicacao: "Planos que ainda estão no prazo, mas vencem em breve. Se não forem programados agora, entram na lista de vencidos.",
+      cols: ["Departamento", "Job", "Plano", "Componente", "Due", "Faltam (dias)", "Prioridade"],
+      rows: a40.slice(0, lim).map((d, i) => ({ key: `${d.id || i}`, cells: [d.department || "—", jobTxt(d), d.jobName || "—", `${d.code || ""} ${d.component || ""}`.trim() || "—", d.dueDate ? fmt(d.dueDate) : (d.dueRaw || "—"), dias(d) ?? "—", d.pri || "—"], auto: obsJob(d, false) })) });
+    const dept = {}; tmDue.forEach((d) => { const k = d.department || "—"; dept[k] = dept[k] || { t: 0, v: 0, a: 0 }; dept[k].t++; if (isVenc(d)) dept[k].v++; else if (ate40(d)) dept[k].a++; });
+    S.push({ id: "dept", titulo: "4. Vencidos por departamento", explicacao: "Mostra onde está concentrado o atraso. O percentual é vencidos ÷ total de planos do departamento.",
+      cols: ["Departamento", "Em aberto", "Vencidos", "A vencer (40d)", "% vencido"],
+      rows: Object.entries(dept).sort((a, b) => b[1].v - a[1].v).map(([k, v]) => ({ key: k, cells: [k, v.t, v.v, v.a, pct(v.v, v.t)], auto: v.v === 0 ? "Sem atraso" : (v.v / v.t > 0.3 ? "Atraso elevado — priorizar" : "Atraso moderado") })) });
+    const grp = CRITICAL_GROUPS.map((g) => { const l = tmDue.filter((d) => critPrefixOf(d.code) === g.cod); return { g, t: l.length, v: l.filter(isVenc).length, a: l.filter(ate40).length }; }).filter((x) => x.t > 0).sort((a, b) => b.v - a.v);
+    S.push({ id: "crit", titulo: "5. Jobs críticos por grupo de sistema (PMS)", explicacao: "Grupos de componentes críticos (3 primeiros dígitos do código). Mostra só os grupos que têm planos em aberto.",
+      cols: ["Grupo", "Criticidade", "Em aberto", "Vencidos", "A vencer (40d)"],
+      rows: grp.map((x) => ({ key: x.g.cod, cells: [critLabel(x.g.cod), x.g.crit, x.t, x.v, x.a], auto: x.v === 0 ? "Em dia" : `${x.v} vencido(s) — ${pct(x.v, x.t)} do grupo` })) });
     const mesAtual = hoje.slice(0, 7);
     const isPost = (h) => (h.remarks || "").toLowerCase().includes("postpon") || String(h.postponed || "").trim().toUpperCase() === "X";
     const postMes = tmHistory.filter((h) => isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
     const execMes = tmHistory.filter((h) => !isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
-    const dept = {}; tmDue.forEach((d) => { const k = d.department || "—"; dept[k] = dept[k] || { t: 0, v: 0 }; dept[k].t++; if (isVenc(d)) dept[k].v++; });
-    const top = [...venc].sort((a, b) => atraso(b) - atraso(a)).slice(0, 5);
-    const critJobs = tmDue.filter((d) => critPrefixOf(d.code));
-    const critVenc = critJobs.filter(isVenc);
-
-    const L = [];
-    L.push(`Genesis I — Resumo TM Master — ${fmt(hoje)}`, "");
-    L.push("DUE (EM ABERTO)");
-    L.push(`- Total em aberto: ${tmDue.length}`);
-    L.push(`- Vencidos: ${venc.length}`);
-    L.push(`- A vencer em até 40 dias: ${a40.length}`);
-    L.push(`- Críticos (prioridade High) vencidos ou a vencer em 40 dias: ${crit.length}`);
-    L.push(`- Corretivas (ONE) em aberto: ${one.length}`);
-    L.push(`- Jobs críticos (grupos PMS): ${critJobs.length} em aberto, ${critVenc.length} vencidos`);
-    if (top.length) { L.push("", "5 MAIS ATRASADOS"); top.forEach((d) => L.push(`- ${d.jobType || ""} ${d.jobNo || ""} | ${d.jobName || d.component || "—"} | atraso ${atraso(d)} dias | ${d.department || "—"}`)); }
-    L.push("", "VENCIDOS POR DEPARTAMENTO");
-    Object.entries(dept).sort((a, b) => b[1].v - a[1].v).forEach(([k, v]) => L.push(`- ${k}: ${v.v} vencidos de ${v.t}`));
-    L.push("", `HISTORY — MÊS ATUAL`, `- Executados: ${execMes.length}`, `- Postergados: ${postMes.length}`);
-
+    S.push({ id: "hist", titulo: "6. History — mês atual", explicacao: "Jobs fechados neste mês. “Postergado” = job adiado (campo Postponed ou observação com “Postponed”).",
+      cols: ["Indicador", "Quantidade"], rows: [
+        { key: "e", cells: ["Executados no mês", execMes.length], auto: "Planos concluídos" },
+        { key: "p", cells: ["Postergados no mês", postMes.length], auto: postMes.length ? `${pct(postMes.length, postMes.length + execMes.length)} dos jobs do mês foram adiados` : "Nenhum adiamento" },
+      ] });
+    if (postMes.length) S.push({ id: "post", titulo: `7. Jobs postergados no mês (${Math.min(lim, postMes.length)} de ${postMes.length})`, explicacao: "Jobs adiados neste mês. A observação vem do campo Remarks do History — edite se quiser.",
+      cols: ["Job", "Plano", "Componente", "Data", "Feito por"],
+      rows: postMes.slice(0, lim).map((h, i) => ({ key: `${h.jobHistoryNumber || i}`, cells: [`${h.jobType || ""} ${h.jobNo || ""}`.trim() || "—", h.jobName || "—", `${h.componentCode || ""} ${h.componentName || ""}`.trim() || "—", fmt(h.dateDone), h.doneByName || "—"], auto: h.remarks || "Postergado" })) });
     if (F.reports.length) {
       const nos = new Set(F.reports.map((r) => r.no));
+      const nm = (no) => F.reports.find((r) => r.no === no)?.name || "";
       const abertos = F.reports.filter((r) => !/complet|closed/i.test(r.status));
-      const acts = F.actions.filter((a) => nos.has(a.frNo) && !frActionConcluida(a));
+      const acts = F.actions.filter((a) => nos.has(a.frNo) && !frActionConcluida(a)).sort((a, b) => (frDias(b.created || b.deadline, hoje) ?? -1) - (frDias(a.created || a.deadline, hoje) ?? -1));
       const actsV = acts.filter((a) => a.deadline && a.deadline < hoje);
       const jobsF = F.jobs.filter((j) => nos.has(j.frNo));
       const ordF = F.orders.filter((o) => nos.has(o.frNo) && !frOrderEncerrada(o));
-      L.push("", "FAILURE REPORTS");
-      L.push(`- Failure Reports em aberto: ${abertos.length} de ${F.reports.length}`);
-      L.push(`- Actions pendentes: ${acts.length} (${actsV.length} com prazo vencido)`);
-      L.push(`- Jobs ligados em aberto: ${jobsF.length} (${jobsF.filter((j) => j.nextDue && j.nextDue < hoje).length} vencidos)`);
-      L.push(`- Orders em andamento: ${ordF.length}`);
-      const antigas = [...acts].sort((a, b) => (frDias(b.created || b.deadline, hoje) ?? -1) - (frDias(a.created || a.deadline, hoje) ?? -1)).slice(0, 5);
-      if (antigas.length) { L.push("", "5 ACTIONS PARADAS HÁ MAIS TEMPO"); antigas.forEach((a) => L.push(`- ${a.no} | ${a.name} | ${a.frNo} | parada há ${frDias(a.created || a.deadline, hoje)} dias | ${a.crew || a.crewType || a.department || "—"}`)); }
+      S.push({ id: "fr", titulo: "8. Failure Reports — situação geral", explicacao: "Falhas registradas e tudo que está ligado a elas (actions, jobs e orders). “Em aberto” = status diferente de Completed.",
+        cols: ["Indicador", "Quantidade"], rows: [
+          { key: "a", cells: ["Failure Reports em aberto / total", `${abertos.length} / ${F.reports.length}`], auto: "Falhas ainda sem encerramento" },
+          { key: "b", cells: ["Actions pendentes", acts.length], auto: `${actsV.length} com prazo vencido` },
+          { key: "c", cells: ["Jobs ligados em aberto", jobsF.length], auto: `${jobsF.filter((j) => j.nextDue && j.nextDue < hoje).length} vencido(s)` },
+          { key: "d", cells: ["Orders em andamento", ordF.length], auto: "Pedidos de peças/serviços ligados às falhas" },
+        ] });
+      S.push({ id: "acts", titulo: `9. Actions pendentes (${Math.min(lim, acts.length)} de ${acts.length}, as paradas há mais tempo)`, explicacao: "Ações corretivas/preventivas abertas, da mais antiga para a mais recente. “Parada há” conta desde a criação da action.",
+        cols: ["Action", "Ação", "Failure Report", "Responsável", "Prazo", "Parada há (dias)"],
+        rows: acts.slice(0, lim).map((a) => { const at = a.deadline && a.deadline < hoje ? frDias(a.deadline, hoje) : 0; return { key: a.no, cells: [a.no, a.name, `${a.frNo} — ${nm(a.frNo)}`, a.crew || a.crewType || a.department || "—", fmt(a.deadline), frDias(a.created || a.deadline, hoje) ?? "—"], auto: at > 0 ? `Prazo vencido há ${at} dias${a.priority ? ` · prioridade ${a.priority}` : ""}` : `No prazo${a.priority ? ` · prioridade ${a.priority}` : ""}` }; }) });
+      if (jobsF.length) S.push({ id: "jf", titulo: "10. Jobs em aberto ligados a Failure Reports", explicacao: "Planos criados para corrigir as falhas e ainda não executados.",
+        cols: ["Job", "Plano", "Failure Report", "Departamento", "Next Due"],
+        rows: jobsF.map((j, i) => ({ key: `${j.jobType}${j.jobNo}${i}`, cells: [`${j.jobType} ${j.jobNo}`, j.name, `${j.frNo} — ${nm(j.frNo)}`, j.department || "—", fmt(j.nextDue)], auto: j.nextDue && j.nextDue < hoje ? `Vencido há ${frDias(j.nextDue, hoje)} dias` : (j.nextDue ? `Vence em ${-frDias(j.nextDue, hoje)} dias` : "Sem data") })) });
+      if (ordF.length) S.push({ id: "of", titulo: "11. Orders em andamento ligadas a Failure Reports", explicacao: "Pedidos de material/serviço que ainda não foram recebidos.",
+        cols: ["Order", "Pedido", "Failure Report", "Status", "Fornecedor", "Entrega prevista"],
+        rows: ordF.map((o) => ({ key: o.no, cells: [o.no, o.name, `${o.frNo} — ${nm(o.frNo)}`, o.status, o.supplier || "—", fmt(o.delivery)], auto: o.delivery && o.delivery < hoje ? `Entrega atrasada há ${frDias(o.delivery, hoje)} dias` : "Aguardando entrega" })) });
     }
-    L.push("", "Enviado a partir do portal Genesis I.");
-    return L.join("\n");
-  }, [aberto, tmDue, tmHistory, tmFailures]);
+    return S;
+  }, [aberto, limite, tmDue, tmHistory, tmFailures]);
 
+  const obsDe = (sid, r) => (obs[`${sid}|${r.key}`] !== undefined ? obs[`${sid}|${r.key}`] : r.auto);
   const assunto = `Genesis I — Resumo TM Master — ${fmt(hoje)}`;
-  const copiar = async () => {
-    try { await navigator.clipboard.writeText(texto); setCopiado(true); setTimeout(() => setCopiado(false), 2500); }
-    catch (e) { window.prompt("Copie o texto (Ctrl+C):", texto); }
+
+  const montarHtml = () => {
+    const th = "background:#1F3A5F;color:#fff;padding:6px 8px;border:1px solid #cbd5e1;text-align:left;font-size:12px";
+    const td = "padding:5px 8px;border:1px solid #cbd5e1;font-size:12px;vertical-align:top";
+    let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 16px;color:#6b7280;font-size:12px">Situação do TM Master em ${fmt(hoje)}. A coluna Observação traz o contexto de cada linha.</p>`;
+    secoes.forEach((s) => {
+      h += `<h3 style="margin:18px 0 4px;font-size:14px">${escHtml(s.titulo)}</h3><p style="margin:0 0 6px;color:#6b7280;font-size:12px">${escHtml(s.explicacao)}</p>`;
+      h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${[...s.cols, "Observação"].map((c) => `<th style="${th}">${escHtml(c)}</th>`).join("")}</tr></thead><tbody>`;
+      if (!s.rows.length) h += `<tr><td colspan="${s.cols.length + 1}" style="${td};color:#6b7280">Nenhum item.</td></tr>`;
+      s.rows.forEach((r, i) => { h += `<tr style="background:${i % 2 ? "#f8fafc" : "#fff"}">${r.cells.map((c) => `<td style="${td}">${escHtml(c)}</td>`).join("")}<td style="${td}">${escHtml(obsDe(s.id, r))}</td></tr>`; });
+      h += "</tbody></table>";
+    });
+    return h + `<p style="margin-top:18px;color:#6b7280;font-size:11px">Enviado a partir do portal Genesis I.</p></div>`;
   };
-  const abrirEmail = () => {
+  const montarTexto = () => {
+    const L = [assunto, ""];
+    secoes.forEach((s) => {
+      L.push(s.titulo, s.explicacao, [...s.cols, "Observação"].join(" | "));
+      if (!s.rows.length) L.push("(nenhum item)");
+      s.rows.forEach((r) => L.push([...r.cells, obsDe(s.id, r)].join(" | ")));
+      L.push("");
+    });
+    return L.join("\n");
+  };
+  const copiar = async () => {
+    const html = montarHtml(); const txt = montarTexto();
+    try {
+      if (window.ClipboardItem && navigator.clipboard.write) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([txt], { type: "text/plain" }) })]);
+      else await navigator.clipboard.writeText(txt);
+      setMsg("Resumo copiado com as tabelas. Cole no corpo do e-mail (Ctrl+V).");
+    } catch (e) { setMsg("Não consegui copiar automaticamente — selecione a área abaixo e copie com Ctrl+C."); }
+    setTimeout(() => setMsg(""), 7000);
+    return true;
+  };
+  const abrirEmail = async () => {
     try { localStorage.setItem("genesis_resumo_para", para); } catch (e) { /* ignora */ }
-    const corpo = texto.length > 1700 ? texto.slice(0, texto.lastIndexOf("\n", 1700)) + "\n\n[... texto completo copiado — cole aqui com Ctrl+V ...]" : texto;
-    if (texto.length > 1700) copiar();
-    window.location.href = `mailto:${encodeURIComponent(para).replace(/%2C/g, ",").replace(/%40/g, "@")}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+    await copiar();
+    const corpo = "Olá,\n\nSegue o resumo semanal do TM Master.\n\n[Cole aqui o resumo com Ctrl+V — as tabelas já estão copiadas]\n";
+    window.location.href = `mailto:${para.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
   };
 
+  const inp = { width: "100%", minWidth: 180, padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)" };
   return (
     <div style={{ marginBottom: 14 }}>
       <button className="g-btn" onClick={() => setAberto((v) => !v)}><FileText size={14} />{aberto ? "Fechar resumo por e-mail" : "Enviar resumo por e-mail"}</button>
       {aberto && (
         <div className="g-panel" style={{ marginTop: 10 }}>
-          <div className="g-panel-head"><span className="g-panel-title">Resumo do TM Master para e-mail</span></div>
-          <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
-            Mostra a situação de hoje (todos os dados, sem os filtros da tela). “Abrir no e-mail” abre o seu programa de e-mail com o texto pronto — você confere e clica em enviar. Se o texto for longo, ele também é copiado para colar.
+          <div className="g-panel-head"><span className="g-panel-title">Resumo do TM Master para e-mail — em tabelas</span></div>
+          <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>
+            Cada tópico tem uma explicação e uma tabela com a coluna <b>Observação</b> (já preenchida automaticamente; você pode editar qualquer uma antes de enviar).
+            Mostra a situação de hoje, com todos os dados (sem os filtros da tela). Como o e-mail comum não recebe tabelas por link, o botão <b>Abrir no e-mail</b> copia o resumo formatado e abre o e-mail com destinatários e assunto — é só colar (Ctrl+V).
           </div>
           <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
             <input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="Para: email1@empresa.com, email2@empresa.com" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>Linhas por tabela
+              <select value={limite} onChange={(e) => setLimite(Number(e.target.value))} style={{ padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+                <option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={0}>Todas</option>
+              </select></label>
             <button className="g-btn primary g-keep" onClick={abrirEmail}>Abrir no e-mail</button>
-            <button className="g-btn" onClick={copiar}>{copiado ? "Copiado!" : "Copiar texto"}</button>
+            <button className="g-btn" onClick={copiar}>Copiar resumo (com tabelas)</button>
           </div>
-          <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 4 }}>Assunto: <b style={{ color: "var(--text)" }}>{assunto}</b></div>
-          <textarea readOnly value={texto} style={{ width: "100%", minHeight: 300, fontFamily: "var(--mono)", fontSize: 12, padding: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--panel-raised, #fafafa)", color: "var(--text)", resize: "vertical" }} />
+          {msg && <div className="g-alert" style={{ marginBottom: 10 }}>{msg}</div>}
+          <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 6 }}>Assunto: <b style={{ color: "var(--text)" }}>{assunto}</b></div>
+          <div style={{ maxHeight: 620, overflow: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 12 }}>
+            {secoes.map((s) => (
+              <div key={s.id} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{s.titulo}</div>
+                <div className="g-muted" style={{ fontSize: 11.5, margin: "2px 0 6px" }}>{s.explicacao}</div>
+                <div className="g-table-wrap">
+                  <table className="g-table tbl-modern">
+                    <thead><tr>{[...s.cols, "Observação"].map((c) => <th key={c}>{c}</th>)}</tr></thead>
+                    <tbody>
+                      {s.rows.length === 0 && <tr><td colSpan={s.cols.length + 1} className="g-muted" style={{ textAlign: "center", padding: 12 }}>Nenhum item.</td></tr>}
+                      {s.rows.map((r) => (
+                        <tr className="g-row tbl-row" key={r.key}>
+                          {r.cells.map((c, j) => <td key={j} style={{ whiteSpace: "normal" }}>{c === "" || c === null || c === undefined ? "—" : c}</td>)}
+                          <td style={{ minWidth: 220 }}><input value={obsDe(s.id, r)} onChange={(e) => setObs((p) => ({ ...p, [`${s.id}|${r.key}`]: e.target.value }))} style={inp} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
