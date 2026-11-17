@@ -743,7 +743,7 @@ const WP_COLS = [
   ["discipline", "Disciplina (custo)"],
   ["budget", "Budget"], ["committed", "Comprometido"], ["actual", "Realizado"], ["forecast", "Forecast"],
   ["start", "Início"], ["end", "Fim"], ["status", "Status"], ["progress", "Progresso (%)"],
-  ["dataRealInicio", "Data Real de Início"], ["dataRealFim", "Data Real de Conclusão"], ["repeatOf", "Repetição de (ID)"],
+  ["repeatOf", "Repetição de (ID)"],
   ["planoAcao", "Plano de Ação"], ["precisaMaterial", "Precisa de Material"], ["materialNecessario", "Material Necessário"],
   ["impacto", "Impacto"], ["novaDataPrevista", "Nova Data Prevista"],
 ];
@@ -752,6 +752,7 @@ const PLAN_COLS = [
   ["planoAcao", "Plano de Ação"], ["rc", "RC"], ["obs", "Observação"],
   ["precisaMaterial", "Precisa de Material"], ["materialNecessario", "Material Necessário"], ["poMaterial", "PO"],
   ["impacto", "Impacto"], ["status", "Status"], ["dataExecucao", "Data de Execução"],
+  ["jobTipo", "Job Type (vinculado)"], ["jobNo", "Job No (vinculado)"], ["justificativa", "Justificativa"],
 ];
 const DOC_COLS = [
   ["nome", "Nome"], ["localizacao", "Localização"], ["tipoPeriodo", "Tipo"], ["empresa", "Empresa"], ["planoAcao", "Plano de Ação"],
@@ -774,7 +775,7 @@ const TM_DUE_COLS = [
   ["jobName", "Job name"], ["interval", "Int"], ["hours", "Hours"], ["dueRaw", "Due"], ["diffRaw", "Diff"],
   ["pri", "Pri"], ["department", "Department"], ["estimatedDue", "EstimatedDue"],
   ["lastDoneDate", "LastDoneDate"], ["lastDoneHours", "LastDoneHours"],
-  ["planoAcao", "Plano de Ação"], ["linkedPlanId", "Adicionado ao Planejamento"],
+  ["planoAcao", "Plano de Ação"], ["po", "PO"], ["linkedPlanId", "Adicionado ao Planejamento"],
 ];
 const TM_HISTORY_COLS = [
   ["jobHistoryNumber", "Job History Number"], ["componentCode", "ComponentCode"], ["componentName", "ComponentName"],
@@ -1112,8 +1113,7 @@ const DEFAULT_USERS = [
    role "viewer" = somente leitura; tabs = abas liberadas (sem o campo = todas). */
 const PERM_TABS = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "services", label: "Serviços" },
-  { key: "planejamento", label: "Planejamento" },
+  { key: "manutencao", label: "Manutenção" },
   { key: "tmmaster", label: "TM Master" },
   { key: "materials", label: "Materiais" },
   { key: "payments", label: "Pagamentos" },
@@ -1121,10 +1121,13 @@ const PERM_TABS = [
 ];
 const isAdminUser = (u) => !!u && (u.admin === true || (u.admin === undefined && String(u.username || "").toLowerCase() === "lethicia"));
 const isViewerUser = (u) => !!u && !isAdminUser(u) && u.role === "viewer";
+/* "Serviços" e "Planejamento" viraram a aba "Manutenção": quem tinha uma delas ganha Manutenção */
+const normTabs = (tabs) => (Array.isArray(tabs) ? [...new Set(tabs.map((k) => (k === "services" || k === "planejamento" ? "manutencao" : k)))] : tabs);
 const allowedTabsOf = (u) => {
   const all = PERM_TABS.map((t) => t.key);
   if (!u || isAdminUser(u) || !Array.isArray(u.tabs)) return all;
-  const ok = all.filter((k) => u.tabs.includes(k));
+  const ut = normTabs(u.tabs);
+  const ok = all.filter((k) => ut.includes(k));
   return ok.length ? ok : all.slice(0, 1);
 };
 
@@ -1480,6 +1483,8 @@ export default function Root() {
   const [tmDueSnapshots, setTmDueSnapshots] = useState(INITIAL_TM_DUE_SNAPSHOTS);
   const [tmFailures, setTmFailures] = useState(INITIAL_TM_FAILURES);
   const [tmBordo, setTmBordo] = useState(INITIAL_TM_BORDO);
+  const [portcallReqs, setPortcallReqs] = useState([]);
+  const [reparoItens, setReparoItens] = useState([]);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
      saveEnabled só vira true dentro do "then" de sucesso (mesmo que o servidor não tenha
@@ -1514,6 +1519,8 @@ export default function Root() {
           if (d.tmHistory) setTmHistory(d.tmHistory);
           if (d.tmDueSnapshots) setTmDueSnapshots(d.tmDueSnapshots);
           if (Array.isArray(d.tmBordo)) setTmBordo(d.tmBordo);
+          if (Array.isArray(d.portcallReqs)) setPortcallReqs(d.portcallReqs);
+          if (Array.isArray(d.reparoItens)) setReparoItens(d.reparoItens);
           if (d.tmFailures) setTmFailures({ ...INITIAL_TM_FAILURES, ...d.tmFailures });
         }
         setSaveEnabled(true);
@@ -1539,12 +1546,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo]);
+  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens]);
 
   if (!loaded) {
     return (
@@ -1589,6 +1596,7 @@ export default function Root() {
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       tmFailures={tmFailures} setTmFailures={roMode ? noop : setTmFailures}
       tmBordo={tmBordo} setTmBordo={roMode ? noop : setTmBordo}
+      portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens}
       loadError={loadError}
     />
   );
@@ -1602,7 +1610,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
-  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, loadError }) {
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, loadError }) {
   const isAdmin = isAdminUser(currentUser);
   const allowedTabs = allowedTabsOf(currentUser);
   const [tabState, setTab] = useState(allowedTabs[0]);
@@ -1616,6 +1624,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   };
   const [expandedWp, setExpandedWp] = useState(null);
   const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
+  const [manSub, setManSub] = useState("services"); // "services" | "planejamento" | "portcall" | "reparo"
   const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "docagem" | "board"
   const [tmSubTab, setTmSubTab] = useState("due"); // "due" | "history" | "metricas"
   const [alertaDias, setAlertaDias] = useState(20);
@@ -1731,8 +1740,8 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
           return rows.map((r) => {
             const old = r.code ? byKey.get(`${r.code}|${r.jobNo}`) : null;
             return old
-              ? { ...r, id: old.id, planoAcao: old.planoAcao || "", linkedPlanId: old.linkedPlanId || null }
-              : { ...r, planoAcao: "", linkedPlanId: null };
+              ? { ...r, id: old.id, planoAcao: old.planoAcao || "", po: old.po || "", linkedPlanId: old.linkedPlanId || null }
+              : { ...r, planoAcao: "", po: "", linkedPlanId: null };
           });
         });
         const vencidasCount = rows.filter((r) => r.diffValue !== null && r.diffValue < 0).length;
@@ -1912,7 +1921,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
       id, nome: "Novo mapeamento", departamento: "", empresa: "",
       descricaoProblema: "", planoAcao: "", rc: "", obs: "", status: "A Executar",
       precisaMaterial: false, materialNecessario: "", poMaterial: "", impacto: "Baixo",
-      dataExecucao: "", linkedServiceId: null,
+      dataExecucao: "", linkedServiceId: null, jobTipo: "", jobNo: "", justificativa: "",
     }]);
     flashNewRow(id);
   };
@@ -1933,7 +1942,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         obs: dueRow.code ? `TM Master: ${dueRow.code}` : "",
         status: "A Executar", precisaMaterial: false, materialNecessario: "", poMaterial: "",
         impacto: dueRow.pri === "High" ? "Alto" : dueRow.pri === "Medium" ? "Médio" : "Baixo",
-        dataExecucao: "", linkedServiceId: null, linkedFromTmDueId: dueRow.id,
+        dataExecucao: "", linkedServiceId: null, linkedFromTmDueId: dueRow.id, jobTipo: dueRow.jobType || "", jobNo: dueRow.jobNo || "", justificativa: "",
       }]);
       setTmDue((prev) => prev.map((r) => (r.id === dueRow.id ? { ...r, linkedPlanId: planId } : r)));
       setImportMsg("Item adicionado à aba Planejamento.");
@@ -2675,8 +2684,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
-    { key: "services", label: "Serviços", icon: Wrench },
-    { key: "planejamento", label: "Planejamento", icon: ClipboardList },
+    { key: "manutencao", label: "Manutenção", icon: Wrench },
     { key: "tmmaster", label: "TM Master", icon: Gauge },
     { key: "materials", label: "Materiais", icon: Package },
     { key: "payments", label: "Pagamentos", icon: Wallet },
@@ -2782,12 +2790,12 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         </div>
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
-          {tab !== "planejamento" && tab !== "tmmaster" && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
+          {tab !== "tmmaster" && !(tab === "manutencao" && manSub !== "services") && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
           <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
-          {tab === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
-          {tab === "planejamento" && planSubTab === "mapeados" && <button className="g-btn primary" onClick={addPlanningItem}><Plus size={14} />Novo mapeamento</button>}
+          {tab === "manutencao" && manSub === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
+          {tab === "manutencao" && manSub === "planejamento" && planSubTab === "mapeados" && <button className="g-btn primary" onClick={addPlanningItem}><Plus size={14} />Novo mapeamento</button>}
           {tab === "materials" && <button className="g-btn primary" onClick={addMat}><Plus size={14} />Nova requisição</button>}
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
         </div>
@@ -2826,13 +2834,30 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             renameOpCategory={renameOpCategory} removeOpCategory={removeOpCategory} />
         )}
 
-        {tab === "services" && (
+        {tab === "manutencao" && (
+          <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["portcall", "Solicitação Portcall"], ["reparo", "Reparo e Retorno"]].map(([k, l]) => (
+              <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
+            ))}
+          </div>
+        )}
+
+        {tab === "manutencao" && manSub === "services" && (
           <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} newRowId={newRowId} />
         )}
 
-        {tab === "planejamento" && (
-          <PlanejamentoView workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+        {tab === "manutencao" && manSub === "portcall" && (
+          <PortcallRequestView portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} planningItems={planningItems} tmDue={tmDue} tmHistory={tmHistory}
+            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+        )}
+
+        {tab === "manutencao" && manSub === "reparo" && (
+          <ReparoRetornoView reparoItens={reparoItens} setReparoItens={setReparoItens} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+        )}
+
+        {tab === "manutencao" && manSub === "planejamento" && (
+          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -3633,6 +3658,315 @@ const StatusServicoSelect = ({ value, onChange }) => {
   );
 };
 
+/* ============================================================
+   MANUTENÇÃO › Solicitação para o Port Call (e-mail) e Reparo e Retorno
+   ============================================================ */
+const PC_TIPOS = ["Preventiva", "Preditiva", "Corretiva", "Melhoria / Outra"];
+
+function PortcallRequestView({ portcallReqs, setPortcallReqs, planningItems, tmDue, tmHistory, allPortCallDates, portCallLabel, setReportFn, setExportXlsxFn }) {
+  const reqs = portcallReqs || [];
+  const [selId, setSelId] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_portcall_para") || ""; } catch (e) { return ""; } });
+  const hoje = todayISO();
+  const sel = reqs.find((r) => r.id === selId) || reqs[0] || null;
+  const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
+
+  const pcRotulo = (dk) => { try { return dk ? portCallLabel(dk) : "—"; } catch (e) { return dk || "—"; } };
+  const novaReq = () => {
+    const id = uid("PCR");
+    setPortcallReqs((a) => [{ id, portCall: allPortCallDates.find((d) => d >= hoje) || allPortCallDates[allPortCallDates.length - 1] || "", itens: [], criado: hoje, enviado: "" }, ...(a || [])]);
+    setSelId(id);
+  };
+  const updReq = (k, v) => setPortcallReqs((a) => a.map((r) => (r.id === sel.id ? { ...r, [k]: v } : r)));
+  const remReq = () => { if (window.confirm("Excluir esta solicitação?")) { setPortcallReqs((a) => a.filter((r) => r.id !== sel.id)); setSelId(null); } };
+  const novoItem = (base = {}) => ({ id: uid("PCI"), descricao: "", componente: "", tipo: "Preventiva", justificativa: "", linkado: "nao", jobTipo: "", jobNo: "", oneNo: "", ...base });
+  const addItem = (base) => updReq("itens", [...sel.itens, novoItem(base)]);
+  const updItem = (id, k, v) => updReq("itens", sel.itens.map((x) => (x.id === id ? { ...x, [k]: v } : x)));
+  const remItem = (id) => updReq("itens", sel.itens.filter((x) => x.id !== id));
+  const addMapeado = (pid) => {
+    const p = planningItems.find((x) => x.id === pid); if (!p) return;
+    const temJob = !!(p.jobNo);
+    addItem({ descricao: p.nome, justificativa: p.descricaoProblema || p.planoAcao || "", tipo: "Preventiva", linkado: temJob ? "sim" : "nao", jobTipo: p.jobTipo || "", jobNo: p.jobNo || "", planId: p.id });
+  };
+  const achar = (t, n) => {
+    if (!n) return null;
+    const k = (x) => `${bordoNorm(x.jobType)}|${bordoNorm(x.jobNo)}`; const alvo = `${bordoNorm(t)}|${bordoNorm(n)}`;
+    const d = tmDue.find((x) => k(x) === alvo); if (d) return { onde: "Due", nome: d.jobName };
+    const h = tmHistory.find((x) => k(x) === alvo); if (h) return { onde: "History", nome: h.jobName };
+    return null;
+  };
+  const situacao = (it) => {
+    if (it.linkado === "sim") {
+      if (!it.jobNo) return { cor: "var(--crit)", txt: "Informe o job do plano de manutenção a que está ligado." };
+      const a = achar(it.jobTipo, it.jobNo);
+      return a ? { cor: "var(--ok)", txt: `Ligado ao job ${it.jobTipo} ${it.jobNo} (${a.onde}: ${a.nome || "—"}).` } : { cor: "var(--warn)", txt: `Job ${it.jobTipo} ${it.jobNo} não encontrado no Due/History — confira o número.` };
+    }
+    if (it.tipo === "Corretiva") return it.oneNo
+      ? { cor: "var(--ok)", txt: `Sem job no plano; ONE job ${it.oneNo} aberto no TM.` }
+      : { cor: "var(--crit)", txt: "Corretiva sem job no plano: ABRIR 1 JOB \"ONE\" no TM e informar o número." };
+    return { cor: "var(--warn)", txt: "Sem job no plano de manutenção — avaliar incluir no plano." };
+  };
+  const pendentes = sel ? sel.itens.filter((it) => (it.linkado === "sim" && !it.jobNo) || (it.linkado !== "sim" && it.tipo === "Corretiva" && !it.oneNo)).length : 0;
+
+  const assunto = sel ? `Solicitação de manutenções para o Port Call ${pcRotulo(sel.portCall)}` : "";
+  const linhaCels = (it, i) => [i + 1, it.descricao || "—", it.componente || "—", it.tipo, it.justificativa || "—",
+    it.linkado === "sim" ? `Sim — ${`${it.jobTipo} ${it.jobNo}`.trim() || "job não informado"}` : "Não",
+    it.linkado !== "sim" && it.tipo === "Corretiva" ? (it.oneNo ? `ONE ${it.oneNo}` : "ABRIR 1 job ONE no TM") : "—"];
+  const cols = ["#", "Manutenção a realizar no Port Call", "Componente", "Tipo", "Justificativa", "Ligada a job do plano de manutenção?", "Job ONE (corretiva sem job)"];
+  const montarHtml = () => {
+    const th = (t) => `<th style="border:1px solid #1F3A5F;background:#1F3A5F;color:#fff;padding:5px 7px;font-size:12px;text-align:left">${escHtml(t)}</th>`;
+    const td = (t) => `<td style="border:1px solid #cfd8e6;padding:5px 7px;font-size:12px;vertical-align:top">${escHtml(t)}</td>`;
+    return `<div style="font-family:Calibri,Arial,sans-serif;color:#1b2430"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2>
+<p style="margin:0 0 8px;font-size:13px">Prezados, solicitamos a realização das manutenções abaixo durante o Port Call de <b>${escHtml(pcRotulo(sel.portCall))}</b>. Para cada item informamos a justificativa e se ele já está ligado a um job do plano de manutenção (TM). Itens corretivos sem job no plano terão <b>1 job ONE</b> aberto no TM.</p>
+<table style="border-collapse:collapse;width:100%"><tr>${cols.map(th).join("")}</tr>${sel.itens.map((it, i) => `<tr>${linhaCels(it, i).map(td).join("")}</tr>`).join("") || `<tr>${td("(nenhum item)")}</tr>`}</table>
+<p style="margin:10px 0 0;font-size:12px">Favor confirmar o recebimento e a viabilidade de cada item (equipe, material, janela de execução).</p></div>`;
+  };
+  const montarTexto = () => [assunto, "", `Prezados, solicitamos a realização das manutenções abaixo no Port Call de ${pcRotulo(sel.portCall)}.`, "", cols.join(" | "), ...sel.itens.map((it, i) => linhaCels(it, i).join(" | ")), "", "Favor confirmar o recebimento e a viabilidade de cada item."].join("\n");
+  const copiar = async () => {
+    const html = montarHtml(); const txt = montarTexto();
+    try {
+      if (window.ClipboardItem && navigator.clipboard.write) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([txt], { type: "text/plain" }) })]);
+      else await navigator.clipboard.writeText(txt);
+      setMsg("Solicitação copiada com a tabela. Cole no corpo do e-mail (Ctrl+V).");
+    } catch (e) { setMsg("Não consegui copiar automaticamente — selecione a prévia abaixo e copie com Ctrl+C."); }
+    setTimeout(() => setMsg(""), 7000);
+  };
+  const abrirEmail = async () => {
+    try { localStorage.setItem("genesis_portcall_para", para); } catch (e) { /* ignora */ }
+    await copiar();
+    updReq("enviado", hoje);
+    const corpo = "Prezados,\n\nSegue a solicitação de manutenções para o Port Call.\n\n[Cole aqui a solicitação com Ctrl+V — a tabela já está copiada]\n";
+    window.location.href = `mailto:${para.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  };
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn || !setReportFn) return;
+    const lin = () => reqs.flatMap((r) => r.itens.map((it) => ({ "Port Call": pcRotulo(r.portCall), "Criada em": r.criado, "Enviada em": r.enviado || "", Manutenção: it.descricao, Componente: it.componente, Tipo: it.tipo, Justificativa: it.justificativa, "Ligada a job do plano?": it.linkado === "sim" ? "Sim" : "Não", "Job Type": it.jobTipo, "Job No": it.jobNo, "Job ONE aberto no TM": it.oneNo })));
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem solicitações" }]), "Solicitações Portcall"); XLSX.writeFile(wb, `genesis-solicitacoes-portcall-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Manutenção — Solicitação para o Port Call", sel ? `${assunto} · Gerado em ${new Date().toLocaleDateString("pt-BR")}` : "Sem solicitação");
+      if (sel) { y = pdfSectionTitle(doc, y, "Itens solicitados"); pdfTable(doc, y, cols, sel.itens.map((it, i) => linhaCels(it, i))); }
+      pdfSave(doc, "solicitacao-portcall");
+    });
+  }, [reqs, sel, portCallLabel]);
+
+  const mapDisp = planningItems.filter((p) => !(sel?.itens || []).some((x) => x.planId === p.id));
+  return (
+    <>
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Solicitação por e-mail das manutenções para o Port Call</span></div>
+        <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>
+          Monte a lista do que precisa ser feito no Port Call, com a <b>justificativa</b> e se o item já está <b>ligado a um job do plano de manutenção</b>. Se for <b>corretiva</b> e <b>não</b> estiver ligada a nenhum job, abra <b>1 job "ONE"</b> no TM e informe o número aqui. Depois copie a tabela e abra o e-mail.
+        </div>
+        <div className="g-flex" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {reqs.length > 0 && <select value={sel?.id || ""} onChange={(e) => setSelId(e.target.value)} style={{ padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6 }}>
+            {reqs.map((r) => <option key={r.id} value={r.id}>{pcRotulo(r.portCall)} — {r.itens.length} item(ns){r.enviado ? " · enviada" : ""}</option>)}
+          </select>}
+          <button className="g-btn primary" onClick={novaReq}><Plus size={14} />Nova solicitação</button>
+          {sel && <button className="g-btn ghost danger" onClick={remReq}><Trash2 size={13} />Excluir</button>}
+        </div>
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      {!sel && <div className="g-panel"><div className="g-muted">Nenhuma solicitação ainda — clique em “Nova solicitação”.</div></div>}
+      {sel && (
+        <>
+          <div className="g-panel">
+            <div className="g-flex" style={{ gap: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="g-field"><label>Port Call</label>
+                <select value={sel.portCall} onChange={(e) => updReq("portCall", e.target.value)} style={{ padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6, minWidth: 200 }}>
+                  {sel.portCall && !allPortCallDates.includes(sel.portCall) && <option value={sel.portCall}>{sel.portCall}</option>}
+                  {allPortCallDates.map((d) => <option key={d} value={d}>{pcRotulo(d)}</option>)}
+                </select></div>
+              <div className="g-field"><label>Ou data do Port Call</label><input type="date" value={sel.portCall} onChange={(e) => updReq("portCall", e.target.value)} /></div>
+              <div className="g-field" style={{ flex: 1, minWidth: 260 }}><label>Destinatários (separe por vírgula)</label><input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="email1@..., email2@..." style={inp} /></div>
+              <button className="g-btn g-keep" onClick={copiar}>Copiar tabela</button>
+              <button className="g-btn primary g-keep" onClick={abrirEmail} disabled={!sel.itens.length}>Abrir e-mail</button>
+            </div>
+            {pendentes > 0 && <div className="g-alert" style={{ marginTop: 10 }}><AlertTriangle size={14} style={{ marginTop: 1 }} />{pendentes} item(ns) com pendência: informe o job do plano ou abra 1 job ONE no TM (corretiva sem job).</div>}
+          </div>
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Itens da solicitação ({sel.itens.length})</span>
+              <div className="g-flex" style={{ gap: 8 }}>
+                {mapDisp.length > 0 && <select value="" onChange={(e) => { if (e.target.value) addMapeado(e.target.value); }} style={{ padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, maxWidth: 260 }}>
+                  <option value="">+ Adicionar dos Mapeados…</option>{mapDisp.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>}
+                <button className="g-btn" onClick={() => addItem()}><Plus size={14} />Item manual</button>
+              </div>
+            </div>
+            <div className="g-table-wrap">
+              <table className="g-table tbl-modern">
+                <thead><tr><th>#</th><th style={{ minWidth: 220 }}>Manutenção</th><th style={{ minWidth: 130 }}>Componente</th><th>Tipo</th><th style={{ minWidth: 220 }}>Justificativa</th><th>Ligada a job do plano?</th><th style={{ minWidth: 150 }}>Job (tipo / nº)</th><th style={{ minWidth: 110 }}>Job ONE aberto no TM</th><th style={{ minWidth: 220 }}>Situação</th><th></th></tr></thead>
+                <tbody>
+                  {sel.itens.length === 0 && <tr><td colSpan={10} className="g-muted" style={{ textAlign: "center", padding: 16 }}>Adicione itens dos Mapeados para Execução ou manualmente.</td></tr>}
+                  {sel.itens.map((it, i) => { const s = situacao(it); return (
+                    <tr className="g-row tbl-row" key={it.id} style={{ "--c": s.cor }}>
+                      <td>{i + 1}</td>
+                      <td style={{ verticalAlign: "top" }}><ETextArea rows={1} value={it.descricao} onChange={(v) => updItem(it.id, "descricao", v)} /></td>
+                      <td style={{ verticalAlign: "top" }}><EText value={it.componente} onChange={(v) => updItem(it.id, "componente", v)} /></td>
+                      <td><select value={it.tipo} onChange={(e) => updItem(it.id, "tipo", e.target.value)} style={inp}>{PC_TIPOS.map((t) => <option key={t}>{t}</option>)}</select></td>
+                      <td style={{ verticalAlign: "top" }}><ETextArea rows={1} value={it.justificativa} onChange={(v) => updItem(it.id, "justificativa", v)} /></td>
+                      <td><select value={it.linkado} onChange={(e) => updItem(it.id, "linkado", e.target.value)} style={inp}><option value="sim">Sim</option><option value="nao">Não</option></select></td>
+                      <td>{it.linkado === "sim" ? <div className="g-flex" style={{ gap: 4 }}><input value={it.jobTipo} onChange={(e) => updItem(it.id, "jobTipo", e.target.value.toUpperCase())} placeholder="SRV" style={{ ...inp, width: 56 }} /><input value={it.jobNo} onChange={(e) => updItem(it.id, "jobNo", e.target.value)} placeholder="nº" style={{ ...inp, width: 70 }} /></div> : <span className="g-muted">—</span>}</td>
+                      <td>{it.linkado !== "sim" && it.tipo === "Corretiva" ? <input value={it.oneNo} onChange={(e) => updItem(it.id, "oneNo", e.target.value)} placeholder="nº do ONE" style={inp} /> : <span className="g-muted">—</span>}</td>
+                      <td style={{ whiteSpace: "normal", color: s.cor, fontSize: 11.5, fontWeight: 600 }}>{s.txt}</td>
+                      <td><span className="g-btn ghost danger" onClick={() => remItem(it.id)}><Trash2 size={13} /></span></td>
+                    </tr>); })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="g-panel">
+            <div className="g-panel-head"><span className="g-panel-title">Prévia do e-mail</span></div>
+            <div style={{ background: "#fff", color: "#1b2430", padding: 12, borderRadius: 6, overflowX: "auto" }} dangerouslySetInnerHTML={{ __html: montarHtml() }} />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+const RR_VAZIO = { item: "", sap: "", qty: "", desc: "", sn: "", nfGnsi: "", nfAcu: "", fornecedor: "", po: "", pad: "", bklOut: "", dataEnvio: "", lomRec: "", dataRecebido: "", status: "ABERTO", obs: "" };
+const isIsoD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+const DateOuTexto = ({ value, onChange }) => (isIsoD(value) || !value
+  ? <input type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ padding: "3px 4px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11.5, background: "var(--panel, #fff)", color: "var(--text)" }} />
+  : <input type="text" value={value} onChange={(e) => onChange(e.target.value)} title="Valor em texto (ex.: TBA). Apague para escolher uma data." style={{ padding: "3px 4px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11.5, width: 90, background: "var(--panel, #fff)", color: "var(--text)" }} />);
+
+function ReparoRetornoView({ reparoItens, setReparoItens, setReportFn, setExportXlsxFn }) {
+  const itens = reparoItens || [];
+  const hoje = todayISO();
+  const fileRef = useRef(null);
+  const [msg, setMsg] = useState("");
+  const [f, setF] = useState({ status: "ABERTO", fornecedor: "", busca: "" });
+  const dias = (r) => (r.status !== "RECEBIDO" && isIsoD(r.dataEnvio) ? frDias(r.dataEnvio, hoje) : null);
+  const rows = useMemo(() => itens.map((r) => ({ ...r, _d: dias(r) })), [itens]);
+  const forn = useMemo(() => [...new Set(itens.map((r) => (r.fornecedor || "").trim()).filter(Boolean))].sort(), [itens]);
+  const filtered = useMemo(() => {
+    const b = f.busca.trim().toLowerCase();
+    return rows.filter((r) => (f.status === "Todos" || r.status === f.status) && (!f.fornecedor || r.fornecedor === f.fornecedor)
+      && (!b || `${r.item} ${r.sap} ${r.desc} ${r.sn} ${r.nfGnsi} ${r.nfAcu} ${r.fornecedor} ${r.po} ${r.pad} ${r.obs}`.toLowerCase().includes(b)))
+      .sort((a, b2) => (b2._d ?? -1) - (a._d ?? -1));
+  }, [rows, f]);
+  const abertos = rows.filter((r) => r.status !== "RECEBIDO");
+  const kpi = { total: rows.length, abertos: abertos.length, receb: rows.length - abertos.length, v90: abertos.filter((r) => r._d !== null && r._d > 90).length, semData: abertos.filter((r) => r._d === null).length, maior: abertos.reduce((m, r) => Math.max(m, r._d ?? 0), 0) };
+  const porForn = useMemo(() => { const m = {}; abertos.forEach((r) => { const k = r.fornecedor || "—"; m[k] = m[k] || { n: 0, maior: 0 }; m[k].n++; m[k].maior = Math.max(m[k].maior, r._d ?? 0); }); return Object.entries(m).sort((a, b) => b[1].n - a[1].n); }, [rows]);
+
+  const upd = (id, k, v) => setReparoItens((a) => a.map((r) => (r.id === id ? { ...r, [k]: v, ...(k === "dataRecebido" && isIsoD(v) ? { status: "RECEBIDO" } : {}) } : r)));
+  const novo = () => setReparoItens((a) => [{ id: uid("RR"), ...RR_VAZIO, item: String(a.length + 1) }, ...a]);
+  const rem = (id) => { if (window.confirm("Excluir este item?")) setReparoItens((a) => a.filter((r) => r.id !== id)); };
+
+  const importar = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const nome = wb.SheetNames[0];
+        const m = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
+        const nrm = (c) => String(c).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        const hi = m.findIndex((row) => row.some((c) => nrm(c) === "item") && row.some((c) => nrm(c).includes("description")));
+        if (hi < 0) throw new Error("cabecalho");
+        const cab = m[hi].map(nrm);
+        const col = (fn) => cab.findIndex(fn);
+        const ix = { item: col((c) => c === "item"), sap: col((c) => c === "sap"), qty: col((c) => c === "qty"), desc: col((c) => c.includes("description")), sn: col((c) => c === "s/n"), nfGnsi: col((c) => c.includes("gnsi")), nfAcu: col((c) => c.includes("acu")), fornecedor: col((c) => c.includes("fornecedor")), po: col((c) => c.includes("req/po") || c === "po"), pad: col((c) => c.startsWith("pad")), bklOut: col((c) => c.includes("bkl")), dataEnvio: col((c) => c.includes("sent")), lomRec: col((c) => c.includes("lom")), dataRecebido: col((c) => c.includes("received")), status: col((c) => c === "status"), obs: col((c) => c.includes("remark")) };
+        const val = (v) => {
+          if (v instanceof Date) return `${v.getFullYear()}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}`;
+          return String(v === undefined || v === null ? "" : v).replace(/\s*\n\s*/g, " / ").trim();
+        };
+        const lidos = m.slice(hi + 1).map((row) => { const o = {}; Object.keys(ix).forEach((k) => { o[k] = ix[k] >= 0 ? val(row[ix[k]]) : ""; }); o.status = /receb/i.test(o.status) ? "RECEBIDO" : "ABERTO"; return o; }).filter((o) => o.desc || o.sn || o.sap);
+        const chave = (o) => `${bordoNorm(o.item)}|${bordoNorm(o.desc)}|${bordoNorm(o.sn)}`;
+        let add = 0, atu = 0;
+        setReparoItens((prev) => {
+          const arr = [...prev];
+          lidos.forEach((o) => { const j = arr.findIndex((x) => chave(x) === chave(o)); if (j >= 0) { arr[j] = { ...arr[j], ...o }; atu++; } else { arr.push({ id: uid("RR"), ...RR_VAZIO, ...o }); add++; } });
+          return arr;
+        });
+        setMsg(`Reparo e Retorno importado da aba "${nome}": ${add} item(ns) novo(s), ${atu} atualizado(s).`);
+      } catch (err) { setMsg("Não consegui ler a planilha. Ela precisa ter as colunas ITEM, SAP, QTY, ITEM DESCRIPTION, S/N, ... STATUS, REMARKS."); }
+      setTimeout(() => setMsg(""), 8000);
+    };
+    reader.readAsArrayBuffer(file); e.target.value = "";
+  };
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn || !setReportFn) return;
+    const lin = () => filtered.map((r) => ({ ITEM: r.item, SAP: r.sap, QTY: r.qty, "ITEM DESCRIPTION": r.desc, "S/N": r.sn, "NF_e GNSI #": r.nfGnsi, "NF_e AÇU #": r.nfAcu, "FORNECEDOR DO SERVIÇO": r.fornecedor, "REQ/PO #": r.po, "PAD #": r.pad, "BKL OUT": r.bklOut, "DATE SENT": r.dataEnvio, "LOM REC": r.lomRec, "DATE RECEIVED": r.dataRecebido, STATUS: r.status, "DIAS EM REPARO": r._d === null ? "" : r._d, REMARKS: r.obs }));
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem itens" }]), "Reparo e Retorno"); XLSX.writeFile(wb, `genesis-reparo-e-retorno-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Manutenção — Reparo e Retorno", `${filtered.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [{ label: "Itens", value: kpi.total }, { label: "Em aberto", value: kpi.abertos }, { label: "Recebidos", value: kpi.receb }, { label: "Abertos há +90 dias", value: kpi.v90 }, { label: "Maior tempo (dias)", value: kpi.maior }]);
+      y = pdfSectionTitle(doc, y, "Itens");
+      pdfTable(doc, y, ["Item", "SAP", "Qtd", "Descrição", "S/N", "Fornecedor", "REQ/PO", "Enviado", "Recebido", "Status", "Dias", "Remarks"],
+        filtered.map((r) => [r.item, r.sap, r.qty, r.desc, r.sn, r.fornecedor, r.po, r.dataEnvio, r.dataRecebido, r.status, r._d ?? "—", r.obs]));
+      pdfSave(doc, "relatorio-reparo-e-retorno");
+    });
+  }, [filtered, kpi]);
+
+  const inp = { padding: "3px 5px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11.5, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
+  const T = (r, k, w) => <td style={{ minWidth: w || 90, verticalAlign: "top" }}><input value={r[k] || ""} onChange={(e) => upd(r.id, k, e.target.value)} style={inp} /></td>;
+  return (
+    <>
+      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ maxWidth: 820 }}>
+          <div className="g-panel-title" style={{ marginBottom: 4 }}>Reparo e Retorno — itens enviados para reparo em terra</div>
+          <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>Controle dos itens enviados para reparo (NF, fornecedor, PO, datas de envio e recebimento). Importe a planilha “Reparo e Retorno”; reimportar atualiza os itens existentes (mesmo ITEM + descrição + S/N) sem duplicar. Informar a data de recebimento marca o item como RECEBIDO. O tempo em reparo conta a partir de “Date sent”.</div>
+        </div>
+        <div className="g-flex" style={{ gap: 8 }}>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
+          <button className="g-btn primary" onClick={() => fileRef.current?.click()}><Upload size={14} />Importar planilha</button>
+          <button className="g-btn primary" onClick={novo}><Plus size={14} />Novo item</button>
+        </div>
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {bigKpi("Total de itens", kpi.total, "var(--teal)", Package)}
+        {bigKpi("Em aberto", kpi.abertos, "var(--warn)", Clock)}
+        {bigKpi("Recebidos", kpi.receb, "var(--ok)", Package)}
+        {bigKpi("Abertos há mais de 90 dias", kpi.v90, kpi.v90 ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Maior tempo em reparo (dias)", kpi.maior, kpi.maior > 90 ? "var(--crit)" : "var(--teal)", Clock)}
+      </div>
+      {porForn.length > 0 && (
+        <div className="g-panel">
+          <div className="g-panel-head"><span className="g-panel-title">Em aberto por fornecedor</span></div>
+          <div className="tbl-chips">{porForn.map(([k, v]) => <span key={k} className="tbl-chip" style={{ cursor: "pointer" }} onClick={() => setF((p) => ({ ...p, fornecedor: k === "—" ? "" : k, status: "ABERTO" }))}>{k}: <b>{v.n}</b>{v.maior ? ` · até ${v.maior} d` : ""}</span>)}</div>
+        </div>
+      )}
+      <div className="g-panel">
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+          <div className="g-mode-toggle">{["ABERTO", "RECEBIDO", "Todos"].map((s) => <button key={s} className={f.status === s ? "active" : ""} onClick={() => setF((p) => ({ ...p, status: s }))}>{s}</button>)}</div>
+          <select value={f.fornecedor} onChange={(e) => setF((p) => ({ ...p, fornecedor: e.target.value }))} style={{ padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6 }}><option value="">Todos os fornecedores</option>{forn.map((x) => <option key={x}>{x}</option>)}</select>
+          <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar item, S/N, NF, PO..." style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, minWidth: 240 }} />
+          <span className="g-muted" style={{ fontSize: 11.5 }}>{filtered.length} de {rows.length} · ordenado pelos mais antigos em reparo</span>
+        </div>
+        <div className="g-table-wrap">
+          <table className="g-table tbl-modern">
+            <thead><tr><th>Item</th><th>SAP</th><th>Qtd</th><th style={{ minWidth: 220 }}>Descrição</th><th>S/N</th><th>NF_e GNSI</th><th>NF_e AÇU</th><th style={{ minWidth: 140 }}>Fornecedor</th><th>REQ/PO</th><th>PAD</th><th>BKL OUT</th><th>Date sent</th><th>LOM REC</th><th>Date received</th><th>Status</th><th style={{ textAlign: "right" }}>Dias em reparo</th><th style={{ minWidth: 200 }}>Remarks</th><th></th></tr></thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={18} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{rows.length ? "Nenhum item com esse filtro." : "Nenhum item ainda — importe a planilha “Reparo e Retorno” ou use “Novo item”."}</td></tr>}
+              {filtered.map((r) => (
+                <tr className="g-row tbl-row" key={r.id} style={{ "--c": r.status === "RECEBIDO" ? "#22C55E" : (r._d !== null && r._d > 90 ? "#EF4444" : "#F5A623") }}>
+                  {T(r, "item", 50)}{T(r, "sap", 90)}{T(r, "qty", 50)}
+                  <td style={{ minWidth: 220, verticalAlign: "top" }}><ETextArea rows={1} value={r.desc} onChange={(v) => upd(r.id, "desc", v)} /></td>
+                  {T(r, "sn", 100)}{T(r, "nfGnsi", 80)}{T(r, "nfAcu", 80)}{T(r, "fornecedor", 140)}{T(r, "po", 90)}{T(r, "pad", 70)}{T(r, "bklOut", 70)}
+                  <td><DateOuTexto value={r.dataEnvio} onChange={(v) => upd(r.id, "dataEnvio", v)} /></td>
+                  {T(r, "lomRec", 70)}
+                  <td><DateOuTexto value={r.dataRecebido} onChange={(v) => upd(r.id, "dataRecebido", v)} /></td>
+                  <td><select value={r.status} onChange={(e) => upd(r.id, "status", e.target.value)} style={{ ...inp, fontWeight: 700, color: r.status === "RECEBIDO" ? "var(--ok)" : "var(--warn)" }}><option>ABERTO</option><option>RECEBIDO</option></select></td>
+                  <td style={{ textAlign: "right", fontWeight: 700, color: r._d !== null && r._d > 90 ? "var(--crit)" : "inherit" }}>{r._d === null ? (r.status === "RECEBIDO" ? "—" : "sem data") : `${r._d} d`}</td>
+                  <td style={{ minWidth: 200, verticalAlign: "top" }}><ETextArea rows={1} value={r.obs} onChange={(v) => upd(r.id, "obs", v)} /></td>
+                  <td><span className="g-btn ghost danger" onClick={() => rem(r.id)}><Trash2 size={13} /></span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp, setReportFn, setExportXlsxFn, newRowId }) {
   React.useEffect(() => {
     if (!newRowId) return;
@@ -3663,14 +3997,6 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
   const handleStatusChange = (i, v) => {
     updWp(i, "status", v);
     updWp(i, "progress", WP_STATUS_DEFAULT_PROGRESS[v] ?? 0);
-  };
-
-  /* rastreabilidade: nem toda manutenção planejada para uma data é de fato executada nela —
-     dataRealInicio/dataRealFim registram quando ela realmente aconteceu, e o desvio mostra
-     a diferença em dias em relação à data planejada (w.start), pra não perder o histórico. */
-  const desvioDias = (w) => {
-    if (!w.dataRealInicio) return null;
-    return Math.round((new Date(w.dataRealInicio) - new Date(dateKeyOf(w.start))) / 86400000);
   };
 
   const filtered = useMemo(() => {
@@ -3710,8 +4036,6 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
   const cancelados = filtered.filter((w) => w.status === "Cancelado").length;
   const naoCancelados = filtered.length - cancelados;
   const taxaConclusao = naoCancelados ? Math.round((concluidos / naoCancelados) * 100) : 0;
-  const comDesvio = filtered.filter((w) => { const d = desvioDias(w); return d !== null && d !== 0; });
-  const desvioMedio = comDesvio.length ? Math.round(comDesvio.reduce((s, w) => s + Math.abs(desvioDias(w)), 0) / comDesvio.length) : 0;
 
   React.useEffect(() => {
     if (!setExportXlsxFn) return;
@@ -3734,20 +4058,15 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
         { label: "Não Iniciados", value: naoIniciados },
         { label: "Cancelados", value: cancelados },
         { label: "Taxa de Conclusão", value: `${taxaConclusao}%` },
-        { label: "Serviços com Desvio de Execução", value: comDesvio.length },
-        { label: "Desvio Médio (dias)", value: desvioMedio },
       ]);
       y = pdfSectionTitle(doc, y, "Serviços");
       pdfTable(doc, y,
-        ["Data", "Categoria", "Manutenção", "Empresa", "RC", "Status", "Progresso", "Desvio"],
-        filtered.map((w) => {
-          const d = desvioDias(w);
-          return [fmtDate((w.start || "").slice(0, 10)), w.group || "—", w.name, w.empresa || "—", w.rc || "—", w.status, `${w.progress}%`, d === null ? "—" : (d > 0 ? `+${d}d` : `${d}d`)];
-        })
+        ["Data", "Categoria", "Manutenção", "Empresa", "RC", "Status", "Progresso"],
+        filtered.map((w) => [fmtDate((w.start || "").slice(0, 10)), w.group || "—", w.name, w.empresa || "—", w.rc || "—", w.status, `${w.progress}%`])
       );
       pdfSave(doc, "relatorio-servicos");
     });
-  }, [filtered, concluidos, emAndamento, naoIniciados, cancelados, taxaConclusao, comDesvio, desvioMedio, setReportFn]);
+  }, [filtered, concluidos, emAndamento, naoIniciados, cancelados, taxaConclusao, setReportFn]);
 
   return (
     <>
@@ -3797,17 +4116,13 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
       </div>
 
       {/* KPIs de análise dos serviços */}
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
         {bigKpi("Total de Serviços", filtered.length, "var(--teal)", Wrench)}
         {bigKpi("Concluídos", concluidos, "var(--ok)", Wrench)}
         {bigKpi("Em Andamento", emAndamento, "var(--teal)", Wrench)}
         {bigKpi("Não Iniciados", naoIniciados, "var(--text-dim)", Wrench)}
-        {bigKpi("Taxa de Conclusão", `${taxaConclusao}%`, "var(--warn)", LayoutGrid)}
-      </div>
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {bigKpi("Cancelados", cancelados, "var(--text-dim)", X)}
-        {bigKpi("Serviços com Desvio de Execução", comDesvio.length, "var(--crit)", AlertTriangle)}
-        {bigKpi("Desvio Médio (dias)", desvioMedio, "var(--crit)", AlertTriangle)}
+        {bigKpi("Taxa de Conclusão", `${taxaConclusao}%`, "var(--warn)", LayoutGrid)}
       </div>
 
       {filtered.length === 0 ? (
@@ -3829,7 +4144,6 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
               <SortTh sortKey="empresa" sort={sort} setSort={setSort} style={{ minWidth: 140 }}>Empresa</SortTh>
               <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 170 }}>Status</SortTh>
               <SortTh sortKey="progress" sort={sort} setSort={setSort} style={{ minWidth: 150 }}>Progresso</SortTh>
-              <th style={{ minWidth: 80 }}>Desvio</th>
               <th style={{ width: 90 }}></th>
             </tr>
           </thead>
@@ -3838,7 +4152,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
               <React.Fragment key={g.key}>
                 {groupByPc && (
                   <tr className="tbl-group" onClick={() => toggleWpGroup(g.key)}>
-                    <td colSpan={7}>
+                    <td colSpan={6}>
                       <span className="tbl-group-arrow">{collapsedWp.has(g.key) ? "▸" : "▾"}</span>
                       {g.label}
                       <span className="tbl-group-cnt">{g.rows.length} serviço(s)</span>
@@ -3877,24 +4191,6 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                         <span style={{ fontSize: 10, color: "var(--text-faint)" }}>%</span>
                       </div>
                     </td>
-                    {(() => {
-                      const d = desvioDias(w);
-                      return (
-                        <td style={{ minWidth: 80, textAlign: "center" }}>
-                          {d === null ? (
-                            <span className="g-muted" style={{ fontSize: 11 }}>—</span>
-                          ) : (
-                            <span style={{
-                              fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
-                              color: d === 0 ? "var(--ok)" : "var(--crit)",
-                              background: d === 0 ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
-                            }} title={d === 0 ? "Executado na data planejada" : d > 0 ? `Executado ${d} dia(s) depois do planejado` : `Executado ${Math.abs(d)} dia(s) antes do planejado`}>
-                              {d > 0 ? `+${d}d` : `${d}d`}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })()}
                     <td style={{ whiteSpace: "nowrap" }}>
                       {w.status !== "Concluído" && w.status !== "Cancelado" && (
                         <span className="g-btn ghost" onClick={() => repeatWp(w)} title="Ainda não concluído — repetir esta linha para outra data">🔁</span>
@@ -3908,7 +4204,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                   {isOpen && (
                     <tr className="g-expand-row">
                       <td></td>
-                      <td colSpan={6} style={{ padding: "10px 8px 16px 8px" }}>
+                      <td colSpan={5} style={{ padding: "10px 8px 16px 8px" }}>
                         <div className="g-panel-title" style={{ marginBottom: 8 }}>Dados Gerais</div>
                         <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
                           <div className="g-field"><label>Data</label><EDate value={(w.start || "").slice(0, 10)} onChange={(v) => setDateKeepTime(i, w, v)} /></div>
@@ -3923,22 +4219,6 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
                           <div className="g-field"><label>Início</label><EDateTime value={w.start} onChange={(v) => updWp(i, "start", v)} /></div>
                           <div className="g-field"><label>Fim</label><EDateTime value={w.end} onChange={(v) => updWp(i, "end", v)} /></div>
                         </div>
-                        <div className="g-panel-title" style={{ marginBottom: 8 }}>
-                          Execução real <span className="g-muted" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— preencha quando a manutenção acontecer numa data diferente da planejada, para manter o histórico</span>
-                        </div>
-                        <div className="g-flex" style={{ flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
-                          <div className="g-field"><label>Data real de início</label><EDate value={w.dataRealInicio} onChange={(v) => updWp(i, "dataRealInicio", v)} /></div>
-                          <div className="g-field"><label>Data real de conclusão</label><EDate value={w.dataRealFim} onChange={(v) => updWp(i, "dataRealFim", v)} /></div>
-                          {desvioDias(w) !== null && (
-                            <div className="g-field">
-                              <label>Desvio calculado</label>
-                              <div style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, padding: "6px 0", color: desvioDias(w) === 0 ? "var(--ok)" : "var(--crit)" }}>
-                                {desvioDias(w) > 0 ? `+${desvioDias(w)}` : desvioDias(w)} dia(s) {desvioDias(w) === 0 ? "(dentro do planejado)" : desvioDias(w) > 0 ? "depois do planejado" : "antes do planejado"}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
                         <div className="g-panel-title" style={{ marginBottom: 8 }}>Rastreabilidade</div>
                         {w.repeatOf && (() => {
                           const orig = workPackages.find((o) => o.id === w.repeatOf);
@@ -3993,7 +4273,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab, tmDue, tmHistory }) {
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
@@ -4268,6 +4548,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                   <th style={{ minWidth: 140 }}>Data de Execução</th>
                   <th>Impacto</th>
                   <th style={{ minWidth: 150 }}>Material</th>
+                  <th style={{ minWidth: 170 }}>Job vinculado (TM)</th>
                   <th style={{ minWidth: 150 }}>Status</th>
                   <th style={{ width: 70 }}></th>
                 </tr>
@@ -4277,7 +4558,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                   <React.Fragment key={g.key}>
                     {groupMap && (
                       <tr className="tbl-group" onClick={() => setCollapsedMap((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <span className="tbl-group-arrow">{collapsedMap.has(g.key) ? "▸" : "▾"}</span>
                           {g.key}
                           <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
@@ -4324,6 +4605,19 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                             style={{ fontSize: 11, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px", width: "100%", marginTop: 4 }} />
                         )}
                       </td>
+                      <td style={{ minWidth: 170, verticalAlign: "top" }}>
+                        {(() => {
+                          const ach = p.jobNo ? ([...(tmDue || []), ...(tmHistory || [])].find((x) => bordoNorm(x.jobType) === bordoNorm(p.jobTipo) && bordoNorm(x.jobNo) === bordoNorm(p.jobNo))) : null;
+                          const ini = { fontSize: 11.5, background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px", color: "var(--text)" };
+                          return (<>
+                            <div className="g-flex" style={{ gap: 4 }}>
+                              <input type="text" placeholder="Tipo" value={p.jobTipo || ""} onChange={(e) => updPlan(i, "jobTipo", e.target.value.toUpperCase())} style={{ ...ini, width: 58 }} />
+                              <input type="text" placeholder="nº do job" value={p.jobNo || ""} onChange={(e) => updPlan(i, "jobNo", e.target.value)} style={{ ...ini, width: 82 }} />
+                            </div>
+                            {p.jobNo && <div style={{ marginTop: 3, fontSize: 10, color: ach ? "var(--ok)" : "var(--warn)" }} title={ach?.jobName || ""}>{ach ? `✔ no TM: ${(ach.jobName || "").slice(0, 28)}` : "⚠ não achado no TM"}</div>}
+                          </>);
+                        })()}
+                      </td>
                       <td style={{ minWidth: 150 }}>
                         <select value={p.status || "A Executar"} onChange={(e) => updPlan(i, "status", e.target.value)}
                           style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: PLAN_STATUS_COLOR[p.status || "A Executar"], fontWeight: 700, borderRadius: 6, padding: "5px 8px", fontSize: 11.5, width: "100%" }}>
@@ -4343,12 +4637,13 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                     {isOpen && (
                       <tr className="tbl-detail">
                         <td></td>
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           <div className="tbl-detail-grid">
                             <div className="g-field"><label>Departamento</label><EText value={p.departamento} onChange={(v) => updPlan(i, "departamento", v)} /></div>
                             <div className="g-field"><label>Empresa</label><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Descrição do Problema</label><ETextArea rows={1} value={p.descricaoProblema} onChange={(v) => updPlan(i, "descricaoProblema", v)} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Plano de Ação</label><ETextArea rows={1} value={p.planoAcao} onChange={(v) => updPlan(i, "planoAcao", v)} /></div>
+                            <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Justificativa (usada na solicitação ao Port Call)</label><ETextArea rows={1} value={p.justificativa || ""} onChange={(v) => updPlan(i, "justificativa", v)} /></div>
                           </div>
                         </td>
                       </tr>
@@ -5061,6 +5356,16 @@ const frOrderEncerrada = (o) => /received|cancel|closed/i.test(o.status);
 const frJobVencido = (j, hoje) => !!j.nextDue && j.nextDue < hoje;
 const frDias = (iso, hoje) => (iso ? Math.floor((new Date(hoje + "T00:00:00") - new Date(iso + "T00:00:00")) / 86400000) : null);
 const FR_FAIXAS = [["0-7 dias", 0, 7], ["8-30 dias", 8, 30], ["31-60 dias", 31, 60], ["61-90 dias", 61, 90], ["+90 dias", 91, 1e9]];
+/* Failure Reports em aberto e o que falta em cada um: action, job (aberto ou executado) e order */
+const frGaps = (F, hoje) => {
+  const by = (arr) => { const m = new Map(); arr.forEach((x) => { if (x.frNo) m.set(x.frNo, (m.get(x.frNo) || 0) + 1); }); return m; };
+  const a = by(F.actions), j = by(F.jobs), jh = by(F.jobHistory), o = by(F.orders);
+  return F.reports.filter((r) => !/complet|closed/i.test(r.status)).map((r) => {
+    const noAct = !a.get(r.no), noJob = !j.get(r.no) && !jh.get(r.no), noOrd = !o.get(r.no);
+    const falta = [noAct && "action", noJob && "job", noOrd && "order"].filter(Boolean);
+    return { r, noAct, noJob, noOrd, n: falta.length, falta, dias: frDias(r.failureDate || r.submittedDate, hoje) };
+  });
+};
 const frMesKey = (iso) => (iso ? iso.slice(0, 7) : "");
 const frMesLabel = (k) => { const [y, m] = k.split("-"); return `${["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][Number(m) - 1]}/${y.slice(2)}`; };
 
@@ -5213,6 +5518,12 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   }, [pend]);
   const diasTxt = (d) => (d === null || d === undefined ? "—" : `${d} d`);
 
+  /* ANÁLISE: Failure Reports em aberto sem action, sem job ou sem order */
+  const [gapTipo, setGapTipo] = useState("Com lacuna");
+  const gaps = useMemo(() => frGaps({ ...F, reports: filtered }, hoje).sort((a, b) => b.n - a.n || (b.dias ?? -1) - (a.dias ?? -1)), [filtered, F]);
+  const gapsVis = gaps.filter((g) => (gapTipo === "Com lacuna" ? g.n > 0 : gapTipo === "Sem action" ? g.noAct : gapTipo === "Sem job" ? g.noJob : gapTipo === "Sem order" ? g.noOrd : g.n === 3));
+  const gapKpi = { abertos: gaps.length, semAct: gaps.filter((g) => g.noAct).length, semJob: gaps.filter((g) => g.noJob).length, semOrd: gaps.filter((g) => g.noOrd).length, nada: gaps.filter((g) => g.n === 3).length };
+  const abrirFr = (no) => { setOpen((p) => new Set(p).add(no)); setTimeout(() => document.getElementById(`fr-row-${no}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); };
   const porMes = useMemo(() => {
     const m = new Map(); filtered.forEach((r) => { const k = frMesKey(r.failureDate); if (k) m.set(k, (m.get(k) || 0) + 1); });
     return [...m.entries()].sort().map(([k, v]) => ({ mes: frMesLabel(k), total: v }));
@@ -5245,7 +5556,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
     setExportXlsxFn(() => () => {
       const p = pack(); const wb = XLSX.utils.book_new();
       const add = (n, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "—": "Sem registros" }]), n);
-      add("Failure Reports", p.resumo); add("Pendências (mais antigas)", pend.map((x) => ({ Tipo: x.tipo, "Failure Report No.": x.frNo, "Failure Report": x.frName, Referência: x.ref, Descrição: x.desc, Responsável: x.resp, Departamento: x.dept, "Aberto desde": fmtDataCompleta(x.desde), "Dias parado": x.dias, Prazo: fmtDataCompleta(x.prazo), "Dias de atraso": x.atraso || 0, Situação: x.situacao, Prioridade: x.prioridade }))); add("Actions", p.actions); add("Jobs", p.jobs); add("Job History", p.hist); add("Orders", p.orders);
+      add("Failure Reports", p.resumo); add("Pendências (mais antigas)", pend.map((x) => ({ Tipo: x.tipo, "Failure Report No.": x.frNo, "Failure Report": x.frName, Referência: x.ref, Descrição: x.desc, Responsável: x.resp, Departamento: x.dept, "Aberto desde": fmtDataCompleta(x.desde), "Dias parado": x.dias, Prazo: fmtDataCompleta(x.prazo), "Dias de atraso": x.atraso || 0, Situação: x.situacao, Prioridade: x.prioridade }))); add("FR sem tratativa", gaps.filter((g) => g.n > 0).map((g) => ({ "Failure Report No.": g.r.no, Nome: g.r.name, "Data da falha": g.r.failureDate ? fmtDataCompleta(g.r.failureDate) : "", "Dias aberto": g.dias, Status: g.r.status, Departamento: g.r.department, "Tem action": g.noAct ? "NÃO" : "sim", "Tem job": g.noJob ? "NÃO" : "sim", "Tem order": g.noOrd ? "NÃO" : "sim", "O que falta": g.falta.join(", ") }))); add("Actions", p.actions); add("Jobs", p.jobs); add("Job History", p.hist); add("Orders", p.orders);
       XLSX.writeFile(wb, `genesis-tm-master-failure-reports-${todayISO()}.xlsx`);
     });
     setReportFn(() => () => {
@@ -5268,13 +5579,16 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
         if (l.jobHistory.length) y = pdfTable(doc, y, ["Histórico", "Job", "Componente", "Data feita", "Feito por", "Observações"], l.jobHistory.map((h) => [h.number, `${h.jobType} ${h.jobNo}`, `${h.compCode} ${h.compName}`.trim(), fmtDataCompleta(h.dateDone), h.doneBy, h.remarks]));
         if (l.orders.length) y = pdfTable(doc, y, ["Order", "Pedido", "Status", "Fornecedor", "Entrega"], l.orders.map((o) => [o.no, o.name, o.status, o.supplier, fmtDataCompleta(o.delivery)]));
       });
+      y = pdfSectionTitle(doc, y, `Failure Reports em aberto sem tratativa — ${gaps.filter((g) => g.n > 0).length} de ${gaps.length}`);
+      y = pdfTable(doc, y, ["Failure Report", "Nome", "Data", "Dias aberto", "Status", "Action", "Job", "Order", "O que falta"],
+        gaps.filter((g) => g.n > 0).map((g) => [g.r.no, g.r.name, g.r.failureDate ? fmtDataCompleta(g.r.failureDate) : "—", g.dias ?? "—", g.r.status, g.noAct ? "NÃO" : "sim", g.noJob ? "NÃO" : "sim", g.noOrd ? "NÃO" : "sim", g.falta.join(", ")]));
       y = pdfSectionTitle(doc, y, `Resumo de pendências — ${pend.length} item(ns) em aberto, do mais antigo ao mais recente`);
       y = pdfTable(doc, y, ["Tipo", "Em aberto", "Vencidos", "Média parado (dias)", "Mais antigo (dias)"], pendResumo.porTipo.map((t) => [t.tipo, t.total, t.vencidos, t.media, t.maisAntigo]));
       y = pdfTable(doc, y, ["Tipo", "Failure Report", "Referência", "Descrição", "Responsável", "Aberto desde", "Dias parado", "Prazo", "Atraso (dias)", "Situação"],
         pend.slice(0, 80).map((x) => [x.tipo, x.frNo, x.ref, x.desc, x.resp, fmtDataCompleta(x.desde), x.dias ?? "—", fmtDataCompleta(x.prazo), x.atraso || "—", x.situacao]));
       pdfSave(doc, "relatorio-tm-master-failure-reports");
     });
-  }, [active, filtered, kpi, openReps, F, pend, pendResumo]);
+  }, [active, filtered, kpi, openReps, F, pend, pendResumo, gaps]);
 
   const selStyle = { padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 };
   const stCls = (s) => (/complet|closed/i.test(s) ? "d1" : /draft/i.test(s) ? "d2" : "d3");
@@ -5388,6 +5702,44 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
             <MesBarChart title="Failure Reports por Mês" height={220} data={porMes} bars={[{ key: "total", name: "Failure Reports", color: "#EF4444" }]} nota="Mês da data da falha." />
             <MesBarChart title="Por Sistema (top 8)" height={220} data={porSistema} bars={[{ key: "total", name: "Failure Reports", color: "#3B82F6" }]} />
             <MesBarChart title="Por Status" height={220} data={porStatus} bars={[{ key: "total", name: "Failure Reports", color: "#8B5CF6" }]} />
+          </div>
+
+          <div className="g-panel" style={{ borderTop: "3px solid var(--crit)" }}>
+            <div className="g-panel-head"><span className="g-panel-title">Análise — Failure Reports em aberto sem tratativa (sem action, job ou order)</span></div>
+            <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>
+              Failure Report em aberto (status diferente de Completed) que ainda não tem <b>action</b> (o que fazer), <b>job</b> (no TM Master, aberto ou já executado) ou <b>order</b> (material/serviço). Quanto mais lacunas e mais dias aberto, mais urgente definir a tratativa.
+            </div>
+            <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+              {bigKpi("Failure Reports em aberto", gapKpi.abertos, "var(--teal)", ClipboardList)}
+              {bigKpi("Sem Action", gapKpi.semAct, gapKpi.semAct ? "var(--warn)" : "var(--ok)", AlertTriangle)}
+              {bigKpi("Sem Job no TM", gapKpi.semJob, gapKpi.semJob ? "var(--warn)" : "var(--ok)", Wrench)}
+              {bigKpi("Sem Order", gapKpi.semOrd, gapKpi.semOrd ? "var(--warn)" : "var(--ok)", Package)}
+              {bigKpi("Sem nada (sem action, job e order)", gapKpi.nada, gapKpi.nada ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+            </div>
+            <div className="g-mode-toggle" style={{ marginBottom: 10, width: "fit-content" }}>
+              {["Com lacuna", "Sem action", "Sem job", "Sem order", "Sem nada"].map((t) => <button key={t} className={gapTipo === t ? "active" : ""} onClick={() => setGapTipo(t)}>{t} ({t === "Com lacuna" ? gaps.filter((g) => g.n > 0).length : t === "Sem action" ? gapKpi.semAct : t === "Sem job" ? gapKpi.semJob : t === "Sem order" ? gapKpi.semOrd : gapKpi.nada})</button>)}
+            </div>
+            <div className="g-table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
+              <table className="g-table tbl-modern">
+                <thead><tr><th>Failure Report</th><th>Nome</th><th>Data da falha</th><th style={{ textAlign: "right" }}>Dias aberto</th><th>Status</th><th>Dept.</th><th style={{ textAlign: "center" }}>Action</th><th style={{ textAlign: "center" }}>Job</th><th style={{ textAlign: "center" }}>Order</th><th>O que falta</th></tr></thead>
+                <tbody>
+                  {gapsVis.length === 0 && <tr><td colSpan={10} className="g-muted" style={{ textAlign: "center", padding: 16 }}>Nenhum Failure Report em aberto nessa condição.</td></tr>}
+                  {gapsVis.map((g) => (
+                    <tr className="g-row tbl-row" key={g.r.no} onClick={() => abrirFr(g.r.no)} style={{ cursor: "pointer", "--c": g.n === 3 ? "#EF4444" : g.n > 0 ? "#F5A623" : "#22C55E" }}>
+                      <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}><b>{g.r.no}</b></td>
+                      <td style={{ whiteSpace: "normal", minWidth: 220 }}>{g.r.name || "—"}</td>
+                      <td style={{ fontFamily: "var(--mono)" }}>{g.r.failureDate ? fmtDataCompleta(g.r.failureDate) : "—"}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700 }}>{g.dias === null ? "—" : `${g.dias} d`}</td>
+                      <td>{g.r.status}</td><td>{g.r.department || "—"}</td>
+                      <td style={{ textAlign: "center", color: g.noAct ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{g.noAct ? "✖ não" : "✔"}</td>
+                      <td style={{ textAlign: "center", color: g.noJob ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{g.noJob ? "✖ não" : "✔"}</td>
+                      <td style={{ textAlign: "center", color: g.noOrd ? "var(--crit)" : "var(--ok)", fontWeight: 700 }}>{g.noOrd ? "✖ não" : "✔"}</td>
+                      <td style={{ whiteSpace: "normal" }}>{g.n === 0 ? "Completo" : g.n === 3 ? "Sem nenhuma tratativa — definir action, abrir job no TM e avaliar order" : `Sem ${g.falta.join(" e ")}`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="g-panel">
@@ -5537,10 +5889,69 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
       if (String(d.jobType || "").toUpperCase() === "ONE") extra.push("corretiva");
       return `BORDO RESPONDER: (1) foi executado? informe a data e dê baixa no TM; (2) se não, o motivo; (3) nova data prevista; (4) informe o nº da PO deste serviço. [${extra.join(" · ")}]`;
     };
+    S.push({ id: "geral", titulo: "Situação geral do Due (planos vencidos)", explicacao: "Fotografia dos planos de manutenção vencidos, ou seja, com prazo (Due/Diff) já passado. Os percentuais usam o total de planos em aberto como base.",
+      cols: ["Indicador", "Quantidade"], rows: [
+        { key: "t", cells: ["Total de planos em aberto (base)", tmDue.length], auto: "Base de todos os percentuais abaixo" },
+        { key: "v", cells: ["Vencidos", venc.length], auto: `${pct(venc.length, tmDue.length)} do total — exigem ação imediata` },
+        { key: "c", cells: ["Críticos (prioridade High) vencidos", venc.filter((d) => d.pri === "High").length], auto: "Tratar primeiro" },
+        { key: "o", cells: ["Corretivas (Job Type ONE) vencidas", venc.filter((d) => String(d.jobType || "").toUpperCase() === "ONE").length], auto: `de ${one.length} corretivas em aberto` },
+        { key: "p", cells: ["Jobs críticos PMS vencidos / em aberto", `${critJobs.filter(isVenc).length} / ${critJobs.length}`], auto: "Componentes críticos para operação, segurança ou meio ambiente" },
+      ] });
     S.push({ id: "venc", titulo: `Jobs vencidos que precisam de resposta de bordo (${Math.min(lim, vencDept.length)} de ${vencDept.length}${deptSel !== "Todos" ? ` — ${deptSel}` : ""})`,
       explicacao: "Planos de manutenção cujo prazo já passou, do mais atrasado para o menos atrasado. Para CADA job, bordo deve informar a PO do serviço (coluna “PO”) e responder na coluna “Resposta de bordo”: foi executado (data / baixa feita no TM)? Se não, qual o motivo do atraso e qual a nova data prevista. A coluna “Failure Report” mostra se o job está ligado a alguma falha registrada.",
       cols: ["Departamento", "Job", "Plano", "Componente", "Due", "Atraso (dias)", "Prioridade", "Failure Report"], blankCols: ["PO (nº da PO deste serviço)", "Resposta de bordo"],
       rows: vencDept.slice(0, lim).map((d, i) => ({ key: `${d.id || i}`, cells: [d.department || "—", jobTxt(d), d.jobName || "—", `${d.code || ""} ${d.component || ""}`.trim() || "—", d.dueDate ? fmt(d.dueDate) : (d.dueRaw || "—"), Math.abs(dias(d) ?? 0), d.pri || "—", frDe(d.jobType, d.jobNo) || "—"], auto: pedido(d) })) });
+    const dept = {}; tmDue.forEach((d) => { const k = d.department || "—"; dept[k] = dept[k] || { t: 0, v: 0 }; dept[k].t++; if (isVenc(d)) dept[k].v++; });
+    S.push({ id: "dept", titulo: "Vencidos por departamento", explicacao: "Mostra onde está concentrado o atraso. O percentual é vencidos ÷ total de planos em aberto do departamento.",
+      cols: ["Departamento", "Em aberto", "Vencidos", "% vencido"],
+      rows: Object.entries(dept).sort((a, b) => b[1].v - a[1].v).map(([k, v]) => ({ key: k, cells: [k, v.t, v.v, pct(v.v, v.t)], auto: v.v === 0 ? "Sem atraso" : (v.v / v.t > 0.3 ? "Atraso elevado — priorizar" : "Atraso moderado") })) });
+    const grp = CRITICAL_GROUPS.map((g) => { const l = tmDue.filter((d) => critPrefixOf(d.code) === g.cod); return { g, t: l.length, v: l.filter(isVenc).length }; }).filter((x) => x.t > 0).sort((a, b) => b.v - a.v);
+    S.push({ id: "crit", titulo: "Jobs críticos por grupo de sistema (PMS)", explicacao: "Grupos de componentes críticos (3 primeiros dígitos do código). Mostra só os grupos que têm planos em aberto.",
+      cols: ["Grupo", "Criticidade", "Em aberto", "Vencidos"],
+      rows: grp.map((x) => ({ key: x.g.cod, cells: [critLabel(x.g.cod), x.g.crit, x.t, x.v], auto: x.v === 0 ? "Em dia" : `${x.v} vencido(s) — ${pct(x.v, x.t)} do grupo` })) });
+    const mesAtual = hoje.slice(0, 7);
+    const isPost = (h) => (h.remarks || "").toLowerCase().includes("postpon") || String(h.postponed || "").trim().toUpperCase() === "X";
+    const postMes = tmHistory.filter((h) => isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
+    const execMes = tmHistory.filter((h) => !isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
+    S.push({ id: "hist", titulo: "History — mês atual", explicacao: "Jobs fechados neste mês. “Postergado” = job adiado (campo Postponed ou observação com “Postponed”).",
+      cols: ["Indicador", "Quantidade"], rows: [
+        { key: "e", cells: ["Executados no mês", execMes.length], auto: "Planos concluídos" },
+        { key: "p", cells: ["Postergados no mês", postMes.length], auto: postMes.length ? `${pct(postMes.length, postMes.length + execMes.length)} dos jobs do mês foram adiados` : "Nenhum adiamento" },
+      ] });
+    if (postMes.length) S.push({ id: "post", titulo: `Jobs postergados no mês (${Math.min(lim, postMes.length)} de ${postMes.length})`, explicacao: "Jobs adiados neste mês. A observação vem do campo Remarks do History — edite se quiser.",
+      cols: ["Job", "Plano", "Componente", "Data", "Feito por"],
+      rows: postMes.slice(0, lim).map((h, i) => ({ key: `${h.jobHistoryNumber || i}`, cells: [`${h.jobType || ""} ${h.jobNo || ""}`.trim() || "—", h.jobName || "—", `${h.componentCode || ""} ${h.componentName || ""}`.trim() || "—", fmt(h.dateDone), h.doneByName || "—"], auto: h.remarks || "Postergado" })) });
+    if (F.reports.length) {
+      const nos = new Set(F.reports.map((r) => r.no));
+      const nm = (no) => F.reports.find((r) => r.no === no)?.name || "";
+      const abertos = F.reports.filter((r) => !/complet|closed/i.test(r.status));
+      const acts = F.actions.filter((a) => nos.has(a.frNo) && !frActionConcluida(a)).sort((a, b) => (frDias(b.created || b.deadline, hoje) ?? -1) - (frDias(a.created || a.deadline, hoje) ?? -1));
+      const actsV = acts.filter((a) => a.deadline && a.deadline < hoje);
+      const jobsF = F.jobs.filter((j) => nos.has(j.frNo));
+      const ordF = F.orders.filter((o) => nos.has(o.frNo) && !frOrderEncerrada(o));
+      const gp = frGaps(F, hoje).filter((g) => g.n > 0).sort((a, b) => b.n - a.n || (b.dias ?? -1) - (a.dias ?? -1));
+      S.push({ id: "fr", titulo: "Failure Reports — situação geral", explicacao: "Falhas registradas e tudo que está ligado a elas (actions, jobs e orders). “Em aberto” = status diferente de Completed.",
+        cols: ["Indicador", "Quantidade"], rows: [
+          { key: "a", cells: ["Failure Reports em aberto / total", `${abertos.length} / ${F.reports.length}`], auto: "Falhas ainda sem encerramento" },
+          { key: "b", cells: ["Actions pendentes", acts.length], auto: `${actsV.length} com prazo vencido` },
+          { key: "c", cells: ["Jobs ligados em aberto", jobsF.length], auto: `${jobsF.filter((j) => j.nextDue && j.nextDue < hoje).length} vencido(s)` },
+          { key: "d", cells: ["Orders em andamento", ordF.length], auto: "Pedidos de peças/serviços ligados às falhas" },
+          { key: "e", cells: ["Failure Reports em aberto sem action, job ou order", gp.length], auto: `${gp.filter((g) => g.n === 3).length} sem nenhuma tratativa` },
+        ] });
+      S.push({ id: "gap", titulo: `Failure Reports em aberto sem tratativa (${Math.min(lim, gp.length)} de ${gp.length})`, explicacao: "Falhas em aberto que ainda não têm action, job no TM ou order. Ação: definir o plano de ação, abrir o job no TM (ONE, se corretiva) e avaliar a necessidade de material.",
+        cols: ["Failure Report", "Nome", "Data da falha", "Dias aberto", "Tem action", "Tem job", "Tem order"],
+        rows: gp.slice(0, lim).map((g) => ({ key: g.r.no, cells: [g.r.no, g.r.name, fmt(g.r.failureDate), g.dias ?? "—", g.noAct ? "NÃO" : "sim", g.noJob ? "NÃO" : "sim", g.noOrd ? "NÃO" : "sim"], auto: g.n === 3 ? "Sem nenhuma tratativa — definir action, abrir job e avaliar order" : `Falta: ${g.falta.join(" e ")}` })) });
+      S.push({ id: "acts", titulo: `Actions pendentes (${Math.min(lim, acts.length)} de ${acts.length}, as paradas há mais tempo)`, explicacao: "Ações corretivas/preventivas abertas, da mais antiga para a mais recente. “Parada há” conta desde a criação da action.",
+        cols: ["Action", "Ação", "Failure Report", "Responsável", "Prazo", "Parada há (dias)"],
+        rows: acts.slice(0, lim).map((a) => { const at = a.deadline && a.deadline < hoje ? frDias(a.deadline, hoje) : 0; return { key: a.no, cells: [a.no, a.name, `${a.frNo} — ${nm(a.frNo)}`, a.crew || a.crewType || a.department || "—", fmt(a.deadline), frDias(a.created || a.deadline, hoje) ?? "—"], auto: at > 0 ? `Prazo vencido há ${at} dias${a.priority ? ` · prioridade ${a.priority}` : ""}` : `No prazo${a.priority ? ` · prioridade ${a.priority}` : ""}` }; }) });
+      if (jobsF.length) S.push({ id: "jf", titulo: "Jobs em aberto ligados a Failure Reports", explicacao: "Planos criados para corrigir as falhas e ainda não executados.",
+        cols: ["Job", "Plano", "Failure Report", "Departamento", "Next Due"],
+        rows: jobsF.map((j, i) => ({ key: `${j.jobType}${j.jobNo}${i}`, cells: [`${j.jobType} ${j.jobNo}`, j.name, `${j.frNo} — ${nm(j.frNo)}`, j.department || "—", fmt(j.nextDue)], auto: j.nextDue && j.nextDue < hoje ? `Vencido há ${frDias(j.nextDue, hoje)} dias` : (j.nextDue ? `Vence em ${-frDias(j.nextDue, hoje)} dias` : "Sem data") })) });
+      if (ordF.length) S.push({ id: "of", titulo: "Orders em andamento ligadas a Failure Reports", explicacao: "Pedidos de material/serviço que ainda não foram recebidos.",
+        cols: ["Order", "Pedido", "Failure Report", "Status", "Fornecedor", "Entrega prevista"],
+        rows: ordF.map((o) => ({ key: o.no, cells: [o.no, o.name, `${o.frNo} — ${nm(o.frNo)}`, o.status, o.supplier || "—", fmt(o.delivery)], auto: o.delivery && o.delivery < hoje ? `Entrega atrasada há ${frDias(o.delivery, hoje)} dias` : "Aguardando entrega" })) });
+    }
+    S.forEach((x, i) => { x.titulo = `${i + 1}. ${x.titulo}`; });
     return S;
   }, [aberto, limite, deptSel, tmDue, tmHistory, tmFailures]);
 
@@ -5551,7 +5962,7 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
   const montarHtml = () => {
     const th = "background:#1F3A5F;color:#fff;padding:6px 8px;border:1px solid #cbd5e1;text-align:left;font-size:12px";
     const td = "padding:5px 8px;border:1px solid #cbd5e1;font-size:12px;vertical-align:top";
-    let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 6px;font-size:13px">Prezados, solicitamos que <b>cada job vencido</b> abaixo seja respondido por bordo. Para cada job, informe o <b>nº da PO</b> do serviço e a <b>resposta de bordo</b> (respondendo este e-mail ou preenchendo as colunas em amarelo), e dê baixa no TM Master dos jobs já executados.</p><p style="margin:0 0 16px;color:#6b7280;font-size:12px">Situação do TM Master em ${fmt(hoje)}.</p>`;
+    let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 6px;font-size:13px">Prezados, segue o resumo do TM Master. Solicitamos que <b>cada job vencido</b> da tabela “Jobs vencidos” seja respondido por bordo. Para cada job, informe o <b>nº da PO</b> do serviço e a <b>resposta de bordo</b> (respondendo este e-mail ou preenchendo as colunas em amarelo), e dê baixa no TM Master dos jobs já executados.</p><p style="margin:0 0 16px;color:#6b7280;font-size:12px">Situação do TM Master em ${fmt(hoje)}.</p>`;
     secoes.forEach((s) => {
       h += `<h3 style="margin:18px 0 4px;font-size:14px">${escHtml(s.titulo)}</h3><p style="margin:0 0 6px;color:#6b7280;font-size:12px">${escHtml(s.explicacao)}</p>`;
       h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${[...s.cols, "Observação", ...(s.blankCols || [])].map((c) => `<th style="${th}">${escHtml(c)}</th>`).join("")}</tr></thead><tbody>`;
@@ -5596,7 +6007,7 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
         <div className="g-panel" style={{ marginTop: 10 }}>
           <div className="g-panel-head"><span className="g-panel-title">Resumo do TM Master para e-mail — em tabelas</span></div>
           <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>
-            O e-mail traz <b>somente os jobs vencidos</b>. A coluna <b>Observação</b> pede, para cada job, a resposta de bordo (executado? motivo? nova data?) e você pode editá-la; a coluna <b>Resposta de bordo</b> vai em branco para eles preencherem. Use o filtro de departamento para mandar só a cada área.
+            O resumo é completo; na parte do <b>Due</b> entram <b>somente os jobs vencidos</b>. Na tabela de jobs vencidos, a coluna <b>Observação</b> pede a resposta de bordo (executado? motivo? nova data?) e você pode editá-la; as colunas <b>PO</b> e <b>Resposta de bordo</b> vão em branco para eles preencherem. O filtro de departamento vale para a tabela de jobs vencidos.
             Mostra a situação de hoje, com todos os dados (sem os filtros da tela). Como o e-mail comum não recebe tabelas por link, o botão <b>Abrir no e-mail</b> copia o resumo formatado e abre o e-mail com destinatários e assunto — é só colar (Ctrl+V).
           </div>
           <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
@@ -5660,28 +6071,13 @@ const bordoDate = (v) => {
 const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().toUpperCase();
 const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
 
+const MODELO_BORDO_B64 = "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";
 function baixarModeloBordo() {
-  const wb = XLSX.utils.book_new();
-  const cab = ["Data", "Tipo", "Descrição do que foi feito", "Componente (código ou nome)", "Job Type", "Job No", "Failure Report (FAIL-..., se houver)", "Ação no TM", "Origem do registro", "Reportado por", "Observação"];
-  const ws = XLSX.utils.aoa_to_sheet([cab]);
-  ws["!cols"] = [12, 14, 50, 28, 10, 10, 26, 16, 18, 20, 36].map((w) => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws, "Registro diário");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ["COMO PREENCHER (uma linha para cada atividade feita a bordo, todos os dias)"], [""],
-    ["Data", "Dia em que foi feito. Formato 17/11/2026."],
-    ["Tipo", "Preventiva, Preditiva ou Corretiva."],
-    ["Descrição do que foi feito", "O que foi executado, de forma objetiva."],
-    ["Componente", "Código (ex.: 601.02.57) ou nome do equipamento."],
-    ["Job Type / Job No", "Tipo e número do job no TM Master (ex.: ONE e 449; INS e 2706). Obrigatórios para Baixa ou Criação."],
-    ["Failure Report", "Se a atividade corrige uma falha registrada, informe o nº do Failure Report (ex.: FAIL-GEN-2026-0081). Corretivas devem ter Failure Report."],
-    ["Ação no TM", "Baixa de job = o job foi executado e baixado no TM. Criação de job = foi criado um job novo no TM. Sem job = ainda não está no TM (será cobrado)."],
-    ["Origem do registro", "Planilha diária, E-mail, Mensagem, Relatório ou Outro."],
-    ["Reportado por", "Quem executou/registrou."],
-    ["Observação", "Qualquer informação útil (peças usadas, pendências, nova data)."],
-    [""], ["EXEMPLO", "17/11/2026 | Corretiva | Troca do selo da bomba SW | 721.03.01 | ONE | 453 | FAIL-GEN-2026-0075 | Baixa de job | Planilha diária | 2º Eng. | Selo novo instalado"],
-  ]), "Instruções");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Tipo", "Ação no TM", "Origem"], ...Array.from({ length: 5 }, (_, i) => [BORDO_TIPOS[i] || "", BORDO_ACOES[i] || "", BORDO_ORIGENS[i] || ""])]), "Listas");
-  XLSX.writeFile(wb, "modelo-registro-diario-bordo.xlsx");
+  const bin = atob(MODELO_BORDO_B64); const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Registro-Diario-de-Bordo-OSM.xlsx";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, setReportFn, setExportXlsxFn, active }) => {
@@ -5737,7 +6133,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
   const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
     && (!f.de || r.data >= f.de) && (!f.ate || r.data <= f.ate)
-    && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.obs} ${r.fr || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+    && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.email || ""} ${r.obs} ${r.fr || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
   const cats = ["Todos", "Confirmado no TM", "Não baixado no TM", "Divergente", "Job não encontrado", "Sem registro no TM", "Falta informar o job"];
 
   const kpi = useMemo(() => {
@@ -5771,7 +6167,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
   };
 
   const upd = (id, k, v) => setTmBordo((arr) => arr.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
-  const novo = () => setTmBordo((arr) => [{ id: uid("BRD"), data: hoje, tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", origem: "Planilha diária", por: "", obs: "", recebido: hoje }, ...arr]);
+  const novo = () => setTmBordo((arr) => [{ id: uid("BRD"), data: hoje, tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", origem: "Planilha diária", por: "", email: "", obs: "", recebido: hoje }, ...arr]);
   const rem = (id) => setTmBordo((arr) => arr.filter((r) => r.id !== id));
 
   const importar = (e) => {
@@ -5781,12 +6177,15 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
       try {
         const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
         const nome = wb.SheetNames.find((n) => /registro|di[aá]rio|bordo/i.test(n)) || wb.SheetNames[0];
-        const js = XLSX.utils.sheet_to_json(wb.Sheets[nome], { defval: "" });
+        const matriz = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "" });
+        const hi = matriz.findIndex((row) => row.some((c) => String(c).trim().toLowerCase() === "data") && row.some((c) => /^tipo/i.test(String(c).trim())));
+        const cab = matriz[hi >= 0 ? hi : 0].map((c) => String(c).trim());
+        const js = matriz.slice((hi >= 0 ? hi : 0) + 1).map((row) => Object.fromEntries(cab.map((c, k) => [c || `col${k}`, row[k] === undefined ? "" : row[k]])));
         const g = (r, ...ks) => { for (const k of ks) { const kk = Object.keys(r).find((x) => x.trim().toLowerCase().startsWith(k)); if (kk && r[kk] !== "") return r[kk]; } return ""; };
         const novos = js.map((r) => ({
-          data: bordoDate(g(r, "data")), tipo: bordoPick(g(r, "tipo"), BORDO_TIPOS, "Preventiva"), descricao: String(g(r, "descri")).trim(), componente: String(g(r, "componente")).trim(),
+          data: bordoDate(g(r, "data")), tipo: bordoPick(g(r, "tipo"), BORDO_TIPOS, "Preventiva"), descricao: String(g(r, "manuten", "descri")).trim(), componente: String(g(r, "componente")).trim(),
           jobTipo: String(g(r, "job type")).trim().toUpperCase(), jobNo: String(g(r, "job no")).trim(), fr: String(g(r, "failure")).trim().toUpperCase(), acao: bordoPick(g(r, "ação", "acao"), BORDO_ACOES, "Sem job"),
-          origem: bordoPick(g(r, "origem"), BORDO_ORIGENS, "Planilha diária"), por: String(g(r, "reportado")).trim(), obs: String(g(r, "observa")).trim(),
+          origem: bordoPick(g(r, "origem"), BORDO_ORIGENS, "Planilha diária"), por: String(g(r, "reportado")).trim(), email: String(g(r, "e-mail", "email")).trim(), obs: String(g(r, "observa")).trim(),
         })).filter((r) => r.data && (r.descricao || r.jobNo));
         let add = 0, dup = 0;
         setTmBordo((prev) => {
@@ -5804,14 +6203,14 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
 
   React.useEffect(() => {
     if (!active || !setExportXlsxFn || !setReportFn) return;
-    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Tipo: r.tipo, Descrição: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Failure Report (origem)": r._f.auto ? "detectado automaticamente" : (r.fr ? "informado" : ""), "Ação no TM": r.acao, Origem: r.origem, "Reportado por": r.por, Observação: r.obs, "Recebido em": fmt(r.recebido), "Dias até o envio": r._a === null ? "" : r._a, "Conferência no TM": r._c.cat, "Detalhe da conferência": r._c.txt }));
+    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Tipo: r.tipo, Manutenção: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Failure Report (origem)": r._f.auto ? "detectado automaticamente" : (r.fr ? "informado" : ""), "Ação no TM": r.acao, Origem: r.origem, "Reportado por": r.por, "E-mail de quem reportou": r.email || "", Observação: r.obs, "Recebido em": fmt(r.recebido), "Dias até o envio": r._a === null ? "" : r._a, "Conferência no TM": r._c.cat, "Detalhe da conferência": r._c.txt }));
     setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem registros" }]), "Registro de Bordo"); XLSX.writeFile(wb, `genesis-registro-de-bordo-${todayISO()}.xlsx`); });
     setReportFn(() => () => {
       const doc = new jsPDF({ orientation: "landscape" });
       let y = pdfHeader(doc, "TM Master — Registro de Bordo", `${filtered.length} registro(s) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
       y = pdfKpis(doc, y, [{ label: "Registros", value: kpi.total }, { label: "Confirmados no TM", value: kpi.ok }, { label: "Pendentes no TM", value: kpi.pend }, { label: "Baixas", value: kpi.baixas }, { label: "Jobs criados", value: kpi.criacoes }, { label: "Dias sem registro (14d)", value: kpi.diasSem }]);
       y = pdfSectionTitle(doc, y, "Registros e conferência no TM Master");
-      pdfTable(doc, y, ["Data", "Tipo", "Descrição", "Componente", "Job", "Failure Report", "Ação no TM", "Reportado por", "Conferência", "Detalhe"],
+      pdfTable(doc, y, ["Data", "Tipo", "Manutenção", "Componente", "Job", "Failure Report", "Ação no TM", "Reportado por", "Conferência", "Detalhe"],
         filtered.map((r) => [fmt(r.data), r.tipo, r.descricao, r.componente, `${r.jobTipo} ${r.jobNo}`.trim() || "—", r._f.nos.join(", ") || "—", r.acao, r.por || "—", r._c.cat, r._c.txt]));
       pdfSave(doc, "relatorio-registro-de-bordo");
     });
@@ -5856,7 +6255,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
       {!kpi.hojeTem && tmBordo.length > 0 && <div className="g-alert" style={{ marginBottom: 12 }}><AlertTriangle size={14} style={{ marginTop: 1 }} />Nenhum registro de bordo com a data de hoje ({fmt(hoje)}). Nos últimos 14 dias, {kpi.diasSem} dia(s) ficaram sem registro.</div>}
 
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
-        <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="descrição, componente, job, quem..." style={{ minWidth: 220 }} /></div>
+        <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
@@ -5886,9 +6285,9 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
         <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
           <table className="g-table tbl-modern">
-            <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Componente</th><th>Job Type</th><th>Job No</th><th>Failure Report</th><th>Ação no TM</th><th>Origem</th><th>Reportado por</th><th>Observação</th><th>Recebido em</th><th>Conferência no TM</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Tipo</th><th>Manutenção</th><th>Componente</th><th>Job Type</th><th>Job No</th><th>Failure Report</th><th>Ação no TM</th><th>Origem</th><th>Reportado por</th><th>E-mail de quem reportou</th><th>Observação</th><th>Recebido em</th><th>Conferência no TM</th><th></th></tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={14} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Baixe o modelo, passe para o bordo preencher e importe aqui — ou use “Novo registro”."}</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={15} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Baixe o modelo, passe para o bordo preencher e importe aqui — ou use “Novo registro”."}</td></tr>}
               {filtered.map((r) => (
                 <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
                   <td style={{ minWidth: 118 }}><input type="date" value={r.data} onChange={(e) => upd(r.id, "data", e.target.value)} style={inp} /></td>
@@ -5905,6 +6304,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
                   <td style={{ minWidth: 130 }}><select value={r.acao} onChange={(e) => upd(r.id, "acao", e.target.value)} style={inp}>{BORDO_ACOES.map((o) => <option key={o}>{o}</option>)}</select></td>
                   <td style={{ minWidth: 120 }}><select value={r.origem} onChange={(e) => upd(r.id, "origem", e.target.value)} style={inp}>{BORDO_ORIGENS.map((o) => <option key={o}>{o}</option>)}</select></td>
                   <td style={{ minWidth: 120 }}><input value={r.por} onChange={(e) => upd(r.id, "por", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 190 }}><input value={r.email || ""} onChange={(e) => upd(r.id, "email", e.target.value)} placeholder="nome@empresa.com" style={inp} /></td>
                   <td style={{ minWidth: 180 }}><input value={r.obs} onChange={(e) => upd(r.id, "obs", e.target.value)} style={inp} /></td>
                   <td style={{ minWidth: 110, whiteSpace: "normal", fontFamily: "var(--mono)", fontSize: 12 }}>{r.recebido ? fmt(r.recebido) : "—"}{r._a !== null && r._a > 1 && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>enviado +{r._a} dias depois</div>}</td>
                   <td style={{ minWidth: 260, whiteSpace: "normal" }}><span className={`tbl-days ${cor(r._c.cat)}`}>{r._c.cat}</span><div className="g-muted" style={{ fontSize: 11, marginTop: 3 }}>{r._c.txt}</div></td>
@@ -6500,7 +6900,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
           { label: "% No Prazo (Due × Assinada)", value: `${cumprimentoPrazo.pct}%` },
         ]);
         const secao = (titulo, cols, rows) => { if (y > 235) { doc.addPage(); y = 15; } y = pdfSectionTitle(doc, y, titulo); y = pdfTable(doc, y, cols, rows); };
-        secao("Planejamento mensal", ["Mês", "Abertos", "Vencidos", "A Vencer", "Fechados"], planejamentoMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer, r.executados]));
+        secao("Planejamento mensal", ["Mês", "Abertos", "Vencidos", "A Vencer", "Fechados", "Postergados"], planejamentoMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer, r.executados, r.postergados]));
         secao("Corretivas (Job Type = One)", ["Mês", "Abertos", "Vencidos", "A Vencer", "Fechados"], corretivasMensal.map((r) => [r.mes, r.abertos, r.vencidos, r.aVencer, r.executados]));
         secao("Postergados por mês", ["Mês", "Postergados", "Realizados após", "Ainda em aberto", "Vencidos"], postergadosAnalise.rows.map((r) => [r.mes, r.total, r.realizados, r.emAberto, r.vencidos]));
         secao("Postergados por Job Type", ["Job Type", "Postergados"], postergadosPorTipo.map((r) => [r.nome, r.total]));
@@ -6548,7 +6948,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
       } else {
         if (metricasView !== "planos") {
           const add = (nome, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), nome);
-          add("Planejamento Mensal", planejamentoMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer, Fechados: r.executados })));
+          add("Planejamento Mensal", planejamentoMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer, Fechados: r.executados, Postergados: r.postergados })));
           add("Aderência no Due", aderenciaMensal.map((r) => ({ "Mês": r.mes, Previsto: r.previsto, Realizado: r.realizado, "A Vencer": r.aVencer })));
           add("Corretivas Mensal", corretivasMensal.map((r) => ({ "Mês": r.mes, Abertos: r.abertos, Vencidos: r.vencidos, "A Vencer": r.aVencer, Fechados: r.executados })));
           add("Postergados por Mês", postergadosAnalise.rows.map((r) => ({ "Mês": r.mes, Postergados: r.total, "Realizados após a postergação": r.realizados, "Ainda em aberto": r.emAberto, Vencidos: r.vencidos })));
@@ -6582,9 +6982,9 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={tmSubTab === "due" ? "active" : ""} onClick={() => setTmSubTab("due")}>Due (Em Aberto)</button>
         <button className={tmSubTab === "history" ? "active" : ""} onClick={() => setTmSubTab("history")}>History (Fechados)</button>
-        <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Métricas</button>
         <button className={tmSubTab === "falhas" ? "active" : ""} onClick={() => setTmSubTab("falhas")}>Failure Reports</button>
         <button className={tmSubTab === "bordo" ? "active" : ""} onClick={() => setTmSubTab("bordo")}>Registro de Bordo</button>
+        <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Métricas</button>
       </div>
 
       <ResumoEmailTm tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} />
@@ -6673,6 +7073,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
                   <th style={{ minWidth: 100 }}>Prioridade</th>
                   <th style={{ minWidth: 90 }}>Status</th>
                   <th style={{ minWidth: 220 }}>Plano de Ação</th>
+                  <th style={{ minWidth: 130 }}>PO</th>
                   <th style={{ minWidth: 130 }}>Planejamento</th>
                 </tr>
               </thead>
@@ -6681,7 +7082,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
                   <React.Fragment key={g.key}>
                     {groupDue && (
                       <tr className="tbl-group" onClick={() => setCollapsedDue((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <span className="tbl-group-arrow">{collapsedDue.has(g.key) ? "▸" : "▾"}</span>
                           {g.key}
                           <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
@@ -6715,6 +7116,9 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
                     <td>{d.status}</td>
                     <td style={{ minWidth: 220, whiteSpace: "normal", verticalAlign: "top" }}>
                       <ETextArea rows={1} value={d.planoAcao || ""} onChange={(v) => updTmDue(i, "planoAcao", v)} />
+                    </td>
+                    <td style={{ minWidth: 130, verticalAlign: "top" }}>
+                      <EText value={d.po || ""} onChange={(v) => updTmDue(i, "po", v)} mono />
                     </td>
                     <td style={{ minWidth: 130 }}>
                       <label className="g-flex" style={{ gap: 6, fontSize: 11.5, cursor: "pointer" }}>
@@ -6905,8 +7309,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
           {metricasView === "geral" && (
           <>
           <MesBarChart title="Planejamento Mensal" data={planejamentoMensal}
-            subtitle="Abertos, vencidos e a vencer: jobs do Due pelo mês de vencimento. Fechados: jobs do History fechados naquele mês (sem contar postergações)."
-            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }, { key: "executados", name: "Fechados", color: "#22C55E" }] } />
+            subtitle="Abertos, vencidos e a vencer: jobs do Due pelo mês de vencimento. Fechados e Postergados: jobs do History pelo mês em que foram fechados/postergados (respeitam o filtro de mês/ano)."
+            bars={[{ key: "abertos", name: "Abertos", color: "#94A3B8" }, { key: "vencidos", name: "Vencidos", color: "#EF4444" }, { key: "aVencer", name: "A Vencer", color: "#F5A623" }, { key: "executados", name: "Fechados", color: "#22C55E" }, { key: "postergados", name: "Postergados", color: "#8B5CF6" }] } />
 
           <MesBarChart title="Corretivas (Job Type = One)" data={corretivasMensal}
             subtitle="Corretivas (Job type ONE). Abertos, vencidos e a vencer pelo mês de vencimento; fechados pelo mês de fechamento (sem contar postergações)."
@@ -8913,7 +9317,7 @@ function SettingsView({ currentUser, users, setUsers }) {
   const addUser = () => setUsers((r) => [...r, { id: uid("USR"), name: "Novo usuário", username: `usuario${r.length + 1}`, password: "GenesisI", role: "viewer", tabs: ["dashboard"] }]);
   const toggleTab = (i, key) => {
     const u = users[i];
-    const cur = Array.isArray(u.tabs) ? u.tabs : PERM_TABS.map((t) => t.key);
+    const cur = Array.isArray(u.tabs) ? normTabs(u.tabs) : PERM_TABS.map((t) => t.key);
     const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
     updUser(i, "tabs", next);
   };
@@ -8941,7 +9345,7 @@ function SettingsView({ currentUser, users, setUsers }) {
           <tbody>
             {users.map((u, i) => {
               const adm = isAdminUser(u);
-              const tabs = Array.isArray(u.tabs) ? u.tabs : PERM_TABS.map((t) => t.key);
+              const tabs = Array.isArray(u.tabs) ? normTabs(u.tabs) : PERM_TABS.map((t) => t.key);
               return (
                 <tr className="g-row" key={u.id}>
                   <td style={{ minWidth: 150 }}><EText value={u.name} onChange={(v) => updUser(i, "name", v)} /></td>
