@@ -1447,6 +1447,7 @@ const INITIAL_TM_HISTORY = [];
 /* histórico de "fotografias" do tamanho do backlog Due a cada importação semanal — permite ver a
    tendência (o backlog está crescendo ou diminuindo semana a semana) */
 const INITIAL_TM_DUE_SNAPSHOTS = [];
+const INITIAL_TM_BORDO = [];
 const INITIAL_TM_FAILURES = { reports: [], actions: [], jobs: [], jobHistory: [], orders: [], importedAt: "" };
 
 export default function Root() {
@@ -1478,6 +1479,7 @@ export default function Root() {
   const [tmHistory, setTmHistory] = useState(INITIAL_TM_HISTORY);
   const [tmDueSnapshots, setTmDueSnapshots] = useState(INITIAL_TM_DUE_SNAPSHOTS);
   const [tmFailures, setTmFailures] = useState(INITIAL_TM_FAILURES);
+  const [tmBordo, setTmBordo] = useState(INITIAL_TM_BORDO);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
      saveEnabled só vira true dentro do "then" de sucesso (mesmo que o servidor não tenha
@@ -1511,6 +1513,7 @@ export default function Root() {
           if (d.tmDue) setTmDue(d.tmDue);
           if (d.tmHistory) setTmHistory(d.tmHistory);
           if (d.tmDueSnapshots) setTmDueSnapshots(d.tmDueSnapshots);
+          if (Array.isArray(d.tmBordo)) setTmBordo(d.tmBordo);
           if (d.tmFailures) setTmFailures({ ...INITIAL_TM_FAILURES, ...d.tmFailures });
         }
         setSaveEnabled(true);
@@ -1536,12 +1539,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures]);
+  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo]);
 
   if (!loaded) {
     return (
@@ -1585,6 +1588,7 @@ export default function Root() {
       tmDue={tmDue} setTmDue={roMode ? noop : setTmDue} tmHistory={tmHistory} setTmHistory={roMode ? noop : setTmHistory}
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       tmFailures={tmFailures} setTmFailures={roMode ? noop : setTmFailures}
+      tmBordo={tmBordo} setTmBordo={roMode ? noop : setTmBordo}
       loadError={loadError}
     />
   );
@@ -1598,7 +1602,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
-  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, loadError }) {
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, loadError }) {
   const isAdmin = isAdminUser(currentUser);
   const allowedTabs = allowedTabsOf(currentUser);
   const [tabState, setTab] = useState(allowedTabs[0]);
@@ -2839,7 +2843,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         {tab === "tmmaster" && (
           <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             handleImportTmDue={handleImportTmDue} handleImportTmHistory={handleImportTmHistory}
-            tmFailures={tmFailures} handleImportFailures={handleImportFailures}
+            tmFailures={tmFailures} handleImportFailures={handleImportFailures} tmBordo={tmBordo} setTmBordo={setTmBordo}
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
@@ -5493,7 +5497,8 @@ const escHtml = (v) => String(v === null || v === undefined ? "" : v).replace(/&
 const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
   const [aberto, setAberto] = useState(false);
   const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_resumo_para") || ""; } catch (e) { return ""; } });
-  const [limite, setLimite] = useState(20);
+  const [limite, setLimite] = useState(0);
+  const [deptSel, setDeptSel] = useState("Todos");
   const [obs, setObs] = useState({});
   const [msg, setMsg] = useState("");
   const hoje = todayISO();
@@ -5521,92 +5526,47 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
       if (String(d.jobType || "").toUpperCase() === "ONE") p.push("corretiva");
       return p.join(" · ");
     };
+    const frMapE = new Map(); (F.jobs || []).concat(F.jobHistory || []).forEach((x) => { if (!x.frNo || !x.jobNo) return; const k = `${bordoNorm(x.jobType)}|${bordoNorm(x.jobNo)}`; if (!frMapE.has(k)) frMapE.set(k, new Set()); frMapE.get(k).add(x.frNo); });
+    const frDe = (t, n) => [...(frMapE.get(`${bordoNorm(t)}|${bordoNorm(n)}`) || [])].join(", ");
     const S = [];
-    S.push({ id: "geral", titulo: "1. Situação geral do Due (planos em aberto)", explicacao: "Fotografia dos planos de manutenção que ainda não foram executados. “Vencido” = prazo (Due/Diff) já passou; “A vencer” = vence nos próximos 40 dias.",
-      cols: ["Indicador", "Quantidade"], rows: [
-        { key: "t", cells: ["Total de planos em aberto", tmDue.length], auto: "Base de todos os percentuais abaixo" },
-        { key: "v", cells: ["Vencidos", venc.length], auto: `${pct(venc.length, tmDue.length)} do total — exigem ação imediata` },
-        { key: "a", cells: ["A vencer em até 40 dias", a40.length], auto: `${pct(a40.length, tmDue.length)} do total — programar execução para não virarem vencidos` },
-        { key: "c", cells: ["Críticos (prioridade High) vencidos ou a vencer", crit.length], auto: "Tratar primeiro" },
-        { key: "o", cells: ["Corretivas (Job Type ONE) em aberto", one.length], auto: "Reparos/falhas ainda pendentes" },
-        { key: "p", cells: ["Jobs críticos PMS (em aberto / vencidos)", `${critJobs.length} / ${critJobs.filter(isVenc).length}`], auto: "Componentes críticos para operação, segurança ou meio ambiente" },
-      ] });
-    S.push({ id: "venc", titulo: `2. Jobs vencidos (${Math.min(lim, venc.length)} de ${venc.length}, do mais atrasado)`, explicacao: "Planos cujo prazo já passou. Ordenados pelo maior atraso. Use a coluna Observação para registrar o motivo, o responsável ou a nova data prevista.",
-      cols: ["Departamento", "Job", "Plano", "Componente", "Due", "Atraso (dias)", "Prioridade"],
-      rows: venc.slice(0, lim).map((d, i) => ({ key: `${d.id || i}`, cells: [d.department || "—", jobTxt(d), d.jobName || "—", `${d.code || ""} ${d.component || ""}`.trim() || "—", d.dueDate ? fmt(d.dueDate) : (d.dueRaw || "—"), Math.abs(dias(d) ?? 0), d.pri || "—"], auto: obsJob(d, true) })) });
-    S.push({ id: "a40", titulo: `3. A vencer em até 40 dias (${Math.min(lim, a40.length)} de ${a40.length}, os mais próximos)`, explicacao: "Planos que ainda estão no prazo, mas vencem em breve. Se não forem programados agora, entram na lista de vencidos.",
-      cols: ["Departamento", "Job", "Plano", "Componente", "Due", "Faltam (dias)", "Prioridade"],
-      rows: a40.slice(0, lim).map((d, i) => ({ key: `${d.id || i}`, cells: [d.department || "—", jobTxt(d), d.jobName || "—", `${d.code || ""} ${d.component || ""}`.trim() || "—", d.dueDate ? fmt(d.dueDate) : (d.dueRaw || "—"), dias(d) ?? "—", d.pri || "—"], auto: obsJob(d, false) })) });
-    const dept = {}; tmDue.forEach((d) => { const k = d.department || "—"; dept[k] = dept[k] || { t: 0, v: 0, a: 0 }; dept[k].t++; if (isVenc(d)) dept[k].v++; else if (ate40(d)) dept[k].a++; });
-    S.push({ id: "dept", titulo: "4. Vencidos por departamento", explicacao: "Mostra onde está concentrado o atraso. O percentual é vencidos ÷ total de planos do departamento.",
-      cols: ["Departamento", "Em aberto", "Vencidos", "A vencer (40d)", "% vencido"],
-      rows: Object.entries(dept).sort((a, b) => b[1].v - a[1].v).map(([k, v]) => ({ key: k, cells: [k, v.t, v.v, v.a, pct(v.v, v.t)], auto: v.v === 0 ? "Sem atraso" : (v.v / v.t > 0.3 ? "Atraso elevado — priorizar" : "Atraso moderado") })) });
-    const grp = CRITICAL_GROUPS.map((g) => { const l = tmDue.filter((d) => critPrefixOf(d.code) === g.cod); return { g, t: l.length, v: l.filter(isVenc).length, a: l.filter(ate40).length }; }).filter((x) => x.t > 0).sort((a, b) => b.v - a.v);
-    S.push({ id: "crit", titulo: "5. Jobs críticos por grupo de sistema (PMS)", explicacao: "Grupos de componentes críticos (3 primeiros dígitos do código). Mostra só os grupos que têm planos em aberto.",
-      cols: ["Grupo", "Criticidade", "Em aberto", "Vencidos", "A vencer (40d)"],
-      rows: grp.map((x) => ({ key: x.g.cod, cells: [critLabel(x.g.cod), x.g.crit, x.t, x.v, x.a], auto: x.v === 0 ? "Em dia" : `${x.v} vencido(s) — ${pct(x.v, x.t)} do grupo` })) });
-    const mesAtual = hoje.slice(0, 7);
-    const isPost = (h) => (h.remarks || "").toLowerCase().includes("postpon") || String(h.postponed || "").trim().toUpperCase() === "X";
-    const postMes = tmHistory.filter((h) => isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
-    const execMes = tmHistory.filter((h) => !isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
-    S.push({ id: "hist", titulo: "6. History — mês atual", explicacao: "Jobs fechados neste mês. “Postergado” = job adiado (campo Postponed ou observação com “Postponed”).",
-      cols: ["Indicador", "Quantidade"], rows: [
-        { key: "e", cells: ["Executados no mês", execMes.length], auto: "Planos concluídos" },
-        { key: "p", cells: ["Postergados no mês", postMes.length], auto: postMes.length ? `${pct(postMes.length, postMes.length + execMes.length)} dos jobs do mês foram adiados` : "Nenhum adiamento" },
-      ] });
-    if (postMes.length) S.push({ id: "post", titulo: `7. Jobs postergados no mês (${Math.min(lim, postMes.length)} de ${postMes.length})`, explicacao: "Jobs adiados neste mês. A observação vem do campo Remarks do History — edite se quiser.",
-      cols: ["Job", "Plano", "Componente", "Data", "Feito por"],
-      rows: postMes.slice(0, lim).map((h, i) => ({ key: `${h.jobHistoryNumber || i}`, cells: [`${h.jobType || ""} ${h.jobNo || ""}`.trim() || "—", h.jobName || "—", `${h.componentCode || ""} ${h.componentName || ""}`.trim() || "—", fmt(h.dateDone), h.doneByName || "—"], auto: h.remarks || "Postergado" })) });
-    if (F.reports.length) {
-      const nos = new Set(F.reports.map((r) => r.no));
-      const nm = (no) => F.reports.find((r) => r.no === no)?.name || "";
-      const abertos = F.reports.filter((r) => !/complet|closed/i.test(r.status));
-      const acts = F.actions.filter((a) => nos.has(a.frNo) && !frActionConcluida(a)).sort((a, b) => (frDias(b.created || b.deadline, hoje) ?? -1) - (frDias(a.created || a.deadline, hoje) ?? -1));
-      const actsV = acts.filter((a) => a.deadline && a.deadline < hoje);
-      const jobsF = F.jobs.filter((j) => nos.has(j.frNo));
-      const ordF = F.orders.filter((o) => nos.has(o.frNo) && !frOrderEncerrada(o));
-      S.push({ id: "fr", titulo: "8. Failure Reports — situação geral", explicacao: "Falhas registradas e tudo que está ligado a elas (actions, jobs e orders). “Em aberto” = status diferente de Completed.",
-        cols: ["Indicador", "Quantidade"], rows: [
-          { key: "a", cells: ["Failure Reports em aberto / total", `${abertos.length} / ${F.reports.length}`], auto: "Falhas ainda sem encerramento" },
-          { key: "b", cells: ["Actions pendentes", acts.length], auto: `${actsV.length} com prazo vencido` },
-          { key: "c", cells: ["Jobs ligados em aberto", jobsF.length], auto: `${jobsF.filter((j) => j.nextDue && j.nextDue < hoje).length} vencido(s)` },
-          { key: "d", cells: ["Orders em andamento", ordF.length], auto: "Pedidos de peças/serviços ligados às falhas" },
-        ] });
-      S.push({ id: "acts", titulo: `9. Actions pendentes (${Math.min(lim, acts.length)} de ${acts.length}, as paradas há mais tempo)`, explicacao: "Ações corretivas/preventivas abertas, da mais antiga para a mais recente. “Parada há” conta desde a criação da action.",
-        cols: ["Action", "Ação", "Failure Report", "Responsável", "Prazo", "Parada há (dias)"],
-        rows: acts.slice(0, lim).map((a) => { const at = a.deadline && a.deadline < hoje ? frDias(a.deadline, hoje) : 0; return { key: a.no, cells: [a.no, a.name, `${a.frNo} — ${nm(a.frNo)}`, a.crew || a.crewType || a.department || "—", fmt(a.deadline), frDias(a.created || a.deadline, hoje) ?? "—"], auto: at > 0 ? `Prazo vencido há ${at} dias${a.priority ? ` · prioridade ${a.priority}` : ""}` : `No prazo${a.priority ? ` · prioridade ${a.priority}` : ""}` }; }) });
-      if (jobsF.length) S.push({ id: "jf", titulo: "10. Jobs em aberto ligados a Failure Reports", explicacao: "Planos criados para corrigir as falhas e ainda não executados.",
-        cols: ["Job", "Plano", "Failure Report", "Departamento", "Next Due"],
-        rows: jobsF.map((j, i) => ({ key: `${j.jobType}${j.jobNo}${i}`, cells: [`${j.jobType} ${j.jobNo}`, j.name, `${j.frNo} — ${nm(j.frNo)}`, j.department || "—", fmt(j.nextDue)], auto: j.nextDue && j.nextDue < hoje ? `Vencido há ${frDias(j.nextDue, hoje)} dias` : (j.nextDue ? `Vence em ${-frDias(j.nextDue, hoje)} dias` : "Sem data") })) });
-      if (ordF.length) S.push({ id: "of", titulo: "11. Orders em andamento ligadas a Failure Reports", explicacao: "Pedidos de material/serviço que ainda não foram recebidos.",
-        cols: ["Order", "Pedido", "Failure Report", "Status", "Fornecedor", "Entrega prevista"],
-        rows: ordF.map((o) => ({ key: o.no, cells: [o.no, o.name, `${o.frNo} — ${nm(o.frNo)}`, o.status, o.supplier || "—", fmt(o.delivery)], auto: o.delivery && o.delivery < hoje ? `Entrega atrasada há ${frDias(o.delivery, hoje)} dias` : "Aguardando entrega" })) });
-    }
+    const vencDept = venc.filter((d) => deptSel === "Todos" || (d.department || "—") === deptSel);
+    const pedido = (d) => {
+      const extra = [`vencido há ${Math.abs(dias(d) ?? 0)} dias`];
+      if (d.pri === "High") extra.push("prioridade alta");
+      if (critPrefixOf(d.code)) extra.push("componente crítico (PMS)");
+      if (String(d.jobType || "").toUpperCase() === "ONE") extra.push("corretiva");
+      return `BORDO RESPONDER: (1) foi executado? informe a data e dê baixa no TM; (2) se não, o motivo; (3) nova data prevista; (4) informe o nº da PO deste serviço. [${extra.join(" · ")}]`;
+    };
+    S.push({ id: "venc", titulo: `Jobs vencidos que precisam de resposta de bordo (${Math.min(lim, vencDept.length)} de ${vencDept.length}${deptSel !== "Todos" ? ` — ${deptSel}` : ""})`,
+      explicacao: "Planos de manutenção cujo prazo já passou, do mais atrasado para o menos atrasado. Para CADA job, bordo deve informar a PO do serviço (coluna “PO”) e responder na coluna “Resposta de bordo”: foi executado (data / baixa feita no TM)? Se não, qual o motivo do atraso e qual a nova data prevista. A coluna “Failure Report” mostra se o job está ligado a alguma falha registrada.",
+      cols: ["Departamento", "Job", "Plano", "Componente", "Due", "Atraso (dias)", "Prioridade", "Failure Report"], blankCols: ["PO (nº da PO deste serviço)", "Resposta de bordo"],
+      rows: vencDept.slice(0, lim).map((d, i) => ({ key: `${d.id || i}`, cells: [d.department || "—", jobTxt(d), d.jobName || "—", `${d.code || ""} ${d.component || ""}`.trim() || "—", d.dueDate ? fmt(d.dueDate) : (d.dueRaw || "—"), Math.abs(dias(d) ?? 0), d.pri || "—", frDe(d.jobType, d.jobNo) || "—"], auto: pedido(d) })) });
     return S;
-  }, [aberto, limite, tmDue, tmHistory, tmFailures]);
+  }, [aberto, limite, deptSel, tmDue, tmHistory, tmFailures]);
 
+  const deptsVenc = useMemo(() => ([...new Set(tmDue.filter((d) => (d.diffValue !== null && d.diffValue !== undefined ? d.diffValue < 0 : !!d.dueDate && d.dueDate < hoje)).map((d) => d.department || "—"))].sort()), [tmDue]);
   const obsDe = (sid, r) => (obs[`${sid}|${r.key}`] !== undefined ? obs[`${sid}|${r.key}`] : r.auto);
   const assunto = `Genesis I — Resumo TM Master — ${fmt(hoje)}`;
 
   const montarHtml = () => {
     const th = "background:#1F3A5F;color:#fff;padding:6px 8px;border:1px solid #cbd5e1;text-align:left;font-size:12px";
     const td = "padding:5px 8px;border:1px solid #cbd5e1;font-size:12px;vertical-align:top";
-    let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 16px;color:#6b7280;font-size:12px">Situação do TM Master em ${fmt(hoje)}. A coluna Observação traz o contexto de cada linha.</p>`;
+    let h = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 6px;font-size:13px">Prezados, solicitamos que <b>cada job vencido</b> abaixo seja respondido por bordo. Para cada job, informe o <b>nº da PO</b> do serviço e a <b>resposta de bordo</b> (respondendo este e-mail ou preenchendo as colunas em amarelo), e dê baixa no TM Master dos jobs já executados.</p><p style="margin:0 0 16px;color:#6b7280;font-size:12px">Situação do TM Master em ${fmt(hoje)}.</p>`;
     secoes.forEach((s) => {
       h += `<h3 style="margin:18px 0 4px;font-size:14px">${escHtml(s.titulo)}</h3><p style="margin:0 0 6px;color:#6b7280;font-size:12px">${escHtml(s.explicacao)}</p>`;
-      h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${[...s.cols, "Observação"].map((c) => `<th style="${th}">${escHtml(c)}</th>`).join("")}</tr></thead><tbody>`;
-      if (!s.rows.length) h += `<tr><td colspan="${s.cols.length + 1}" style="${td};color:#6b7280">Nenhum item.</td></tr>`;
-      s.rows.forEach((r, i) => { h += `<tr style="background:${i % 2 ? "#f8fafc" : "#fff"}">${r.cells.map((c) => `<td style="${td}">${escHtml(c)}</td>`).join("")}<td style="${td}">${escHtml(obsDe(s.id, r))}</td></tr>`; });
+      h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${[...s.cols, "Observação", ...(s.blankCols || [])].map((c) => `<th style="${th}">${escHtml(c)}</th>`).join("")}</tr></thead><tbody>`;
+      if (!s.rows.length) h += `<tr><td colspan="${s.cols.length + 1 + (s.blankCols || []).length}" style="${td};color:#6b7280">Nenhum item.</td></tr>`;
+      s.rows.forEach((r, i) => { h += `<tr style="background:${i % 2 ? "#f8fafc" : "#fff"}">${r.cells.map((c) => `<td style="${td}">${escHtml(c)}</td>`).join("")}<td style="${td}">${escHtml(obsDe(s.id, r))}</td>${(s.blankCols || []).map(() => `<td style="${td};min-width:170px;background:#fffbe6">&nbsp;</td>`).join("")}</tr>`; });
       h += "</tbody></table>";
     });
     return h + `<p style="margin-top:18px;color:#6b7280;font-size:11px">Enviado a partir do portal Genesis I.</p></div>`;
   };
   const montarTexto = () => {
-    const L = [assunto, ""];
+    const L = [assunto, "", "Prezados, solicitamos que cada job vencido abaixo seja respondido por bordo (execução/baixa no TM, motivo do atraso e nova data prevista).", ""];
     secoes.forEach((s) => {
-      L.push(s.titulo, s.explicacao, [...s.cols, "Observação"].join(" | "));
+      L.push(s.titulo, s.explicacao, [...s.cols, "Observação", ...(s.blankCols || [])].join(" | "));
       if (!s.rows.length) L.push("(nenhum item)");
-      s.rows.forEach((r) => L.push([...r.cells, obsDe(s.id, r)].join(" | ")));
+      s.rows.forEach((r) => L.push([...r.cells, obsDe(s.id, r), ...(s.blankCols || []).map(() => "______")].join(" | ")));
       L.push("");
     });
     return L.join("\n");
@@ -5636,19 +5596,23 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
         <div className="g-panel" style={{ marginTop: 10 }}>
           <div className="g-panel-head"><span className="g-panel-title">Resumo do TM Master para e-mail — em tabelas</span></div>
           <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>
-            Cada tópico tem uma explicação e uma tabela com a coluna <b>Observação</b> (já preenchida automaticamente; você pode editar qualquer uma antes de enviar).
+            O e-mail traz <b>somente os jobs vencidos</b>. A coluna <b>Observação</b> pede, para cada job, a resposta de bordo (executado? motivo? nova data?) e você pode editá-la; a coluna <b>Resposta de bordo</b> vai em branco para eles preencherem. Use o filtro de departamento para mandar só a cada área.
             Mostra a situação de hoje, com todos os dados (sem os filtros da tela). Como o e-mail comum não recebe tabelas por link, o botão <b>Abrir no e-mail</b> copia o resumo formatado e abre o e-mail com destinatários e assunto — é só colar (Ctrl+V).
           </div>
           <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
             <input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="Para: email1@empresa.com, email2@empresa.com" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>Departamento
+              <select value={deptSel} onChange={(e) => setDeptSel(e.target.value)} style={{ padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
+                <option>Todos</option>{deptsVenc.map((d) => <option key={d}>{d}</option>)}
+              </select></label>
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>Linhas por tabela
               <select value={limite} onChange={(e) => setLimite(Number(e.target.value))} style={{ padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 }}>
-                <option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={0}>Todas</option>
+                <option value={0}>Todas</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option>
               </select></label>
             <button className="g-btn primary g-keep" onClick={abrirEmail}>Abrir no e-mail</button>
             <button className="g-btn" onClick={copiar}>Copiar resumo (com tabelas)</button>
           </div>
-          {msg && <div className="g-alert" style={{ marginBottom: 10 }}>{msg}</div>}
+          {msg && <div className="g-alert" style={{ marginBottom: 10, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
           <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 6 }}>Assunto: <b style={{ color: "var(--text)" }}>{assunto}</b></div>
           <div style={{ maxHeight: 620, overflow: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 12 }}>
             {secoes.map((s) => (
@@ -5657,13 +5621,14 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
                 <div className="g-muted" style={{ fontSize: 11.5, margin: "2px 0 6px" }}>{s.explicacao}</div>
                 <div className="g-table-wrap">
                   <table className="g-table tbl-modern">
-                    <thead><tr>{[...s.cols, "Observação"].map((c) => <th key={c}>{c}</th>)}</tr></thead>
+                    <thead><tr>{[...s.cols, "Observação", ...(s.blankCols || [])].map((c) => <th key={c}>{c}</th>)}</tr></thead>
                     <tbody>
-                      {s.rows.length === 0 && <tr><td colSpan={s.cols.length + 1} className="g-muted" style={{ textAlign: "center", padding: 12 }}>Nenhum item.</td></tr>}
+                      {s.rows.length === 0 && <tr><td colSpan={s.cols.length + 1 + (s.blankCols || []).length} className="g-muted" style={{ textAlign: "center", padding: 12 }}>Nenhum item.</td></tr>}
                       {s.rows.map((r) => (
                         <tr className="g-row tbl-row" key={r.key}>
                           {r.cells.map((c, j) => <td key={j} style={{ whiteSpace: "normal" }}>{c === "" || c === null || c === undefined ? "—" : c}</td>)}
-                          <td style={{ minWidth: 220 }}><input value={obsDe(s.id, r)} onChange={(e) => setObs((p) => ({ ...p, [`${s.id}|${r.key}`]: e.target.value }))} style={inp} /></td>
+                          <td style={{ minWidth: 300 }}><input value={obsDe(s.id, r)} onChange={(e) => setObs((p) => ({ ...p, [`${s.id}|${r.key}`]: e.target.value }))} style={inp} /></td>
+                          {(s.blankCols || []).map((bc) => <td key={bc} style={{ minWidth: 150, background: "rgba(245,166,35,0.10)" }} className="g-muted">(bordo preenche)</td>)}
                         </tr>
                       ))}
                     </tbody>
@@ -5678,7 +5643,249 @@ const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
   );
 };
 
-function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImportFailures, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
+/* ============================================================
+   TM MASTER — REGISTRO DE BORDO
+   Planilha diária do que o bordo fez (preventiva, preditiva, corretiva). Cada linha diz se houve BAIXA de job ou CRIAÇÃO de job
+   no TM Master, e o portal confere sozinho contra o History (baixas) e o Due (jobs abertos) importados.
+   ============================================================ */
+const BORDO_TIPOS = ["Preventiva", "Preditiva", "Corretiva"];
+const BORDO_ACOES = ["Baixa de job", "Criação de job", "Sem job"];
+const BORDO_ORIGENS = ["Planilha diária", "E-mail", "Mensagem", "Relatório", "Outro"];
+const bordoDate = (v) => {
+  if (!v) return "";
+  if (v instanceof Date) return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+  const s = String(v).trim(); let m = s.match(/^(\d{2})[./-](\d{2})[./-](\d{4})/); if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+};
+const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().toUpperCase();
+const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
+
+function baixarModeloBordo() {
+  const wb = XLSX.utils.book_new();
+  const cab = ["Data", "Tipo", "Descrição do que foi feito", "Componente (código ou nome)", "Job Type", "Job No", "Failure Report (FAIL-..., se houver)", "Ação no TM", "Origem do registro", "Reportado por", "Observação"];
+  const ws = XLSX.utils.aoa_to_sheet([cab]);
+  ws["!cols"] = [12, 14, 50, 28, 10, 10, 26, 16, 18, 20, 36].map((w) => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws, "Registro diário");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["COMO PREENCHER (uma linha para cada atividade feita a bordo, todos os dias)"], [""],
+    ["Data", "Dia em que foi feito. Formato 17/11/2026."],
+    ["Tipo", "Preventiva, Preditiva ou Corretiva."],
+    ["Descrição do que foi feito", "O que foi executado, de forma objetiva."],
+    ["Componente", "Código (ex.: 601.02.57) ou nome do equipamento."],
+    ["Job Type / Job No", "Tipo e número do job no TM Master (ex.: ONE e 449; INS e 2706). Obrigatórios para Baixa ou Criação."],
+    ["Failure Report", "Se a atividade corrige uma falha registrada, informe o nº do Failure Report (ex.: FAIL-GEN-2026-0081). Corretivas devem ter Failure Report."],
+    ["Ação no TM", "Baixa de job = o job foi executado e baixado no TM. Criação de job = foi criado um job novo no TM. Sem job = ainda não está no TM (será cobrado)."],
+    ["Origem do registro", "Planilha diária, E-mail, Mensagem, Relatório ou Outro."],
+    ["Reportado por", "Quem executou/registrou."],
+    ["Observação", "Qualquer informação útil (peças usadas, pendências, nova data)."],
+    [""], ["EXEMPLO", "17/11/2026 | Corretiva | Troca do selo da bomba SW | 721.03.01 | ONE | 453 | FAIL-GEN-2026-0075 | Baixa de job | Planilha diária | 2º Eng. | Selo novo instalado"],
+  ]), "Instruções");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Tipo", "Ação no TM", "Origem"], ...Array.from({ length: 5 }, (_, i) => [BORDO_TIPOS[i] || "", BORDO_ACOES[i] || "", BORDO_ORIGENS[i] || ""])]), "Listas");
+  XLSX.writeFile(wb, "modelo-registro-diario-bordo.xlsx");
+}
+
+const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, setReportFn, setExportXlsxFn, active }) => {
+  const fileRef = useRef(null);
+  const hoje = todayISO();
+  const [msg, setMsg] = useState("");
+  const [f, setF] = useState({ busca: "", tipo: "Todos", status: "Todos", fr: "Todos", de: "", ate: "" });
+  const fmt = (iso) => (iso ? fmtDataCompleta(iso) : "—");
+
+  /* índices de conferência contra o TM Master */
+  const idx = useMemo(() => {
+    const hist = new Map(), due = new Map();
+    tmHistory.forEach((h) => { const k = `${bordoNorm(h.jobType)}|${bordoNorm(h.jobNo)}`; if (!hist.has(k)) hist.set(k, []); hist.get(k).push(h); });
+    tmDue.forEach((d) => { const k = `${bordoNorm(d.jobType)}|${bordoNorm(d.jobNo)}`; if (!due.has(k)) due.set(k, []); due.get(k).push(d); });
+    return { hist, due };
+  }, [tmDue, tmHistory]);
+
+  /* Failure Reports: ligação digitada na linha OU detectada automaticamente (jobs / job history ligados ao Failure Report pelo mesmo Job Type + Job No) */
+  const frIdx = useMemo(() => {
+    const F = tmFailures || FR_EMPTY; const m = new Map();
+    F.jobs.concat(F.jobHistory).forEach((x) => { if (!x.frNo || !x.jobNo) return; const k = `${bordoNorm(x.jobType)}|${bordoNorm(x.jobNo)}`; if (!m.has(k)) m.set(k, new Set()); m.get(k).add(x.frNo); });
+    return { m, reports: new Map(F.reports.map((r) => [r.no, r])), has: F.reports.length > 0 };
+  }, [tmFailures]);
+  const frInfo = (r) => {
+    const typed = String(r.fr || "").trim();
+    const nos = typed ? typed.split(/[,;\s]+/).filter(Boolean) : [...(frIdx.m.get(`${bordoNorm(r.jobTipo)}|${bordoNorm(r.jobNo)}`) || [])];
+    const txt = nos.map((n) => { const rep = frIdx.reports.get(n); return rep ? `${n} — ${rep.name} (${rep.status})` : (frIdx.has ? `${n} (não está nos Failure Reports importados)` : n); });
+    return { nos, txt, auto: !typed && nos.length > 0 };
+  };
+  const conferir = (r) => {
+    const tem = r.jobTipo && r.jobNo; const k = `${bordoNorm(r.jobTipo)}|${bordoNorm(r.jobNo)}`;
+    const dias = (a, b) => Math.round((new Date(a + "T00:00:00") - new Date(b + "T00:00:00")) / 86400000);
+    if (r.acao === "Sem job") return { ok: false, cat: "Sem registro no TM", txt: "Atividade sem job no TM — criar o job (ou dar baixa) e informar o nº" };
+    if (!tem) return { ok: false, cat: "Falta informar o job", txt: "Informe Job Type e Job No para conferir no TM" };
+    const hs = idx.hist.get(k) || []; const ds = idx.due.get(k) || [];
+    if (r.acao === "Baixa de job") {
+      const dentro = hs.filter((h) => h.dateDone && r.data && dias(h.dateDone, r.data) >= -1 && dias(h.dateDone, r.data) <= 14).sort((a, b) => a.dateDone.localeCompare(b.dateDone))[0];
+      if (dentro) return { ok: true, cat: "Confirmado no TM", txt: `Baixa confirmada no History em ${fmt(dentro.dateDone)}${dentro.jobHistoryNumber ? ` (${dentro.jobHistoryNumber})` : ""}` };
+      if (hs.length) { const u = [...hs].sort((a, b) => (b.dateDone || "").localeCompare(a.dateDone || ""))[0]; return { ok: false, cat: "Divergente", txt: `Existe baixa deste job em ${fmt(u.dateDone)}, mas não na data informada` }; }
+      if (ds.length) return { ok: false, cat: "Não baixado no TM", txt: `Job ainda EM ABERTO no Due${ds[0].dueDate ? ` (vence ${fmt(ds[0].dueDate)})` : ""} — baixa não feita` };
+      return { ok: false, cat: "Job não encontrado", txt: "Job não encontrado no Due nem no History importados (nº errado ou planilha do TM desatualizada)" };
+    }
+    // criação de job
+    if (ds.length) return { ok: true, cat: "Confirmado no TM", txt: `Job existe no Due${ds[0].dueDate ? ` — vence ${fmt(ds[0].dueDate)}` : ""}${ds[0].jobName ? ` (${ds[0].jobName})` : ""}` };
+    if (hs.length) return { ok: true, cat: "Confirmado no TM", txt: `Job existe no History (último em ${fmt([...hs].sort((a, b) => (b.dateDone || "").localeCompare(a.dateDone || ""))[0].dateDone)})` };
+    return { ok: false, cat: "Job não encontrado", txt: "Job criado a bordo ainda não aparece no TM importado — conferir nº ou reimportar o Due" };
+  };
+
+  const rows = useMemo(() => tmBordo.map((r) => ({ ...r, _c: conferir(r), _f: frInfo(r) })), [tmBordo, idx, frIdx]);
+  const norm = (v) => String(v || "").toLowerCase();
+  const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status)
+    && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
+    && (!f.de || r.data >= f.de) && (!f.ate || r.data <= f.ate)
+    && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.obs} ${r.fr || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const cats = ["Todos", "Confirmado no TM", "Não baixado no TM", "Divergente", "Job não encontrado", "Sem registro no TM", "Falta informar o job"];
+
+  const kpi = useMemo(() => {
+    const ok = filtered.filter((r) => r._c.ok).length;
+    const dias14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+    const com = new Set(tmBordo.map((r) => r.data));
+    return { total: filtered.length, ok, pend: filtered.length - ok, semJob: filtered.filter((r) => r.acao === "Sem job").length,
+      corrSemFr: filtered.filter((r) => r.tipo === "Corretiva" && r._f.nos.length === 0).length, comFr: filtered.filter((r) => r._f.nos.length > 0).length,
+      baixas: filtered.filter((r) => r.acao === "Baixa de job").length, criacoes: filtered.filter((r) => r.acao === "Criação de job").length,
+      diasSem: dias14.filter((d) => !com.has(d)).length, hojeTem: com.has(hoje) };
+  }, [filtered, tmBordo]);
+  const porTipo = BORDO_TIPOS.map((t) => ({ nome: t, total: filtered.filter((r) => r.tipo === t).length }));
+  const porDia = useMemo(() => { const m = new Map(); filtered.forEach((r) => { if (r.data) m.set(r.data, (m.get(r.data) || 0) + 1); }); return [...m.entries()].sort().slice(-30).map(([d, n]) => ({ mes: d.slice(8) + "/" + d.slice(5, 7), total: n })); }, [filtered]);
+
+  const upd = (id, k, v) => setTmBordo((arr) => arr.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
+  const novo = () => setTmBordo((arr) => [{ id: uid("BRD"), data: hoje, tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", origem: "Planilha diária", por: "", obs: "" }, ...arr]);
+  const rem = (id) => setTmBordo((arr) => arr.filter((r) => r.id !== id));
+
+  const importar = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const nome = wb.SheetNames.find((n) => /registro|di[aá]rio|bordo/i.test(n)) || wb.SheetNames[0];
+        const js = XLSX.utils.sheet_to_json(wb.Sheets[nome], { defval: "" });
+        const g = (r, ...ks) => { for (const k of ks) { const kk = Object.keys(r).find((x) => x.trim().toLowerCase().startsWith(k)); if (kk && r[kk] !== "") return r[kk]; } return ""; };
+        const novos = js.map((r) => ({
+          data: bordoDate(g(r, "data")), tipo: bordoPick(g(r, "tipo"), BORDO_TIPOS, "Preventiva"), descricao: String(g(r, "descri")).trim(), componente: String(g(r, "componente")).trim(),
+          jobTipo: String(g(r, "job type")).trim().toUpperCase(), jobNo: String(g(r, "job no")).trim(), fr: String(g(r, "failure")).trim().toUpperCase(), acao: bordoPick(g(r, "ação", "acao"), BORDO_ACOES, "Sem job"),
+          origem: bordoPick(g(r, "origem"), BORDO_ORIGENS, "Planilha diária"), por: String(g(r, "reportado")).trim(), obs: String(g(r, "observa")).trim(),
+        })).filter((r) => r.data && (r.descricao || r.jobNo));
+        let add = 0, dup = 0;
+        setTmBordo((prev) => {
+          const key = (r) => [r.data, r.tipo, bordoNorm(r.jobTipo), bordoNorm(r.jobNo), r.descricao.toLowerCase()].join("|");
+          const have = new Set(prev.map(key)); const next = [...prev];
+          novos.forEach((r) => { if (have.has(key(r))) dup++; else { have.add(key(r)); next.push({ id: uid("BRD"), ...r }); add++; } });
+          return next;
+        });
+        setMsg(`Registro de bordo importado: ${novos.length} linha(s) lida(s) da aba "${nome}".`);
+      } catch (err) { setMsg("Erro ao ler a planilha de registro de bordo. Use o modelo (botão Baixar modelo)."); }
+      setTimeout(() => setMsg(""), 8000);
+    };
+    reader.readAsArrayBuffer(file); e.target.value = "";
+  };
+
+  React.useEffect(() => {
+    if (!active || !setExportXlsxFn || !setReportFn) return;
+    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Tipo: r.tipo, Descrição: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Failure Report (origem)": r._f.auto ? "detectado automaticamente" : (r.fr ? "informado" : ""), "Ação no TM": r.acao, Origem: r.origem, "Reportado por": r.por, Observação: r.obs, "Conferência no TM": r._c.cat, "Detalhe da conferência": r._c.txt }));
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem registros" }]), "Registro de Bordo"); XLSX.writeFile(wb, `genesis-registro-de-bordo-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "TM Master — Registro de Bordo", `${filtered.length} registro(s) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [{ label: "Registros", value: kpi.total }, { label: "Confirmados no TM", value: kpi.ok }, { label: "Pendentes no TM", value: kpi.pend }, { label: "Baixas", value: kpi.baixas }, { label: "Jobs criados", value: kpi.criacoes }, { label: "Dias sem registro (14d)", value: kpi.diasSem }]);
+      y = pdfSectionTitle(doc, y, "Registros e conferência no TM Master");
+      pdfTable(doc, y, ["Data", "Tipo", "Descrição", "Componente", "Job", "Failure Report", "Ação no TM", "Reportado por", "Conferência", "Detalhe"],
+        filtered.map((r) => [fmt(r.data), r.tipo, r.descricao, r.componente, `${r.jobTipo} ${r.jobNo}`.trim() || "—", r._f.nos.join(", ") || "—", r.acao, r.por || "—", r._c.cat, r._c.txt]));
+      pdfSave(doc, "relatorio-registro-de-bordo");
+    });
+  }, [active, filtered, kpi]);
+
+  const cor = (c) => (c === "Confirmado no TM" ? "d1" : c === "Divergente" || c === "Falta informar o job" ? "d2" : "d3");
+  const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
+  return (
+    <>
+      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ maxWidth: 820 }}>
+          <div className="g-panel-title" style={{ marginBottom: 4 }}>Registro de Bordo — tudo que o bordo fez, conferido no TM Master</div>
+          <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+            O bordo preenche a <b>planilha diária</b> (uma linha por atividade: preventiva, preditiva ou corretiva) dizendo se foi <b>baixa de job</b> ou <b>criação de job</b> no TM e qual o nº do job.
+            Você importa a planilha e o portal <b>confere sozinho</b> contra o History e o Due do TM Master: baixa confirmada, job ainda aberto, job não encontrado ou atividade sem job. Reimportar não duplica linhas. Se a atividade corrige uma falha, informe o <b>Failure Report</b>: o portal também detecta sozinho quando o job já está ligado a um Failure Report importado.
+          </div>
+        </div>
+        <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
+          <button className="g-btn" onClick={baixarModeloBordo}><Download size={14} />Baixar modelo de planilha</button>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
+          <button className="g-btn primary" onClick={() => fileRef.current?.click()}><Upload size={14} />Importar planilha de bordo</button>
+          <button className="g-btn primary" onClick={novo}><Plus size={14} />Novo registro</button>
+        </div>
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      {!kpi.hojeTem && tmBordo.length > 0 && <div className="g-alert" style={{ marginBottom: 12 }}><AlertTriangle size={14} style={{ marginTop: 1 }} />Nenhum registro de bordo com a data de hoje ({fmt(hoje)}). Nos últimos 14 dias, {kpi.diasSem} dia(s) ficaram sem registro.</div>}
+
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+        <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="descrição, componente, job, quem..." style={{ minWidth: 220 }} /></div>
+        <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>De</label><input type="date" value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
+        <div className="g-field"><label>Até</label><input type="date" value={f.ate} onChange={(e) => setF((p) => ({ ...p, ate: e.target.value }))} /></div>
+      </div>
+
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+        {bigKpi("Registros", kpi.total, "var(--teal)", ClipboardList)}
+        {bigKpi("Confirmados no TM", kpi.ok, "var(--ok)", ClipboardList)}
+        {bigKpi("Pendentes no TM", kpi.pend, kpi.pend ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Baixas de job", kpi.baixas, "var(--teal)", Wrench)}
+        {bigKpi("Jobs criados", kpi.criacoes, "var(--teal)", Wrench)}
+        {bigKpi("Com Failure Report", kpi.comFr, "var(--teal)", ClipboardList)}
+        {bigKpi("Corretivas sem Failure Report", kpi.corrSemFr, kpi.corrSemFr ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Dias sem registro (14d)", kpi.diasSem, kpi.diasSem > 3 ? "var(--crit)" : "var(--warn)", Clock)}
+      </div>
+      {tmBordo.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 14, marginBottom: 14 }}>
+          <MesBarChart title="Registros por dia (últimos 30 com registro)" height={200} data={porDia} bars={[{ key: "total", name: "Registros", color: "#3B82F6" }]} />
+          <MesBarChart title="Por tipo de manutenção" height={200} data={porTipo} bars={[{ key: "total", name: "Registros", color: "#8B5CF6" }]} />
+        </div>
+      )}
+
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
+        <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
+          <table className="g-table tbl-modern">
+            <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Componente</th><th>Job Type</th><th>Job No</th><th>Failure Report</th><th>Ação no TM</th><th>Origem</th><th>Reportado por</th><th>Observação</th><th>Conferência no TM</th><th></th></tr></thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={13} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Baixe o modelo, passe para o bordo preencher e importe aqui — ou use “Novo registro”."}</td></tr>}
+              {filtered.map((r) => (
+                <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
+                  <td style={{ minWidth: 118 }}><input type="date" value={r.data} onChange={(e) => upd(r.id, "data", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 112 }}><select value={r.tipo} onChange={(e) => upd(r.id, "tipo", e.target.value)} style={inp}>{BORDO_TIPOS.map((o) => <option key={o}>{o}</option>)}</select></td>
+                  <td style={{ minWidth: 240 }}><input value={r.descricao} onChange={(e) => upd(r.id, "descricao", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 150 }}><input value={r.componente} onChange={(e) => upd(r.id, "componente", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 70 }}><input value={r.jobTipo} onChange={(e) => upd(r.id, "jobTipo", e.target.value.toUpperCase())} style={inp} /></td>
+                  <td style={{ minWidth: 70 }}><input value={r.jobNo} onChange={(e) => upd(r.id, "jobNo", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 190, whiteSpace: "normal" }}>
+                    <input value={r.fr || ""} onChange={(e) => upd(r.id, "fr", e.target.value.toUpperCase())} placeholder={r._f.auto ? r._f.nos[0] : "FAIL-GEN-2026-xxxx"} style={inp} />
+                    {r._f.nos.length > 0 && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--ok)" }}>{r._f.auto ? "ligado automaticamente: " : "ligado: "}{r._f.txt.join(" · ")}</div>}
+                    {r._f.nos.length === 0 && r.tipo === "Corretiva" && frIdx.has && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--crit)" }}>Corretiva sem Failure Report ligado</div>}
+                  </td>
+                  <td style={{ minWidth: 130 }}><select value={r.acao} onChange={(e) => upd(r.id, "acao", e.target.value)} style={inp}>{BORDO_ACOES.map((o) => <option key={o}>{o}</option>)}</select></td>
+                  <td style={{ minWidth: 120 }}><select value={r.origem} onChange={(e) => upd(r.id, "origem", e.target.value)} style={inp}>{BORDO_ORIGENS.map((o) => <option key={o}>{o}</option>)}</select></td>
+                  <td style={{ minWidth: 120 }}><input value={r.por} onChange={(e) => upd(r.id, "por", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 180 }}><input value={r.obs} onChange={(e) => upd(r.id, "obs", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 260, whiteSpace: "normal" }}><span className={`tbl-days ${cor(r._c.cat)}`}>{r._c.cat}</span><div className="g-muted" style={{ fontSize: 11, marginTop: 3 }}>{r._c.txt}</div></td>
+                  <td><span className="g-btn ghost danger" onClick={() => rem(r.id)}><Trash2 size={13} /></span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6, lineHeight: 1.5 }}>
+          Conferência: <b>Baixa de job</b> é confirmada quando existe no History um job com o mesmo Job Type e Job No, com data de execução entre 1 dia antes e 14 dias depois da data informada.
+          <b> Criação de job</b> é confirmada quando o job aparece no Due ou no History. Para a conferência valer, mantenha o Due e o History do TM Master sempre atualizados.
+        </div>
+      </div>
+    </>
+  );
+};
+
+function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImportFailures, tmBordo, setTmBordo, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
 
@@ -6182,7 +6389,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
   }, [tmDueForMetrics, tmHistoryForMetrics, hojeLocal]);
 
   React.useEffect(() => {
-    if (!setReportFn || tmSubTab === "falhas") return;
+    if (!setReportFn || tmSubTab === "falhas" || tmSubTab === "bordo") return;
     setReportFn(() => () => {
       const doc = new jsPDF();
       if (tmSubTab === "metricas" && metricasView === "planos") {
@@ -6291,7 +6498,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
   /* "Exportar planilha" no cabeçalho segue a subaba/filtro ativo aqui — Due exporta o filtro de Due,
      History o filtro de History, e Métricas exporta os dois conjuntos já escopados por mês/ano */
   React.useEffect(() => {
-    if (!setExportXlsxFn || tmSubTab === "falhas") return;
+    if (!setExportXlsxFn || tmSubTab === "falhas" || tmSubTab === "bordo") return;
     setExportXlsxFn(() => () => {
       const wb = XLSX.utils.book_new();
       if (tmSubTab === "due") {
@@ -6339,9 +6546,12 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
         <button className={tmSubTab === "history" ? "active" : ""} onClick={() => setTmSubTab("history")}>History (Fechados)</button>
         <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Métricas</button>
         <button className={tmSubTab === "falhas" ? "active" : ""} onClick={() => setTmSubTab("falhas")}>Failure Reports</button>
+        <button className={tmSubTab === "bordo" ? "active" : ""} onClick={() => setTmSubTab("bordo")}>Registro de Bordo</button>
       </div>
 
       <ResumoEmailTm tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} />
+
+      {tmSubTab === "bordo" && <BordoRegistroView tmBordo={tmBordo || []} setTmBordo={setTmBordo} tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
       {tmSubTab === "falhas" && <FailureReportsView tmFailures={tmFailures} handleImportFailures={handleImportFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
