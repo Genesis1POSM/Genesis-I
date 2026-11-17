@@ -5688,6 +5688,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
   const fileRef = useRef(null);
   const hoje = todayISO();
   const [msg, setMsg] = useState("");
+  const [emailBordo, setEmailBordo] = useState(() => { try { return localStorage.getItem("genesis_email_bordo") || ""; } catch (e) { return ""; } });
   const [f, setF] = useState({ busca: "", tipo: "Todos", status: "Todos", fr: "Todos", de: "", ate: "" });
   const fmt = (iso) => (iso ? fmtDataCompleta(iso) : "—");
 
@@ -5730,7 +5731,8 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
     return { ok: false, cat: "Job não encontrado", txt: "Job criado a bordo ainda não aparece no TM importado — conferir nº ou reimportar o Due" };
   };
 
-  const rows = useMemo(() => tmBordo.map((r) => ({ ...r, _c: conferir(r), _f: frInfo(r) })), [tmBordo, idx, frIdx]);
+  const atrasoEnvio = (r) => (r.recebido && r.data ? Math.round((new Date(r.recebido + "T00:00:00") - new Date(r.data + "T00:00:00")) / 86400000) : null);
+  const rows = useMemo(() => tmBordo.map((r) => ({ ...r, _c: conferir(r), _f: frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
   const norm = (v) => String(v || "").toLowerCase();
   const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
@@ -5744,14 +5746,32 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
     const com = new Set(tmBordo.map((r) => r.data));
     return { total: filtered.length, ok, pend: filtered.length - ok, semJob: filtered.filter((r) => r.acao === "Sem job").length,
       corrSemFr: filtered.filter((r) => r.tipo === "Corretiva" && r._f.nos.length === 0).length, comFr: filtered.filter((r) => r._f.nos.length > 0).length,
+      atrasados: filtered.filter((r) => r._a !== null && r._a > 1).length,
       baixas: filtered.filter((r) => r.acao === "Baixa de job").length, criacoes: filtered.filter((r) => r.acao === "Criação de job").length,
       diasSem: dias14.filter((d) => !com.has(d)).length, hojeTem: com.has(hoje) };
   }, [filtered, tmBordo]);
   const porTipo = BORDO_TIPOS.map((t) => ({ nome: t, total: filtered.filter((r) => r.tipo === t).length }));
   const porDia = useMemo(() => { const m = new Map(); filtered.forEach((r) => { if (r.data) m.set(r.data, (m.get(r.data) || 0) + 1); }); return [...m.entries()].sort().slice(-30).map(([d, n]) => ({ mes: d.slice(8) + "/" + d.slice(5, 7), total: n })); }, [filtered]);
 
+  /* cobrança: dias dos últimos 7 (sem contar hoje) sem nenhum registro de bordo */
+  const diasSemRegistro = useMemo(() => {
+    const com = new Set(tmBordo.map((r) => r.data)); const out = [];
+    for (let i = 1; i <= 7; i++) { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - i); const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; if (!com.has(iso)) out.push(iso); }
+    return out;
+  }, [tmBordo]);
+  const NORMA = "NORMA — REGISTRO DIÁRIO DE BORDO\n\n1. Todos os dias, até as 18h (hora de bordo), enviar por E-MAIL a planilha “Registro diário” preenchida com TUDO que foi feito no dia: preventiva, preditiva e corretiva.\n2. Assunto do e-mail: REGISTRO DIÁRIO BORDO – dd/mm/aaaa. Anexar a planilha atualizada (acumulada).\n3. Cada atividade deve ter o Job Type e o Job No do TM Master e a Ação no TM: baixa de job ou criação de job. Dar a baixa/criar o job no TM ANTES de registrar.\n4. Corretivas devem informar o Failure Report (FAIL-...).\n5. Dia sem atividade também deve ser informado (escrever “sem atividade” na descrição).\n6. Atividades comunicadas por mensagem, ligação ou relatório avulso só são consideradas depois de entrarem na planilha enviada por e-mail.\n7. O não envio é cobrado diariamente pelo escritório.";
+  const copiarNorma = async () => { try { await navigator.clipboard.writeText(NORMA); setMsg("Norma copiada. Cole no e-mail para o bordo."); } catch (e) { window.prompt("Copie o texto:", NORMA); } setTimeout(() => setMsg(""), 5000); };
+  const abrirCobranca = () => {
+    try { localStorage.setItem("genesis_email_bordo", emailBordo); } catch (e) { /* ignora */ }
+    const lista = diasSemRegistro.map((d) => `- ${fmtDataCompleta(d)}`).join("\n");
+    const corpo = diasSemRegistro.length
+      ? `Prezados,\n\nNão recebemos o REGISTRO DIÁRIO DE BORDO dos seguintes dias:\n${lista}\n\nFavor enviar por e-mail HOJE a planilha preenchida com tudo que foi feito (preventiva, preditiva e corretiva), com o Job Type / Job No do TM Master, a ação (baixa ou criação de job) e o Failure Report quando houver.\n\nAtividades informadas só por mensagem ou ligação não são consideradas até entrarem na planilha.\n\nObrigado.`
+      : `Prezados,\n\nRecebemos os registros dos últimos 7 dias. Lembramos que o REGISTRO DIÁRIO DE BORDO deve ser enviado por e-mail todos os dias.\n\nObrigado.`;
+    window.location.href = `mailto:${emailBordo.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}?subject=${encodeURIComponent("COBRANÇA – Registro diário de bordo pendente")}&body=${encodeURIComponent(corpo)}`;
+  };
+
   const upd = (id, k, v) => setTmBordo((arr) => arr.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
-  const novo = () => setTmBordo((arr) => [{ id: uid("BRD"), data: hoje, tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", origem: "Planilha diária", por: "", obs: "" }, ...arr]);
+  const novo = () => setTmBordo((arr) => [{ id: uid("BRD"), data: hoje, tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", origem: "Planilha diária", por: "", obs: "", recebido: hoje }, ...arr]);
   const rem = (id) => setTmBordo((arr) => arr.filter((r) => r.id !== id));
 
   const importar = (e) => {
@@ -5772,7 +5792,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
         setTmBordo((prev) => {
           const key = (r) => [r.data, r.tipo, bordoNorm(r.jobTipo), bordoNorm(r.jobNo), r.descricao.toLowerCase()].join("|");
           const have = new Set(prev.map(key)); const next = [...prev];
-          novos.forEach((r) => { if (have.has(key(r))) dup++; else { have.add(key(r)); next.push({ id: uid("BRD"), ...r }); add++; } });
+          novos.forEach((r) => { if (have.has(key(r))) dup++; else { have.add(key(r)); next.push({ id: uid("BRD"), ...r, recebido: hoje }); add++; } });
           return next;
         });
         setMsg(`Registro de bordo importado: ${novos.length} linha(s) lida(s) da aba "${nome}".`);
@@ -5784,7 +5804,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
 
   React.useEffect(() => {
     if (!active || !setExportXlsxFn || !setReportFn) return;
-    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Tipo: r.tipo, Descrição: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Failure Report (origem)": r._f.auto ? "detectado automaticamente" : (r.fr ? "informado" : ""), "Ação no TM": r.acao, Origem: r.origem, "Reportado por": r.por, Observação: r.obs, "Conferência no TM": r._c.cat, "Detalhe da conferência": r._c.txt }));
+    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Tipo: r.tipo, Descrição: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Failure Report (origem)": r._f.auto ? "detectado automaticamente" : (r.fr ? "informado" : ""), "Ação no TM": r.acao, Origem: r.origem, "Reportado por": r.por, Observação: r.obs, "Recebido em": fmt(r.recebido), "Dias até o envio": r._a === null ? "" : r._a, "Conferência no TM": r._c.cat, "Detalhe da conferência": r._c.txt }));
     setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem registros" }]), "Registro de Bordo"); XLSX.writeFile(wb, `genesis-registro-de-bordo-${todayISO()}.xlsx`); });
     setReportFn(() => () => {
       const doc = new jsPDF({ orientation: "landscape" });
@@ -5817,6 +5837,22 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
         </div>
       </div>
       {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      <div className="g-panel" style={{ borderLeft: "3px solid var(--warn)" }}>
+        <div className="g-panel-head"><span className="g-panel-title">Cobrança do envio diário por e-mail</span></div>
+        <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 8 }}>
+          O portal não consegue impedir o bordo de esquecer, mas deixa o descumprimento visível: <b>dias sem registro</b>, <b>"Recebido em"</b> de cada linha (e quantos dias depois do dia da atividade ela chegou) e o botão de cobrança abaixo.
+          Regra recomendada: <b>só vale o que está na planilha enviada por e-mail</b>; mensagem e ligação não substituem o registro.
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          {diasSemRegistro.length === 0 ? <span style={{ color: "var(--ok)" }}>✔ Todos os últimos 7 dias têm registro.</span>
+            : <><b style={{ color: "var(--crit)" }}>{diasSemRegistro.length} dia(s) sem registro nos últimos 7:</b> {diasSemRegistro.map((d) => fmtDataCompleta(d)).join(", ")}</>}
+        </div>
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="text" value={emailBordo} onChange={(e) => setEmailBordo(e.target.value)} placeholder="E-mail do bordo (vários separados por vírgula)" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
+          <button className="g-btn primary g-keep" onClick={abrirCobranca}>Abrir e-mail de cobrança</button>
+          <button className="g-btn" onClick={copiarNorma}>Copiar norma (mensagem padrão)</button>
+        </div>
+      </div>
       {!kpi.hojeTem && tmBordo.length > 0 && <div className="g-alert" style={{ marginBottom: 12 }}><AlertTriangle size={14} style={{ marginTop: 1 }} />Nenhum registro de bordo com a data de hoje ({fmt(hoje)}). Nos últimos 14 dias, {kpi.diasSem} dia(s) ficaram sem registro.</div>}
 
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
@@ -5834,6 +5870,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
         {bigKpi("Pendentes no TM", kpi.pend, kpi.pend ? "var(--crit)" : "var(--ok)", AlertTriangle)}
         {bigKpi("Baixas de job", kpi.baixas, "var(--teal)", Wrench)}
         {bigKpi("Jobs criados", kpi.criacoes, "var(--teal)", Wrench)}
+        {bigKpi("Enviados com atraso (>1 dia)", kpi.atrasados, kpi.atrasados ? "var(--warn)" : "var(--ok)", Clock)}
         {bigKpi("Com Failure Report", kpi.comFr, "var(--teal)", ClipboardList)}
         {bigKpi("Corretivas sem Failure Report", kpi.corrSemFr, kpi.corrSemFr ? "var(--crit)" : "var(--ok)", AlertTriangle)}
         {bigKpi("Dias sem registro (14d)", kpi.diasSem, kpi.diasSem > 3 ? "var(--crit)" : "var(--warn)", Clock)}
@@ -5849,9 +5886,9 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
         <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
           <table className="g-table tbl-modern">
-            <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Componente</th><th>Job Type</th><th>Job No</th><th>Failure Report</th><th>Ação no TM</th><th>Origem</th><th>Reportado por</th><th>Observação</th><th>Conferência no TM</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Componente</th><th>Job Type</th><th>Job No</th><th>Failure Report</th><th>Ação no TM</th><th>Origem</th><th>Reportado por</th><th>Observação</th><th>Recebido em</th><th>Conferência no TM</th><th></th></tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={13} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Baixe o modelo, passe para o bordo preencher e importe aqui — ou use “Novo registro”."}</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={14} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Baixe o modelo, passe para o bordo preencher e importe aqui — ou use “Novo registro”."}</td></tr>}
               {filtered.map((r) => (
                 <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
                   <td style={{ minWidth: 118 }}><input type="date" value={r.data} onChange={(e) => upd(r.id, "data", e.target.value)} style={inp} /></td>
@@ -5869,6 +5906,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
                   <td style={{ minWidth: 120 }}><select value={r.origem} onChange={(e) => upd(r.id, "origem", e.target.value)} style={inp}>{BORDO_ORIGENS.map((o) => <option key={o}>{o}</option>)}</select></td>
                   <td style={{ minWidth: 120 }}><input value={r.por} onChange={(e) => upd(r.id, "por", e.target.value)} style={inp} /></td>
                   <td style={{ minWidth: 180 }}><input value={r.obs} onChange={(e) => upd(r.id, "obs", e.target.value)} style={inp} /></td>
+                  <td style={{ minWidth: 110, whiteSpace: "normal", fontFamily: "var(--mono)", fontSize: 12 }}>{r.recebido ? fmt(r.recebido) : "—"}{r._a !== null && r._a > 1 && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>enviado +{r._a} dias depois</div>}</td>
                   <td style={{ minWidth: 260, whiteSpace: "normal" }}><span className={`tbl-days ${cor(r._c.cat)}`}>{r._c.cat}</span><div className="g-muted" style={{ fontSize: 11, marginTop: 3 }}>{r._c.txt}</div></td>
                   <td><span className="g-btn ghost danger" onClick={() => rem(r.id)}><Trash2 size={13} /></span></td>
                 </tr>
