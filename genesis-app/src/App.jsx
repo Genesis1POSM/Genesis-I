@@ -5126,8 +5126,8 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   const hoje = todayISO();
   const F = tmFailures || FR_EMPTY;
   const [f, setF] = useState({ busca: "", status: "Todos", dept: "Todos", crit: "Todas", mes: "Todos", pend: false });
-  const [sel, setSel] = useState(null);
-  const [aba, setAba] = useState("actions");
+  const [open, setOpen] = useState(() => new Set());
+  const toggleOpen = (no) => setOpen((p) => { const n = new Set(p); if (n.has(no)) n.delete(no); else n.add(no); return n; });
 
   /* índice: Failure Report No -> registros ligados nas outras abas */
   const links = useMemo(() => {
@@ -5217,8 +5217,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   const porSistema = useMemo(() => contar("system"), [filtered]);
   const porStatus = useMemo(() => contar("status"), [filtered]);
 
-  const selRep = F.reports.find((r) => r.no === sel);
-  const selL = sel ? L(sel) : null;
+  const openReps = filtered.filter((r) => open.has(r.no));
 
   /* exportações: seguem os filtros e trazem o Failure Report ligado em cada aba */
   const pack = () => {
@@ -5256,27 +5255,66 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
       y = pdfTable(doc, y, ["Nº", "Nome", "Data", "Status", "Dept.", "Componente", "Criticidade", "Actions (abertas/total)", "Jobs abertos", "Job History", "Orders (abertas/total)"],
         filtered.map((r) => { const l = L(r.no); return [r.no, r.name, r.failureDate ? fmtDataCompleta(r.failureDate) : "—", r.status, r.department, `${r.compCode} ${r.compName}`.trim(), r.criticality || "—",
           `${l.actions.filter((a) => !frActionConcluida(a)).length}/${l.actions.length}`, l.jobs.length, l.jobHistory.length, `${l.orders.filter((o) => !frOrderEncerrada(o)).length}/${l.orders.length}`]; }));
-      if (selRep) {
-        y = pdfSectionTitle(doc, y, `Detalhe — ${selRep.no} · ${selRep.name}`);
+      openReps.forEach((selRep) => {
+        y = pdfSectionTitle(doc, y, `Failure Report completo — ${selRep.no} · ${selRep.name}`);
         const l = L(selRep.no);
-        y = pdfTable(doc, y, ["Causa", "Mecanismo", "Efeito", "Severidade", "Risco", "Criado por"], [[selRep.cause || "—", selRep.mechanism || "—", selRep.effect || "—", selRep.severity || "—", selRep.risk || "—", selRep.createdBy || "—"]]);
+        y = pdfTable(doc, y, ["Data", "Status", "Componente", "Causa", "Mecanismo", "Efeito", "Severidade", "Risco", "Criado por"], [[selRep.failureDate ? fmtDataCompleta(selRep.failureDate) : "—", selRep.status || "—", `${selRep.compCode} ${selRep.compName}`.trim(), selRep.cause || "—", selRep.mechanism || "—", selRep.effect || "—", selRep.severity || "—", selRep.risk || "—", selRep.createdBy || "—"]]);
         if (l.actions.length) y = pdfTable(doc, y, ["Action", "Ação", "Prazo", "Status", "Prioridade", "Responsável", "Ação tomada"], l.actions.map((a) => [a.no, a.name, fmtDataCompleta(a.deadline), a.doneStatus, a.priority, a.crew || a.crewType, a.actionTaken]));
         if (l.jobs.length) y = pdfTable(doc, y, ["Job", "Plano", "Status", "Next Due", "Diff"], l.jobs.map((j) => [`${j.jobType} ${j.jobNo}`, j.name, j.doneStatus || "—", fmtDataCompleta(j.nextDue), j.diff]));
         if (l.jobHistory.length) y = pdfTable(doc, y, ["Histórico", "Job", "Componente", "Data feita", "Feito por", "Observações"], l.jobHistory.map((h) => [h.number, `${h.jobType} ${h.jobNo}`, `${h.compCode} ${h.compName}`.trim(), fmtDataCompleta(h.dateDone), h.doneBy, h.remarks]));
         if (l.orders.length) y = pdfTable(doc, y, ["Order", "Pedido", "Status", "Fornecedor", "Entrega"], l.orders.map((o) => [o.no, o.name, o.status, o.supplier, fmtDataCompleta(o.delivery)]));
-      }
+      });
       y = pdfSectionTitle(doc, y, `Resumo de pendências — ${pend.length} item(ns) em aberto, do mais antigo ao mais recente`);
       y = pdfTable(doc, y, ["Tipo", "Em aberto", "Vencidos", "Média parado (dias)", "Mais antigo (dias)"], pendResumo.porTipo.map((t) => [t.tipo, t.total, t.vencidos, t.media, t.maisAntigo]));
       y = pdfTable(doc, y, ["Tipo", "Failure Report", "Referência", "Descrição", "Responsável", "Aberto desde", "Dias parado", "Prazo", "Atraso (dias)", "Situação"],
         pend.slice(0, 80).map((x) => [x.tipo, x.frNo, x.ref, x.desc, x.resp, fmtDataCompleta(x.desde), x.dias ?? "—", fmtDataCompleta(x.prazo), x.atraso || "—", x.situacao]));
       pdfSave(doc, "relatorio-tm-master-failure-reports");
     });
-  }, [active, filtered, kpi, selRep, F, pend, pendResumo]);
+  }, [active, filtered, kpi, openReps, F, pend, pendResumo]);
 
   const selStyle = { padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12.5 };
   const stCls = (s) => (/complet|closed/i.test(s) ? "d1" : /draft/i.test(s) ? "d2" : "d3");
+  /* visão única do Failure Report: dados da falha + linha do tempo + Actions, Jobs, Job History e Orders, tudo junto */
+  const Detalhe = ({ r }) => {
+    const l = L(r.no);
+    const ev = [];
+    if (r.failureDate) ev.push({ d: r.failureDate, t: "Falha", x: `${r.name}${r.compName ? ` — ${r.compCode} ${r.compName}` : ""}`, c: "#EF4444" });
+    l.actions.forEach((a) => { if (a.created) ev.push({ d: a.created, t: "Action criada", x: `${a.no} — ${a.name}`, c: "#3B82F6" });
+      if (a.doneDate) ev.push({ d: a.doneDate, t: "Action concluída", x: `${a.no} — ${a.name}${a.doneBy ? ` (${a.doneBy})` : ""}`, c: "#22C55E" });
+      else if (a.deadline) ev.push({ d: a.deadline, t: a.deadline < hoje ? "Action vencida (prazo)" : "Action: prazo", x: `${a.no} — ${a.name}`, c: a.deadline < hoje ? "#EF4444" : "#F5A623" }); });
+    l.jobs.forEach((j) => { if (j.created) ev.push({ d: j.created, t: "Job criado", x: `${j.jobType} ${j.jobNo} — ${j.name}`, c: "#3B82F6" });
+      if (j.nextDue) ev.push({ d: j.nextDue, t: j.nextDue < hoje ? "Job vencido (due)" : "Job: due", x: `${j.jobType} ${j.jobNo} — ${j.name}`, c: j.nextDue < hoje ? "#EF4444" : "#F5A623" }); });
+    l.jobHistory.forEach((h) => { if (h.dateDone) ev.push({ d: h.dateDone, t: "Job executado", x: `${h.jobType} ${h.jobNo} — ${h.name || h.compName}${h.doneBy ? ` (${h.doneBy})` : ""}`, c: "#22C55E" }); });
+    l.orders.forEach((o) => { if (o.approved) ev.push({ d: o.approved, t: "Order aprovada", x: `${o.no} — ${o.name}`, c: "#8B5CF6" });
+      if (o.delivery) ev.push({ d: o.delivery, t: frOrderEncerrada(o) ? "Order entregue/encerrada" : (o.delivery < hoje ? "Order: entrega atrasada" : "Order: entrega prevista"), x: `${o.no} — ${o.name}`, c: frOrderEncerrada(o) ? "#22C55E" : (o.delivery < hoje ? "#EF4444" : "#8B5CF6") }); });
+    ev.sort((a, b) => a.d.localeCompare(b.d));
+    const sec = (titulo, n, corpo) => (<div style={{ marginBottom: 14 }}><div style={{ fontSize: 12, fontWeight: 700, margin: "0 0 6px", color: "var(--text)" }}>{titulo} <span className="g-muted">({n})</span></div>{corpo}</div>);
+    return (
+      <div style={{ padding: "14px 16px", background: "var(--panel-raised, rgba(0,0,0,0.02))", borderLeft: "3px solid var(--accent, #3B82F6)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "8px 18px", marginBottom: 14, fontSize: 12.5 }}>
+          {[["Data da falha", r.failureDate ? fmtDataCompleta(r.failureDate) : "—"], ["Componente", `${r.compCode} ${r.compName}`.trim() || "—"], ["Descoberto durante", r.discoveredDuring], ["Atividade", r.activity],
+            ["Mecanismo", r.mechanism], ["Causa", r.cause], ["Efeito", r.effect], ["Severidade / Risco", [r.severity, r.risk].filter(Boolean).join(" / ")], ["Criado por", r.createdBy], ["Fechado em", r.closedDate ? fmtDataCompleta(r.closedDate) : ""]].map(([k, v]) => (
+            <div key={k} style={{ minWidth: 0, overflowWrap: "anywhere" }}><div className="g-muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4 }}>{k}</div><div>{v || "—"}</div></div>))}
+        </div>
+        {sec("Linha do tempo (tudo junto, em ordem de data)", ev.length, ev.length === 0 ? <div className="g-muted" style={{ fontSize: 12 }}>Sem datas registradas.</div> : (
+          <div style={{ borderLeft: "2px solid var(--border)", marginLeft: 6, paddingLeft: 14, display: "flex", flexDirection: "column", gap: 5 }}>
+            {ev.map((e, i) => (<div key={i} style={{ fontSize: 12.5, position: "relative" }}>
+              <span style={{ position: "absolute", left: -20, top: 5, width: 9, height: 9, borderRadius: "50%", background: e.c }} />
+              <span style={{ fontFamily: "var(--mono)", marginRight: 8 }}>{fmtDataCompleta(e.d)}</span><b style={{ color: e.c, marginRight: 8 }}>{e.t}</b>{e.x}</div>))}
+          </div>))}
+        {sec("Actions", l.actions.length, <Tbl cols={["Action", "Ação", "Prazo", "Status", "Prioridade", "Responsável", "Concluída em", "Ação tomada"]} empty="Nenhuma action ligada."
+          rows={l.actions.map((a) => [a.no, a.name, fmtDataCompleta(a.deadline), a.doneStatus || a.dueStatus, a.priority, a.crew || a.crewType || a.department, fmtDataCompleta(a.doneDate), a.actionTaken])} />)}
+        {sec("Jobs (em aberto)", l.jobs.length, <Tbl cols={["Job", "Plano", "Prioridade", "Status", "Next Due", "Diff"]} empty="Nenhum job em aberto ligado."
+          rows={l.jobs.map((j) => [`${j.jobType} ${j.jobNo}`, j.name, j.priority, j.doneStatus, fmtDataCompleta(j.nextDue), j.diff])} />)}
+        {sec("Job History (executados)", l.jobHistory.length, <Tbl cols={["Histórico", "Job", "Componente", "Data feita", "Feito por", "Motivo", "Observações"]} empty="Nenhum histórico ligado."
+          rows={l.jobHistory.map((h) => [h.number, `${h.jobType} ${h.jobNo}`, `${h.compCode} ${h.compName}`.trim(), fmtDataCompleta(h.dateDone), h.doneBy, h.reason, h.remarks])} />)}
+        {sec("Orders", l.orders.length, <Tbl cols={["Order", "Pedido", "Status", "Fornecedor", "Valor", "Entrega"]} empty="Nenhuma order ligada."
+          rows={l.orders.map((o) => [o.no, o.name, o.status, o.supplier, `${o.price ?? ""} ${o.currency}`.trim(), fmtDataCompleta(o.delivery)])} />)}
+      </div>
+    );
+  };
+
   const vazio = F.reports.length === 0;
-  const tabCount = (k) => (selL ? selL[k].length : 0);
   const Tbl = ({ cols, rows, empty }) => (
     <div className="g-table-wrap" style={{ maxHeight: 360, overflowY: "auto" }}>
       <table className="g-table tbl-modern">
@@ -5349,8 +5387,13 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
           </div>
 
           <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Failure Reports ({filtered.length}) — clique numa linha para ver tudo que está ligado a ela</span></div>
-            <div className="g-table-wrap" style={{ maxHeight: 460, overflowY: "auto" }}>
+            <div className="g-panel-head">
+              <span className="g-panel-title">Failure Reports ({filtered.length}) — clique numa linha para abrir tudo junto: falha, linha do tempo, actions, jobs, histórico e orders</span>
+              <div style={{ flex: 1 }} />
+              <button className="g-btn" onClick={() => setOpen(new Set(filtered.map((r) => r.no)))}>Expandir todos</button>
+              <button className="g-btn" onClick={() => setOpen(new Set())}>Recolher todos</button>
+            </div>
+            <div className="g-table-wrap">
               <table className="g-table tbl-modern">
                 <thead><tr>
                   <th>Nº</th><th>Nome</th><th>Data</th><th>Componente</th><th>Dept.</th><th>Criticidade</th><th>Status</th>
@@ -5360,8 +5403,9 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
                   {filtered.length === 0 && <tr><td colSpan={11} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum Failure Report com esse filtro.</td></tr>}
                   {filtered.map((r) => { const l = L(r.no); const ab = l.actions.filter((a) => !frActionConcluida(a)).length; const oa = l.orders.filter((o) => !frOrderEncerrada(o)).length;
                     return (
-                      <tr className="g-row tbl-row" key={r.no} onClick={() => setSel(sel === r.no ? null : r.no)} style={{ cursor: "pointer", "--c": /complet|closed/i.test(r.status) ? "#22C55E" : "#F5A623", background: sel === r.no ? "var(--accent-soft, rgba(59,130,246,0.08))" : undefined }}>
-                        <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}><b>{r.no}</b></td>
+                      <React.Fragment key={r.no}>
+                      <tr id={`fr-row-${r.no}`} className="g-row tbl-row" onClick={() => toggleOpen(r.no)} style={{ cursor: "pointer", "--c": /complet|closed/i.test(r.status) ? "#22C55E" : "#F5A623", background: open.has(r.no) ? "var(--accent-soft, rgba(59,130,246,0.08))" : undefined }}>
+                        <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}><span style={{ marginRight: 6 }}>{open.has(r.no) ? "▾" : "▸"}</span><b>{r.no}</b></td>
                         <td style={{ whiteSpace: "normal", minWidth: 200 }}>{r.name || "—"}</td>
                         <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{r.failureDate ? fmtDataCompleta(r.failureDate) : "—"}</td>
                         <td style={{ whiteSpace: "normal" }}>{r.compCode} {r.compName}</td>
@@ -5371,47 +5415,14 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
                         <td style={{ textAlign: "right" }}>{l.jobs.length}</td><td style={{ textAlign: "right" }}>{l.jobHistory.length}</td>
                         <td style={{ textAlign: "right" }}>{oa > 0 ? <b style={{ color: "var(--warn)" }}>{oa}/{l.orders.length}</b> : `${l.orders.length}`}</td>
                       </tr>
+                      {open.has(r.no) && <tr><td colSpan={11} style={{ padding: 0 }}><Detalhe r={r} /></td></tr>}
+                      </React.Fragment>
                     ); })}
                 </tbody>
               </table>
             </div>
             <div className="g-muted" style={{ fontSize: 10.5, marginTop: 6 }}>Actions: abertas/total (só mostra "abertas/" quando há pendência). Jobs: abertos no Due. Orders: em aberto/total.</div>
           </div>
-
-          {selRep && (
-            <div className="g-panel">
-              <div className="g-panel-head">
-                <span className="g-panel-title">{selRep.no} — {selRep.name}</span>
-                <div style={{ flex: 1 }} />
-                <span className="g-btn ghost" onClick={() => setSel(null)}><X size={13} />Fechar</span>
-              </div>
-              <div className="g-table-wrap" style={{ marginBottom: 12 }}>
-                <table className="g-table tbl-modern">
-                  <thead><tr><th>Data da falha</th><th>Descoberto durante</th><th>Atividade</th><th>Mecanismo</th><th>Causa</th><th>Efeito</th><th>Severidade / Risco</th><th>Criado por</th><th>Fechado em</th></tr></thead>
-                  <tbody><tr className="g-row">
-                    <td style={{ fontFamily: "var(--mono)" }}>{selRep.failureDate ? fmtDataCompleta(selRep.failureDate) : "—"}</td>
-                    <td>{selRep.discoveredDuring || "—"}</td><td>{selRep.activity || "—"}</td><td style={{ whiteSpace: "normal" }}>{selRep.mechanism || "—"}</td>
-                    <td>{selRep.cause || "—"}</td><td style={{ whiteSpace: "normal" }}>{selRep.effect || "—"}</td>
-                    <td>{[selRep.severity, selRep.risk].filter(Boolean).join(" / ") || "—"}</td><td>{selRep.createdBy || "—"}</td>
-                    <td style={{ fontFamily: "var(--mono)" }}>{selRep.closedDate ? fmtDataCompleta(selRep.closedDate) : "—"}</td>
-                  </tr></tbody>
-                </table>
-              </div>
-              <div className="g-mode-toggle" style={{ marginBottom: 10, width: "fit-content" }}>
-                {[["actions", "Actions"], ["jobs", "Jobs"], ["jobHistory", "Job History"], ["orders", "Orders"]].map(([k, lb]) => (
-                  <button key={k} className={aba === k ? "active" : ""} onClick={() => setAba(k)}>{lb} ({tabCount(k)})</button>
-                ))}
-              </div>
-              {aba === "actions" && <Tbl cols={["Action", "Ação", "Prazo", "Status", "Prioridade", "Responsável", "Concluída em", "Ação tomada"]} empty="Nenhuma action ligada."
-                rows={selL.actions.map((a) => [a.no, a.name, fmtDataCompleta(a.deadline), a.doneStatus || a.dueStatus, a.priority, a.crew || a.crewType || a.department, fmtDataCompleta(a.doneDate), a.actionTaken])} />}
-              {aba === "jobs" && <Tbl cols={["Job", "Plano", "Prioridade", "Status", "Next Due", "Diff"]} empty="Nenhum job em aberto ligado."
-                rows={selL.jobs.map((j) => [`${j.jobType} ${j.jobNo}`, j.name, j.priority, j.doneStatus, fmtDataCompleta(j.nextDue), j.diff])} />}
-              {aba === "jobHistory" && <Tbl cols={["Histórico", "Job", "Componente", "Data feita", "Feito por", "Motivo", "Observações"]} empty="Nenhum histórico ligado."
-                rows={selL.jobHistory.map((h) => [h.number, `${h.jobType} ${h.jobNo}`, `${h.compCode} ${h.compName}`.trim(), fmtDataCompleta(h.dateDone), h.doneBy, h.reason, h.remarks])} />}
-              {aba === "orders" && <Tbl cols={["Order", "Pedido", "Status", "Fornecedor", "Valor", "Entrega"]} empty="Nenhuma order ligada."
-                rows={selL.orders.map((o) => [o.no, o.name, o.status, o.supplier, `${o.price ?? ""} ${o.currency}`.trim(), fmtDataCompleta(o.delivery)])} />}
-            </div>
-          )}
 
           <div className="g-panel" style={{ borderTop: "3px solid var(--warn)" }}>
             <div className="g-panel-head"><span className="g-panel-title">Resumo de Pendências — o que está parado há mais tempo</span></div>
@@ -5448,7 +5459,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
                     <thead><tr><th>Tipo</th><th>Failure Report</th><th>Referência</th><th>Descrição</th><th>Responsável</th><th>Aberto desde</th><th style={{ textAlign: "right" }}>Dias parado</th><th>Prazo</th><th style={{ textAlign: "right" }}>Atraso</th><th>Situação</th></tr></thead>
                     <tbody>
                       {pendVis.slice(0, 300).map((x, i) => (
-                        <tr className="g-row tbl-row" key={i} onClick={() => { setSel(x.frNo); setAba(x.tipo === "Job" ? "jobs" : x.tipo === "Order" ? "orders" : "actions"); }} style={{ cursor: "pointer", "--c": x.atraso > 0 ? "#EF4444" : (x.dias || 0) > 30 ? "#F5A623" : "#3B82F6" }}>
+                        <tr className="g-row tbl-row" key={i} onClick={() => { setOpen((p) => new Set(p).add(x.frNo)); setTimeout(() => document.getElementById(`fr-row-${x.frNo}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); }} style={{ cursor: "pointer", "--c": x.atraso > 0 ? "#EF4444" : (x.dias || 0) > 30 ? "#F5A623" : "#3B82F6" }}>
                           <td><b>{x.tipo}</b></td>
                           <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{x.frNo}</td>
                           <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{x.ref}</td>
