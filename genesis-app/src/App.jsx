@@ -5484,6 +5484,102 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   );
 };
 
+/* ============================================================
+   TM MASTER — RESUMO PARA ENVIAR POR E-MAIL (manual: abre o seu e-mail com o texto pronto)
+   ============================================================ */
+const ResumoEmailTm = ({ tmDue, tmHistory, tmFailures }) => {
+  const [aberto, setAberto] = useState(false);
+  const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_resumo_para") || ""; } catch (e) { return ""; } });
+  const [copiado, setCopiado] = useState(false);
+  const hoje = todayISO();
+  const fmt = (iso) => (iso ? fmtDataCompleta(iso) : "—");
+
+  const texto = useMemo(() => {
+    if (!aberto) return "";
+    const F = tmFailures || FR_EMPTY;
+    const isVenc = (d) => (d.diffValue !== null && d.diffValue !== undefined ? d.diffValue < 0 : !!d.dueDate && d.dueDate < hoje);
+    const ate40 = (d) => d.diffUnit === "D" && d.diffValue !== null && d.diffValue >= 0 && d.diffValue <= 40;
+    const atraso = (d) => (d.diffValue !== null && d.diffValue !== undefined ? (d.diffUnit === "D" ? Math.max(0, -d.diffValue) : 0) : (d.dueDate ? Math.max(0, frDias(d.dueDate, hoje)) : 0));
+    const venc = tmDue.filter(isVenc);
+    const a40 = tmDue.filter((d) => !isVenc(d) && ate40(d));
+    const crit = tmDue.filter((d) => d.pri === "High" && (isVenc(d) || ate40(d)));
+    const one = tmDue.filter((d) => String(d.jobType || "").toUpperCase() === "ONE");
+    const mesAtual = hoje.slice(0, 7);
+    const isPost = (h) => (h.remarks || "").toLowerCase().includes("postpon") || String(h.postponed || "").trim().toUpperCase() === "X";
+    const postMes = tmHistory.filter((h) => isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
+    const execMes = tmHistory.filter((h) => !isPost(h) && (h.dateDone || "").slice(0, 7) === mesAtual);
+    const dept = {}; tmDue.forEach((d) => { const k = d.department || "—"; dept[k] = dept[k] || { t: 0, v: 0 }; dept[k].t++; if (isVenc(d)) dept[k].v++; });
+    const top = [...venc].sort((a, b) => atraso(b) - atraso(a)).slice(0, 5);
+    const critJobs = tmDue.filter((d) => critPrefixOf(d.code));
+    const critVenc = critJobs.filter(isVenc);
+
+    const L = [];
+    L.push(`Genesis I — Resumo TM Master — ${fmt(hoje)}`, "");
+    L.push("DUE (EM ABERTO)");
+    L.push(`- Total em aberto: ${tmDue.length}`);
+    L.push(`- Vencidos: ${venc.length}`);
+    L.push(`- A vencer em até 40 dias: ${a40.length}`);
+    L.push(`- Críticos (prioridade High) vencidos ou a vencer em 40 dias: ${crit.length}`);
+    L.push(`- Corretivas (ONE) em aberto: ${one.length}`);
+    L.push(`- Jobs críticos (grupos PMS): ${critJobs.length} em aberto, ${critVenc.length} vencidos`);
+    if (top.length) { L.push("", "5 MAIS ATRASADOS"); top.forEach((d) => L.push(`- ${d.jobType || ""} ${d.jobNo || ""} | ${d.jobName || d.component || "—"} | atraso ${atraso(d)} dias | ${d.department || "—"}`)); }
+    L.push("", "VENCIDOS POR DEPARTAMENTO");
+    Object.entries(dept).sort((a, b) => b[1].v - a[1].v).forEach(([k, v]) => L.push(`- ${k}: ${v.v} vencidos de ${v.t}`));
+    L.push("", `HISTORY — MÊS ATUAL`, `- Executados: ${execMes.length}`, `- Postergados: ${postMes.length}`);
+
+    if (F.reports.length) {
+      const nos = new Set(F.reports.map((r) => r.no));
+      const abertos = F.reports.filter((r) => !/complet|closed/i.test(r.status));
+      const acts = F.actions.filter((a) => nos.has(a.frNo) && !frActionConcluida(a));
+      const actsV = acts.filter((a) => a.deadline && a.deadline < hoje);
+      const jobsF = F.jobs.filter((j) => nos.has(j.frNo));
+      const ordF = F.orders.filter((o) => nos.has(o.frNo) && !frOrderEncerrada(o));
+      L.push("", "FAILURE REPORTS");
+      L.push(`- Failure Reports em aberto: ${abertos.length} de ${F.reports.length}`);
+      L.push(`- Actions pendentes: ${acts.length} (${actsV.length} com prazo vencido)`);
+      L.push(`- Jobs ligados em aberto: ${jobsF.length} (${jobsF.filter((j) => j.nextDue && j.nextDue < hoje).length} vencidos)`);
+      L.push(`- Orders em andamento: ${ordF.length}`);
+      const antigas = [...acts].sort((a, b) => (frDias(b.created || b.deadline, hoje) ?? -1) - (frDias(a.created || a.deadline, hoje) ?? -1)).slice(0, 5);
+      if (antigas.length) { L.push("", "5 ACTIONS PARADAS HÁ MAIS TEMPO"); antigas.forEach((a) => L.push(`- ${a.no} | ${a.name} | ${a.frNo} | parada há ${frDias(a.created || a.deadline, hoje)} dias | ${a.crew || a.crewType || a.department || "—"}`)); }
+    }
+    L.push("", "Enviado a partir do portal Genesis I.");
+    return L.join("\n");
+  }, [aberto, tmDue, tmHistory, tmFailures]);
+
+  const assunto = `Genesis I — Resumo TM Master — ${fmt(hoje)}`;
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(texto); setCopiado(true); setTimeout(() => setCopiado(false), 2500); }
+    catch (e) { window.prompt("Copie o texto (Ctrl+C):", texto); }
+  };
+  const abrirEmail = () => {
+    try { localStorage.setItem("genesis_resumo_para", para); } catch (e) { /* ignora */ }
+    const corpo = texto.length > 1700 ? texto.slice(0, texto.lastIndexOf("\n", 1700)) + "\n\n[... texto completo copiado — cole aqui com Ctrl+V ...]" : texto;
+    if (texto.length > 1700) copiar();
+    window.location.href = `mailto:${encodeURIComponent(para).replace(/%2C/g, ",").replace(/%40/g, "@")}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  };
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button className="g-btn" onClick={() => setAberto((v) => !v)}><FileText size={14} />{aberto ? "Fechar resumo por e-mail" : "Enviar resumo por e-mail"}</button>
+      {aberto && (
+        <div className="g-panel" style={{ marginTop: 10 }}>
+          <div className="g-panel-head"><span className="g-panel-title">Resumo do TM Master para e-mail</span></div>
+          <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
+            Mostra a situação de hoje (todos os dados, sem os filtros da tela). “Abrir no e-mail” abre o seu programa de e-mail com o texto pronto — você confere e clica em enviar. Se o texto for longo, ele também é copiado para colar.
+          </div>
+          <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+            <input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="Para: email1@empresa.com, email2@empresa.com" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
+            <button className="g-btn primary g-keep" onClick={abrirEmail}>Abrir no e-mail</button>
+            <button className="g-btn" onClick={copiar}>{copiado ? "Copiado!" : "Copiar texto"}</button>
+          </div>
+          <div className="g-muted" style={{ fontSize: 11.5, marginBottom: 4 }}>Assunto: <b style={{ color: "var(--text)" }}>{assunto}</b></div>
+          <textarea readOnly value={texto} style={{ width: "100%", minHeight: 300, fontFamily: "var(--mono)", fontSize: 12, padding: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--panel-raised, #fafafa)", color: "var(--text)", resize: "vertical" }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImportFailures, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
@@ -6146,6 +6242,8 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
         <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Métricas</button>
         <button className={tmSubTab === "falhas" ? "active" : ""} onClick={() => setTmSubTab("falhas")}>Failure Reports</button>
       </div>
+
+      <ResumoEmailTm tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} />
 
       {tmSubTab === "falhas" && <FailureReportsView tmFailures={tmFailures} handleImportFailures={handleImportFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
