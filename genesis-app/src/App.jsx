@@ -2838,7 +2838,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
         {tab === "manutencao" && (
           <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["docagem", "Itens DNV (Docagem)"], ["acoes", "Plano de Ação com Bordo"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
+            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["docagem", "Itens DNV (Docagem)"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
               <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
             ))}
           </div>
@@ -2847,10 +2847,6 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         {tab === "manutencao" && manSub === "services" && (
           <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} newRowId={newRowId} />
-        )}
-
-        {tab === "manutencao" && manSub === "acoes" && (
-          <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
         {tab === "manutencao" && manSub === "resumo" && (
@@ -2867,7 +2863,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
-            handleImportDocagem={handleImportDocagem} planSubTab="docagem" setPlanSubTab={setPlanSubTab}
+            handleImportDocagem={handleImportDocagem} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} planSubTab="docagem" setPlanSubTab={setPlanSubTab}
             newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
         )}
 
@@ -2876,7 +2872,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
-            handleImportDocagem={handleImportDocagem} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab}
+            handleImportDocagem={handleImportDocagem} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab}
             newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
         )}
 
@@ -4338,7 +4334,18 @@ const AB_STATUS = ["Pendente", "Enviado ao bordo", "Respondido pelo bordo", "Em 
 const AB_RESP = ["Bordo", "Terra", "Fornecedor", "Bordo + Terra"];
 const AB_COR = { "Pendente": "#EF4444", "Enviado ao bordo": "#F5A623", "Respondido pelo bordo": "#3B82F6", "Em andamento": "#8B5CF6", "Concluído": "#22C55E" };
 
-function PlanoAcaoBordoView({ planningItems, docagemItems, planosBordo, setPlanosBordo, setReportFn, setExportXlsxFn }) {
+/* atualiza o registro do plano de ação com bordo (status, resposta, responsável, prazo) de um item;
+   usado tanto na aba Plano de Ação quanto dentro dos Mapeados/DNV, para ficarem sempre iguais */
+function updPlanoBordoKey(setPlanosBordo, key, campo, valor) {
+  setPlanosBordo((arr) => {
+    const a = arr || []; const i = a.findIndex((x) => x.key === key);
+    const ext = campo === "resposta" && valor && !(a[i]?.status && a[i].status !== "Pendente" && a[i].status !== "Enviado ao bordo") ? { status: "Respondido pelo bordo" } : {};
+    const novo = { ...(i >= 0 ? a[i] : { key }), [campo]: valor, ...ext, atual: todayISO() };
+    return i >= 0 ? a.map((x, k) => (k === i ? novo : x)) : [...a, novo];
+  });
+}
+
+function PlanoAcaoBordoView({ planningItems, docagemItems, planosBordo, setPlanosBordo, updPlan, remPlan, updDocagem, remDocagem, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
   const [f, setF] = useState({ origem: "Todas", status: "Abertos", resp: "Todos", busca: "" });
   const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_acao_bordo_para") || ""; } catch (e) { return ""; } });
@@ -4347,24 +4354,40 @@ function PlanoAcaoBordoView({ planningItems, docagemItems, planosBordo, setPlano
 
   const base = useMemo(() => {
     const out = [];
-    planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado").forEach((p) => out.push({ key: `M:${p.id}`, origem: "Mapeado", nome: p.nome, local: p.departamento || "—", ref: p.jobNo ? `${p.jobTipo || ""} ${p.jobNo}`.trim() : "", acaoBase: p.planoAcao || "", material: p.precisaMaterial ? (p.poMaterial ? `PO ${p.poMaterial}` : "precisa — sem PO") : "não precisa", prazoBase: p.dataExecucao || "", empresa: p.empresa || "" }));
-    docagemItems.filter((d) => !d.dataConclusao && !/conclu|cancel/i.test(d.status || "")).forEach((d) => out.push({ key: `D:${d.id}`, origem: "DNV", nome: d.nome, local: d.localizacao || "—", ref: d.tipoPeriodo || "", acaoBase: d.planoAcao || "", material: d.necessitaMaterial ? (d.poRelacionada ? `PO ${d.poRelacionada}` : "precisa — sem PO") : "não precisa", prazoBase: d.previsaoExecucao || "", empresa: d.empresa || "" }));
+    planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado").forEach((p) => out.push({ key: `M:${p.id}`, src: "M", id: p.id, origem: "Mapeado", nome: p.nome, localRaw: p.departamento || "", local: p.departamento || "—", ref: p.jobNo ? `${p.jobTipo || ""} ${p.jobNo}`.trim() : "", acaoBase: p.planoAcao || "", material: p.precisaMaterial ? (p.poMaterial ? `PO ${p.poMaterial}` : "precisa — sem PO") : "não precisa", prazoBase: p.dataExecucao || "", empresa: p.empresa || "" }));
+    docagemItems.filter((d) => !d.dataConclusao && !/conclu|cancel/i.test(d.status || "")).forEach((d) => out.push({ key: `D:${d.id}`, src: "D", id: d.id, origem: "DNV", nome: d.nome, localRaw: d.localizacao || "", local: d.localizacao || "—", ref: d.tipoPeriodo || "", acaoBase: d.planoAcao || "", material: d.necessitaMaterial ? (d.poRelacionada ? `PO ${d.poRelacionada}` : "precisa — sem PO") : "não precisa", prazoBase: d.previsaoExecucao || "", empresa: d.empresa || "" }));
     return out;
   }, [planningItems, docagemItems]);
   const rows = useMemo(() => base.map((b) => {
     const p = planos.find((x) => x.key === b.key) || {};
-    const acao = p.acao !== undefined ? p.acao : b.acaoBase;
+    const acao = b.acaoBase;
     const prazo = p.prazo !== undefined ? p.prazo : (isIsoD(b.prazoBase) ? b.prazoBase : "");
     const status = p.status || "Pendente";
     return { ...b, acao, prazo, status, resp: p.resp || "Bordo", resposta: p.resposta || "", atual: p.atual || "", atrasado: !!prazo && prazo < hoje && status !== "Concluído" };
   }), [base, planos]);
 
-  const upd = (key, campo, valor) => setPlanosBordo((arr) => {
-    const a = arr || []; const i = a.findIndex((x) => x.key === key);
-    const ext = campo === "resposta" && valor && !(a[i]?.status && a[i].status !== "Pendente" && a[i].status !== "Enviado ao bordo") ? { status: "Respondido pelo bordo" } : {};
-    const novo = { ...(i >= 0 ? a[i] : { key }), [campo]: valor, ...ext, atual: todayISO() };
-    return i >= 0 ? a.map((x, k) => (k === i ? novo : x)) : [...a, novo];
-  });
+  const upd = (key, campo, valor) => updPlanoBordoKey(setPlanosBordo, key, campo, valor);
+  /* texto do item (nome, setor/local, ação) é gravado no próprio item dos Mapeados / DNV: o que muda aqui muda lá */
+  const updItem = (r, campo, valor) => {
+    if (r.src === "M") { const i = planningItems.findIndex((x) => x.id === r.id); if (i >= 0) updPlan(i, campo === "local" ? "departamento" : campo === "acao" ? "planoAcao" : "nome", valor); }
+    else { const i = docagemItems.findIndex((x) => x.id === r.id); if (i >= 0) updDocagem(i, campo === "local" ? "localizacao" : campo === "acao" ? "planoAcao" : "nome", valor); }
+  };
+  const excluirItem = (r) => {
+    if (!window.confirm(`Excluir "${r.nome}"? O item também será excluído de ${r.src === "M" ? "Mapeados para Execução" : "Itens DNV (Docagem)"}.`)) return;
+    if (r.src === "M") { const i = planningItems.findIndex((x) => x.id === r.id); if (i >= 0) remPlan(i); }
+    else { const i = docagemItems.findIndex((x) => x.id === r.id); if (i >= 0) remDocagem(i); }
+    setPlanosBordo((arr) => (arr || []).filter((x) => x.key !== r.key));
+  };
+  /* migração única: ação digitada antes só no plano passa para o item; e limpa registros de itens que já foram excluídos */
+  React.useEffect(() => {
+    (planosBordo || []).forEach((x) => {
+      if (x.acao === undefined || !x.acao) return;
+      if (x.key.startsWith("M:")) { const i = planningItems.findIndex((p) => `M:${p.id}` === x.key); if (i >= 0 && !planningItems[i].planoAcao) updPlan(i, "planoAcao", x.acao); }
+      else { const i = docagemItems.findIndex((d) => `D:${d.id}` === x.key); if (i >= 0 && !docagemItems[i].planoAcao) updDocagem(i, "planoAcao", x.acao); }
+    });
+    const vivos = new Set([...planningItems.map((p) => `M:${p.id}`), ...docagemItems.map((d) => `D:${d.id}`)]);
+    if ((planosBordo || []).some((x) => x.acao !== undefined || !vivos.has(x.key))) setPlanosBordo((arr) => (arr || []).filter((x) => vivos.has(x.key)).map(({ acao, ...rest }) => rest));
+  }, [planosBordo, planningItems, docagemItems]);
 
   const filtered = rows.filter((r) => (f.origem === "Todas" || r.origem === f.origem) && (f.status === "Todos" || (f.status === "Abertos" ? r.status !== "Concluído" : r.status === f.status)) && (f.resp === "Todos" || r.resp === f.resp)
     && (!f.busca.trim() || `${r.nome} ${r.local} ${r.ref} ${r.acao} ${r.resposta}`.toLowerCase().includes(f.busca.trim().toLowerCase())))
@@ -4417,7 +4440,7 @@ function PlanoAcaoBordoView({ planningItems, docagemItems, planosBordo, setPlano
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Plano de ação com o bordo — Mapeados + Itens DNV</span></div>
         <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>
-          Lista geral de tudo que está em <b>Mapeados para Execução</b> e nos <b>Itens DNV (Docagem)</b>, ainda não concluído. Para cada item defina a <b>ação</b>, o <b>responsável</b> e o <b>prazo</b>; o botão de e-mail envia ao bordo a tabela dos itens sob responsabilidade do bordo e marca como “Enviado ao bordo”. Quando o bordo responder, registre a <b>resposta</b> (o status vira “Respondido pelo bordo”) e acompanhe até Concluído. A ação sugerida vem do “Plano de Ação” já preenchido no item.
+          Lista geral de tudo que está em <b>Mapeados para Execução</b> e nos <b>Itens DNV (Docagem)</b>, ainda não concluído. Para cada item defina a <b>ação</b>, o <b>responsável</b> e o <b>prazo</b>; o botão de e-mail envia ao bordo a tabela dos itens sob responsabilidade do bordo e marca como “Enviado ao bordo”. Quando o bordo responder, registre a <b>resposta</b> (o status vira “Respondido pelo bordo”) e acompanhe até Concluído. Item, setor e ação são <b>os mesmos dos Mapeados / DNV</b>: o que você editar ou excluir aqui muda lá, e vice-versa. A ação vem do “Plano de Ação” já preenchido no item.
         </div>
         <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="E-mail do bordo (vários separados por vírgula)" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
@@ -4443,18 +4466,19 @@ function PlanoAcaoBordoView({ planningItems, docagemItems, planosBordo, setPlano
         </div>
         <div className="g-table-wrap">
           <table className="g-table tbl-modern" style={{ minWidth: 0, width: "100%" }}>
-            <thead><tr><th>Origem</th><th style={{ minWidth: 220 }}>Item</th><th style={{ minWidth: 240 }}>Ação</th><th>Responsável</th><th>Prazo</th><th>Status</th><th style={{ minWidth: 240 }}>Resposta do bordo</th></tr></thead>
+            <thead><tr><th>Origem</th><th style={{ minWidth: 220 }}>Item</th><th style={{ minWidth: 240 }}>Ação</th><th>Responsável</th><th>Prazo</th><th>Status</th><th style={{ minWidth: 240 }}>Resposta do bordo</th><th></th></tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={7} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item nesse filtro.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item nesse filtro.</td></tr>}
               {filtered.map((r) => (
                 <tr className="g-row tbl-row" key={r.key} style={{ "--c": r.atrasado ? "#EF4444" : AB_COR[r.status] }}>
                   <td style={{ verticalAlign: "top" }}><span className="tbl-chip">{r.origem}</span></td>
-                  <td style={{ whiteSpace: "normal", verticalAlign: "top" }}><b>{r.nome}</b><div className="tbl-chips"><span className="tbl-chip">{r.local}</span>{r.ref && <span className="tbl-chip">{r.ref}</span>}<span className="tbl-chip" style={{ color: /sem PO/.test(r.material) ? "var(--crit)" : undefined }}>{r.material}</span></div></td>
-                  <td style={{ verticalAlign: "top" }}><ETextArea rows={2} value={r.acao} onChange={(v) => upd(r.key, "acao", v)} />{!r.acao.trim() && <div style={{ fontSize: 10.5, color: "var(--crit)" }}>definir ação</div>}</td>
+                  <td style={{ whiteSpace: "normal", verticalAlign: "top" }}><ETextArea rows={1} value={r.nome} onChange={(v) => updItem(r, "nome", v)} /><div className="tbl-chips"><span className="tbl-chip" title={r.origem === "DNV" ? "Localização (igual na DNV)" : "Departamento (igual nos Mapeados)"}><EText value={r.localRaw} onChange={(v) => updItem(r, "local", v)} /></span>{r.ref && <span className="tbl-chip">{r.ref}</span>}<span className="tbl-chip" style={{ color: /sem PO/.test(r.material) ? "var(--crit)" : undefined }}>{r.material}</span></div></td>
+                  <td style={{ verticalAlign: "top" }}><ETextArea rows={2} value={r.acao} onChange={(v) => updItem(r, "acao", v)} />{!r.acao.trim() && <div style={{ fontSize: 10.5, color: "var(--crit)" }}>definir ação</div>}</td>
                   <td style={{ verticalAlign: "top" }}><select value={r.resp} onChange={(e) => upd(r.key, "resp", e.target.value)} style={sel}>{AB_RESP.map((x) => <option key={x}>{x}</option>)}</select></td>
                   <td style={{ verticalAlign: "top" }}><DateOuTexto value={r.prazo} onChange={(v) => upd(r.key, "prazo", v)} />{r.atrasado && <div style={{ fontSize: 10.5, color: "var(--crit)", fontWeight: 700 }}>vencido</div>}</td>
                   <td style={{ verticalAlign: "top" }}><select value={r.status} onChange={(e) => upd(r.key, "status", e.target.value)} style={{ ...sel, borderColor: AB_COR[r.status], color: AB_COR[r.status], fontWeight: 700 }}>{AB_STATUS.map((x) => <option key={x}>{x}</option>)}</select>{r.atual && <div style={{ fontSize: 10, color: "var(--text-faint)" }}>atualizado {fmtDataCompleta(r.atual)}</div>}</td>
                   <td style={{ verticalAlign: "top" }}><ETextArea rows={2} value={r.resposta} onChange={(v) => upd(r.key, "resposta", v)} /></td>
+                  <td style={{ verticalAlign: "top" }}><span className="g-btn ghost danger" title={`Excluir também de ${r.src === "M" ? "Mapeados" : "DNV"}`} onClick={() => excluirItem(r)}><Trash2 size={13} /></span></td>
                 </tr>
               ))}
             </tbody>
@@ -4771,7 +4795,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab: planSubTabProp, setPlanSubTab, tmDue, tmHistory, tmFailures, reparoItens, portCallMeta, portcallReqs, setPortcallReqs, soDocagem }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planosBordo, setPlanosBordo, planSubTab: planSubTabProp, setPlanSubTab, tmDue, tmHistory, tmFailures, reparoItens, portCallMeta, portcallReqs, setPortcallReqs, soDocagem }) {
   const planSubTab = soDocagem ? "docagem" : planSubTabProp;
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
@@ -4887,7 +4911,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   const docGroups = useMemo(() => groupRows(filteredDocagem, groupDoc, (d) => d.localizacao, "Sem localização"), [filteredDocagem, groupDoc]);
 
   React.useEffect(() => {
-    if (!setExportXlsxFn || planSubTab === "portcall" || planSubTab === "escopo") return;
+    if (!setExportXlsxFn || planSubTab === "portcall" || planSubTab === "escopo" || planSubTab === "acao") return;
     setExportXlsxFn(() => () => {
       const wb = XLSX.utils.book_new();
       if (planSubTab === "mapeados") {
@@ -4906,7 +4930,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   }, [planSubTab, filteredMapeados, filteredDocagem, colunas, setExportXlsxFn]);
 
   React.useEffect(() => {
-    if (!setReportFn || planSubTab === "portcall" || planSubTab === "escopo") return;
+    if (!setReportFn || planSubTab === "portcall" || planSubTab === "escopo" || planSubTab === "acao") return;
     setReportFn(() => () => {
       const doc = new jsPDF();
       if (planSubTab === "mapeados") {
@@ -4969,11 +4993,14 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content", display: soDocagem ? "none" : undefined }}>
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
+        <button className={planSubTab === "acao" ? "active" : ""} onClick={() => setPlanSubTab("acao")}>Plano de Ação com Bordo</button>
         <button className={planSubTab === "escopo" ? "active" : ""} onClick={() => setPlanSubTab("escopo")}>Análise de Escopo</button>
         <button className={planSubTab === "portcall" ? "active" : ""} onClick={() => setPlanSubTab("portcall")}>Solicitação Portcall</button>
       </div>
 
-      {planSubTab === "escopo" ? (
+      {planSubTab === "acao" ? (
+        <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} updPlan={updPlan} remPlan={remPlan} updDocagem={updDocagem} remDocagem={remDocagem} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+      ) : planSubTab === "escopo" ? (
         <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
           allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} setPortcallReqs={setPortcallReqs}
           irSolicitacao={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("portcall"); }} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
@@ -5098,6 +5125,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                           {p.empresa && <span className="tbl-chip">{p.empresa}</span>}
                           {p.precisaMaterial && p.poMaterial && <span className="tbl-chip">PO {p.poMaterial}</span>}
                           {p.planoAcao && <span className="tbl-chip" title={p.planoAcao}>com plano de ação</span>}
+                          {(planosBordo || []).find((x) => x.key === `M:${p.id}`)?.status && <span className="tbl-chip" title="Status no Plano de Ação com Bordo (mesmo item)">📋 Bordo: {(planosBordo || []).find((x) => x.key === `M:${p.id}`).status}</span>}
                           {emSolic[p.id] && <span className="tbl-chip" style={{ color: "var(--ok)", cursor: "pointer" }} onClick={() => setPlanSubTab("portcall")} title="Já está em uma solicitação ao Port Call">📨 Solicitação Port Call</span>}
                         </div>
                       </td>
@@ -5164,6 +5192,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                             <div className="g-field"><label>Empresa</label><EText value={p.empresa} onChange={(v) => updPlan(i, "empresa", v)} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Descrição do Problema</label><ETextArea rows={1} value={p.descricaoProblema} onChange={(v) => updPlan(i, "descricaoProblema", v)} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Plano de Ação</label><ETextArea rows={1} value={p.planoAcao} onChange={(v) => updPlan(i, "planoAcao", v)} /></div>
+                            <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Resposta do bordo (Plano de Ação com Bordo, mesmo item)</label><ETextArea rows={1} value={(planosBordo || []).find((x) => x.key === `M:${p.id}`)?.resposta || ""} onChange={(v) => updPlanoBordoKey(setPlanosBordo, `M:${p.id}`, "resposta", v)} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Justificativa (usada na solicitação ao Port Call)</label><ETextArea rows={1} value={p.justificativa || ""} onChange={(v) => updPlan(i, "justificativa", v)} /></div>
                           </div>
                         </td>
@@ -5331,6 +5360,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                               <input type="date" value={d.dataConclusao || ""} onChange={(e) => updDocagem(i, "dataConclusao", e.target.value)}
                                 style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 8px", fontSize: 12 }} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Plano de Ação</label><ETextArea rows={1} value={d.planoAcao} onChange={(v) => updDocagem(i, "planoAcao", v)} /></div>
+                            <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Resposta do bordo (Plano de Ação com Bordo, mesmo item)</label><ETextArea rows={1} value={(planosBordo || []).find((x) => x.key === `D:${d.id}`)?.resposta || ""} onChange={(v) => updPlanoBordoKey(setPlanosBordo, `D:${d.id}`, "resposta", v)} /></div>
                           </div>
                         </td>
                       </tr>
