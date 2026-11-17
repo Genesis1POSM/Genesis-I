@@ -2836,7 +2836,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
         {tab === "manutencao" && (
           <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["escopo", "Análise de Escopo"], ["reparo", "Reparo e Retorno"]].map(([k, l]) => (
+            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["docagem", "Itens DNV (Docagem)"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
               <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
             ))}
           </div>
@@ -2847,18 +2847,26 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} newRowId={newRowId} />
         )}
 
-        {tab === "manutencao" && manSub === "escopo" && (
-          <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
-            allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} setPortcallReqs={setPortcallReqs}
-            irSolicitacao={() => { setReportFn(null); setExportXlsxFn(null); setManSub("planejamento"); setPlanSubTab("portcall"); }} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+        {tab === "manutencao" && manSub === "resumo" && (
+          <ResumoEmailManutencao workPackages={workPackages} planningItems={planningItems} portcallReqs={portcallReqs} reparoItens={reparoItens} tmDue={tmDue} tmHistory={tmHistory}
+            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
         {tab === "manutencao" && manSub === "reparo" && (
           <ReparoRetornoView reparoItens={reparoItens} setReparoItens={setReparoItens} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
+        {tab === "manutencao" && manSub === "docagem" && (
+          <PlanejamentoView soDocagem tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
+            planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
+            docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
+            handleImportDocagem={handleImportDocagem} planSubTab="docagem" setPlanSubTab={setPlanSubTab}
+            newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
+        )}
+
         {tab === "manutencao" && manSub === "planejamento" && (
-          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -4191,6 +4199,131 @@ function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparo
   );
 }
 
+/* ============================================================
+   MANUTENÇÃO › Resumo por e-mail (Mapeados + Solicitação Port Call + Serviços + Reparo e Retorno)
+   ============================================================ */
+function ResumoEmailManutencao({ workPackages, planningItems, portcallReqs, reparoItens, tmDue, tmHistory, allPortCallDates, portCallLabel, setReportFn, setExportXlsxFn }) {
+  const hoje = todayISO();
+  const futuros = useMemo(() => allPortCallDates.filter((d) => d >= hoje), [allPortCallDates]);
+  const [pc, setPc] = useState("");
+  const pcAtual = pc || futuros[0] || "";
+  const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_resumo_man_para") || ""; } catch (e) { return ""; } });
+  const [msg, setMsg] = useState("");
+  const [inc, setInc] = useState({ geral: true, mapeados: true, manuais: true, servicos: true, reparo: true });
+  const rotulo = (dk) => { try { return dk ? portCallLabel(dk) : "—"; } catch (e) { return dk || "—"; } };
+  const fmt = (iso) => (iso && isIsoD(iso) ? fmtDataCompleta(iso) : (iso || "—"));
+  const assunto = `Resumo de Manutenção — Port Call ${rotulo(pcAtual)}`;
+
+  const secoes = useMemo(() => {
+    const reqs = portcallReqs || [];
+    const reqDoPc = reqs.filter((r) => r.portCall === pcAtual);
+    const solicDe = (planId) => { const r = reqDoPc.find((x) => x.itens.some((i) => i.planId === planId)) || reqs.find((x) => x.itens.some((i) => i.planId === planId)); return r || null; };
+    const abertos = planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado");
+    const achar = (t, n) => { if (!n) return null; const k = (x) => `${bordoNorm(x.jobType)}|${bordoNorm(x.jobNo)}`; const al = `${bordoNorm(t)}|${bordoNorm(n)}`; return tmDue.find((x) => k(x) === al) || tmHistory.find((x) => k(x) === al) || null; };
+    const semSolic = abertos.filter((p) => !solicDe(p.id));
+    const S = [];
+    const itensPc = reqDoPc.flatMap((r) => r.itens);
+    S.push({ id: "geral", titulo: "Situação geral da Manutenção", explicacao: "Visão resumida do que está mapeado, do que já foi solicitado para o Port Call e do que está parado em reparo.",
+      cols: ["Indicador", "Quantidade"], rows: [
+        { key: "a", cells: ["Mapeados para execução (não concluídos)", abertos.length], auto: `${abertos.filter((p) => p.status === "Em Andamento").length} já em andamento` },
+        { key: "b", cells: ["Mapeados já na solicitação do Port Call", abertos.length - semSolic.length], auto: semSolic.length ? `${semSolic.length} ainda fora da solicitação` : "Todos incluídos" },
+        { key: "c", cells: ["Mapeados que precisam de material sem PO", abertos.filter((p) => p.precisaMaterial && !p.poMaterial).length], auto: "Sem PO não dá para executar — bordo/terra devem informar a PO" },
+        { key: "d", cells: ["Mapeados sem job vinculado no TM", abertos.filter((p) => !p.jobNo).length], auto: "Vincular a um job do plano ou abrir 1 job ONE (corretiva)" },
+        { key: "e", cells: [`Itens na solicitação do Port Call ${rotulo(pcAtual)}`, itensPc.length], auto: `${itensPc.filter((i) => i.linkado !== "sim" && i.tipo === "Corretiva" && !i.oneNo).length} corretiva(s) sem job ONE aberto` },
+        { key: "f", cells: ["Itens em Reparo e Retorno em aberto", (reparoItens || []).filter((r) => r.status !== "RECEBIDO").length], auto: `${(reparoItens || []).filter((r) => r.status !== "RECEBIDO" && isIsoD(r.dataEnvio) && frDias(r.dataEnvio, hoje) > 90).length} há mais de 90 dias` },
+      ] });
+    S.push({ id: "mapeados", titulo: `Mapeados para execução e solicitação ao Port Call (${abertos.length})`,
+      explicacao: "Tudo que está mapeado para execução, já cruzado com a solicitação do Port Call: a coluna “Na solicitação?” indica se o item foi pedido para o Port Call. Responder na coluna “Resposta”: confirmação de que é viável, PO do material e nº do job.",
+      cols: ["Item", "Dept.", "Impacto", "Status", "Data de execução", "Material / PO", "Job vinculado", "Na solicitação?"], blankCols: ["Resposta"],
+      rows: abertos.map((p) => {
+        const r = solicDe(p.id); const it = r ? r.itens.find((i) => i.planId === p.id) : null; const j = achar(p.jobTipo, p.jobNo);
+        const obs = []; if (p.precisaMaterial && !p.poMaterial) obs.push("INFORMAR A PO do material"); if (!p.jobNo) obs.push("sem job vinculado no TM"); else if (!j) obs.push("job não encontrado no TM");
+        if (r && r.portCall !== pcAtual) obs.push(`solicitado para outro Port Call (${rotulo(r.portCall)})`); if (!r) obs.push("não está na solicitação do Port Call");
+        if (it?.justificativa) obs.push(`Justificativa: ${it.justificativa}`); else if (p.justificativa) obs.push(`Justificativa: ${p.justificativa}`);
+        return { key: p.id, cells: [p.nome, p.departamento || "—", p.impacto || "—", p.status, fmt(p.dataExecucao), p.precisaMaterial ? (p.poMaterial ? `PO ${p.poMaterial}` : "precisa — sem PO") : "não precisa", p.jobNo ? `${p.jobTipo || ""} ${p.jobNo}`.trim() : "—", r ? `Sim — ${rotulo(r.portCall)}` : "Não"], auto: obs.join(" · ") || "Sem pendência" };
+      }) });
+    const manuais = itensPc.filter((i) => !i.planId);
+    S.push({ id: "manuais", titulo: `Outros itens solicitados para o Port Call (${manuais.length})`, explicacao: "Itens da solicitação que não vieram dos Mapeados. Corretivas sem job no plano devem ter 1 job ONE aberto no TM.",
+      cols: ["Manutenção", "Componente", "Tipo", "Ligada a job do plano?", "Job ONE"],
+      rows: manuais.map((i) => ({ key: i.id, cells: [i.descricao || "—", i.componente || "—", i.tipo, i.linkado === "sim" ? `Sim — ${`${i.jobTipo} ${i.jobNo}`.trim() || "job não informado"}` : "Não", i.linkado !== "sim" && i.tipo === "Corretiva" ? (i.oneNo ? `ONE ${i.oneNo}` : "ABRIR no TM") : "—"], auto: i.justificativa ? `Justificativa: ${i.justificativa}` : "Sem justificativa" })) });
+    const svc = workPackages.filter((w) => (w.start || "").slice(0, 10) === pcAtual);
+    S.push({ id: "servicos", titulo: `Serviços programados para o Port Call (${svc.length})`, explicacao: "Serviços cadastrados em Manutenção › Serviços com início na data do Port Call.",
+      cols: ["Manutenção", "Categoria", "Empresa", "RC", "Status", "Progresso"],
+      rows: svc.map((w) => ({ key: w.id, cells: [w.name, w.group || "—", w.empresa || "—", w.rc || "—", w.status, `${w.progress ?? 0}%`], auto: w.obs || (w.status === "Concluído" ? "Concluído" : "Acompanhar") })) });
+    const rr = (reparoItens || []).filter((r) => r.status !== "RECEBIDO").map((r) => ({ r, d: isIsoD(r.dataEnvio) ? frDias(r.dataEnvio, hoje) : null })).sort((a, b) => (b.d ?? -1) - (a.d ?? -1));
+    S.push({ id: "reparo", titulo: `Reparo e Retorno em aberto (${rr.length})`, explicacao: "Itens enviados para reparo que ainda não retornaram, do mais antigo para o mais recente. Para cada item, confirmar previsão de retorno.",
+      cols: ["Item", "SAP", "S/N", "Fornecedor", "REQ/PO", "Enviado", "Dias em reparo"], blankCols: ["Previsão de retorno"],
+      rows: rr.map(({ r, d }) => ({ key: r.id, cells: [r.desc || "—", r.sap || "—", r.sn || "—", r.fornecedor || "—", r.po || "—", fmt(r.dataEnvio), d ?? "—"], auto: d !== null && d > 90 ? `Em reparo há mais de 90 dias — cobrar ${r.fornecedor || "fornecedor"}${r.obs ? ` · ${r.obs}` : ""}` : (r.obs || "Acompanhar retorno") })) });
+    return S.filter((x) => inc[x.id]);
+  }, [planningItems, portcallReqs, reparoItens, workPackages, tmDue, tmHistory, pcAtual, inc]);
+  secoes.forEach((x, i) => { x._t = `${i + 1}. ${x.titulo}`; });
+
+  const montarHtml = () => {
+    const th = (t) => `<th style="border:1px solid #1F3A5F;background:#1F3A5F;color:#fff;padding:5px 7px;font-size:12px;text-align:left">${escHtml(t)}</th>`;
+    const td = (t) => `<td style="border:1px solid #cfd8e6;padding:5px 7px;font-size:12px;vertical-align:top">${escHtml(t)}</td>`;
+    return `<div style="font-family:Calibri,Arial,sans-serif;color:#1b2430"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 6px;font-size:13px">Prezados, segue o resumo de manutenção para o Port Call de <b>${escHtml(rotulo(pcAtual))}</b>, com os itens mapeados já cruzados com a solicitação ao Port Call.</p>`
+      + secoes.map((s) => `<h3 style="margin:16px 0 2px;font-size:15px;color:#1F3A5F">${escHtml(s._t)}</h3><p style="margin:0 0 6px;font-size:12px;color:#51607a">${escHtml(s.explicacao)}</p><table style="border-collapse:collapse;width:100%"><tr>${[...s.cols, "Observação", ...(s.blankCols || [])].map(th).join("")}</tr>${s.rows.length ? s.rows.map((r) => `<tr>${[...r.cells, r.auto, ...(s.blankCols || []).map(() => "")].map(td).join("")}</tr>`).join("") : `<tr>${td("(nenhum item)")}</tr>`}</table>`).join("") + "</div>";
+  };
+  const montarTexto = () => [assunto, ""].concat(secoes.flatMap((s) => [s._t, s.explicacao, [...s.cols, "Observação", ...(s.blankCols || [])].join(" | "), ...(s.rows.length ? s.rows.map((r) => [...r.cells, r.auto, ...(s.blankCols || []).map(() => "______")].join(" | ")) : ["(nenhum item)"]), ""])).join("\n");
+  const copiar = async () => {
+    const html = montarHtml(); const txt = montarTexto();
+    try {
+      if (window.ClipboardItem && navigator.clipboard.write) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([txt], { type: "text/plain" }) })]);
+      else await navigator.clipboard.writeText(txt);
+      setMsg("Resumo copiado com as tabelas. Cole no corpo do e-mail (Ctrl+V).");
+    } catch (e) { setMsg("Não consegui copiar automaticamente — selecione a prévia abaixo e copie com Ctrl+C."); }
+    setTimeout(() => setMsg(""), 7000);
+  };
+  const abrirEmail = async () => {
+    try { localStorage.setItem("genesis_resumo_man_para", para); } catch (e) { /* ignora */ }
+    await copiar();
+    const corpo = "Prezados,\n\nSegue o resumo de manutenção.\n\n[Cole aqui o resumo com Ctrl+V — as tabelas já estão copiadas]\n";
+    window.location.href = `mailto:${para.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  };
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn || !setReportFn) return;
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); secoes.forEach((s, i) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(s.rows.length ? s.rows.map((r) => Object.fromEntries([...s.cols.map((c, k) => [c, r.cells[k]]), ["Observação", r.auto]])) : [{ "—": "Sem itens" }]), `${i + 1}-${s.id}`.slice(0, 31))); XLSX.writeFile(wb, `genesis-resumo-manutencao-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Manutenção — Resumo", `${assunto} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      secoes.forEach((s) => { y = pdfSectionTitle(doc, y, s._t); y = pdfTable(doc, y, [...s.cols, "Observação"], s.rows.map((r) => [...r.cells, r.auto])); });
+      pdfSave(doc, "resumo-manutencao");
+    });
+  }, [secoes, assunto]);
+
+  const nomes = { geral: "Situação geral", mapeados: "Mapeados + Solicitação Port Call", manuais: "Outros itens solicitados", servicos: "Serviços do Port Call", reparo: "Reparo e Retorno" };
+  return (
+    <>
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Resumo por e-mail — Manutenção</span></div>
+        <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>
+          Um único e-mail com <b>Mapeados para Execução já cruzados com a Solicitação ao Port Call</b>, os serviços do Port Call e o Reparo e Retorno. Cada tabela tem a coluna <b>Observação</b> (pendências) e, onde precisa de resposta, uma coluna em branco. O e-mail não carrega tabelas pelo link, então o portal <b>copia o resumo</b> e abre o e-mail: é só colar (Ctrl+V).
+        </div>
+        <div className="g-flex" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div className="g-field"><label>Port Call</label>
+            <select value={pcAtual} onChange={(e) => setPc(e.target.value)} style={{ padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6, minWidth: 200 }}>
+              {pcAtual && !allPortCallDates.includes(pcAtual) && <option value={pcAtual}>{pcAtual}</option>}
+              {allPortCallDates.map((d) => <option key={d} value={d}>{rotulo(d)}</option>)}
+            </select></div>
+          <div className="g-field"><label>Ou data</label><input type="date" value={pcAtual} onChange={(e) => setPc(e.target.value)} /></div>
+          <div className="g-field" style={{ flex: 1, minWidth: 260 }}><label>Destinatários (separe por vírgula)</label><input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="email1@..., email2@..." style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6 }} /></div>
+          <button className="g-btn g-keep" onClick={copiar}>Copiar resumo</button>
+          <button className="g-btn primary g-keep" onClick={abrirEmail}>Abrir e-mail</button>
+        </div>
+        <div className="tbl-chips" style={{ marginTop: 10 }}>
+          {Object.keys(nomes).map((k) => <label key={k} className="tbl-check" style={{ marginRight: 12 }}><input type="checkbox" checked={inc[k]} onChange={(e) => setInc((p) => ({ ...p, [k]: e.target.checked }))} />{nomes[k]}</label>)}
+        </div>
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Prévia do e-mail</span></div>
+        <div style={{ background: "#fff", color: "#1b2430", padding: 12, borderRadius: 6, overflowX: "auto" }} dangerouslySetInnerHTML={{ __html: montarHtml() }} />
+      </div>
+    </>
+  );
+}
+
 function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExpandedWp, setReportFn, setExportXlsxFn, newRowId }) {
   React.useEffect(() => {
     if (!newRowId) return;
@@ -4497,7 +4630,8 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab, tmDue, tmHistory, portcallReqs, setPortcallReqs }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab: planSubTabProp, setPlanSubTab, tmDue, tmHistory, tmFailures, reparoItens, portCallMeta, portcallReqs, setPortcallReqs, soDocagem }) {
+  const planSubTab = soDocagem ? "docagem" : planSubTabProp;
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
@@ -4612,7 +4746,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   const docGroups = useMemo(() => groupRows(filteredDocagem, groupDoc, (d) => d.localizacao, "Sem localização"), [filteredDocagem, groupDoc]);
 
   React.useEffect(() => {
-    if (!setExportXlsxFn || planSubTab === "portcall") return;
+    if (!setExportXlsxFn || planSubTab === "portcall" || planSubTab === "escopo") return;
     setExportXlsxFn(() => () => {
       const wb = XLSX.utils.book_new();
       if (planSubTab === "mapeados") {
@@ -4631,7 +4765,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   }, [planSubTab, filteredMapeados, filteredDocagem, colunas, setExportXlsxFn]);
 
   React.useEffect(() => {
-    if (!setReportFn || planSubTab === "portcall") return;
+    if (!setReportFn || planSubTab === "portcall" || planSubTab === "escopo") return;
     setReportFn(() => () => {
       const doc = new jsPDF();
       if (planSubTab === "mapeados") {
@@ -4692,13 +4826,17 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
 
   return (
     <>
-      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
+      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content", display: soDocagem ? "none" : undefined }}>
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
-        <button className={planSubTab === "docagem" ? "active" : ""} onClick={() => setPlanSubTab("docagem")}>Docagem (Machinery Items - DNV)</button>
+        <button className={planSubTab === "escopo" ? "active" : ""} onClick={() => setPlanSubTab("escopo")}>Análise de Escopo</button>
         <button className={planSubTab === "portcall" ? "active" : ""} onClick={() => setPlanSubTab("portcall")}>Solicitação Portcall</button>
       </div>
 
-      {planSubTab === "portcall" ? (
+      {planSubTab === "escopo" ? (
+        <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
+          allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} setPortcallReqs={setPortcallReqs}
+          irSolicitacao={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("portcall"); }} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+      ) : planSubTab === "portcall" ? (
         <PortcallRequestView portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} planningItems={planningItems} tmDue={tmDue} tmHistory={tmHistory}
           allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "mapeados" ? (
