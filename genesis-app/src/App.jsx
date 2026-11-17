@@ -1485,6 +1485,7 @@ export default function Root() {
   const [tmBordo, setTmBordo] = useState(INITIAL_TM_BORDO);
   const [portcallReqs, setPortcallReqs] = useState([]);
   const [reparoItens, setReparoItens] = useState([]);
+  const [planosBordo, setPlanosBordo] = useState([]);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
      saveEnabled só vira true dentro do "then" de sucesso (mesmo que o servidor não tenha
@@ -1521,6 +1522,7 @@ export default function Root() {
           if (Array.isArray(d.tmBordo)) setTmBordo(d.tmBordo);
           if (Array.isArray(d.portcallReqs)) setPortcallReqs(d.portcallReqs);
           if (Array.isArray(d.reparoItens)) setReparoItens(d.reparoItens);
+          if (Array.isArray(d.planosBordo)) setPlanosBordo(d.planosBordo);
           if (d.tmFailures) setTmFailures({ ...INITIAL_TM_FAILURES, ...d.tmFailures });
         }
         setSaveEnabled(true);
@@ -1546,12 +1548,12 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo },
         }),
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens]);
+  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo]);
 
   if (!loaded) {
     return (
@@ -1596,7 +1598,7 @@ export default function Root() {
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       tmFailures={tmFailures} setTmFailures={roMode ? noop : setTmFailures}
       tmBordo={tmBordo} setTmBordo={roMode ? noop : setTmBordo}
-      portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens}
+      portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
   );
@@ -1610,7 +1612,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
-  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, loadError }) {
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, planosBordo, setPlanosBordo, loadError }) {
   const isAdmin = isAdminUser(currentUser);
   const allowedTabs = allowedTabsOf(currentUser);
   const [tabState, setTab] = useState(allowedTabs[0]);
@@ -2836,7 +2838,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
         {tab === "manutencao" && (
           <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["docagem", "Itens DNV (Docagem)"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
+            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["docagem", "Itens DNV (Docagem)"], ["acoes", "Plano de Ação com Bordo"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
               <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
             ))}
           </div>
@@ -2845,6 +2847,10 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         {tab === "manutencao" && manSub === "services" && (
           <ServicesView workPackages={workPackages} updWp={updWp} remWp={remWp} repeatWp={repeatWp}
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} newRowId={newRowId} />
+        )}
+
+        {tab === "manutencao" && manSub === "acoes" && (
+          <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
         {tab === "manutencao" && manSub === "resumo" && (
@@ -4319,6 +4325,141 @@ function ResumoEmailManutencao({ workPackages, planningItems, portcallReqs, repa
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Prévia do e-mail</span></div>
         <div style={{ background: "#fff", color: "#1b2430", padding: 12, borderRadius: 6, overflowX: "auto" }} dangerouslySetInnerHTML={{ __html: montarHtml() }} />
+      </div>
+    </>
+  );
+}
+
+/* ============================================================
+   MANUTENÇÃO › Plano de Ação com Bordo
+   Lista geral: Mapeados para Execução + Itens DNV (Docagem), cada um com ação, responsável, prazo e resposta do bordo.
+   ============================================================ */
+const AB_STATUS = ["Pendente", "Enviado ao bordo", "Respondido pelo bordo", "Em andamento", "Concluído"];
+const AB_RESP = ["Bordo", "Terra", "Fornecedor", "Bordo + Terra"];
+const AB_COR = { "Pendente": "#EF4444", "Enviado ao bordo": "#F5A623", "Respondido pelo bordo": "#3B82F6", "Em andamento": "#8B5CF6", "Concluído": "#22C55E" };
+
+function PlanoAcaoBordoView({ planningItems, docagemItems, planosBordo, setPlanosBordo, setReportFn, setExportXlsxFn }) {
+  const hoje = todayISO();
+  const [f, setF] = useState({ origem: "Todas", status: "Abertos", resp: "Todos", busca: "" });
+  const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_acao_bordo_para") || ""; } catch (e) { return ""; } });
+  const [msg, setMsg] = useState("");
+  const planos = planosBordo || [];
+
+  const base = useMemo(() => {
+    const out = [];
+    planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado").forEach((p) => out.push({ key: `M:${p.id}`, origem: "Mapeado", nome: p.nome, local: p.departamento || "—", ref: p.jobNo ? `${p.jobTipo || ""} ${p.jobNo}`.trim() : "", acaoBase: p.planoAcao || "", material: p.precisaMaterial ? (p.poMaterial ? `PO ${p.poMaterial}` : "precisa — sem PO") : "não precisa", prazoBase: p.dataExecucao || "", empresa: p.empresa || "" }));
+    docagemItems.filter((d) => !d.dataConclusao && !/conclu|cancel/i.test(d.status || "")).forEach((d) => out.push({ key: `D:${d.id}`, origem: "DNV", nome: d.nome, local: d.localizacao || "—", ref: d.tipoPeriodo || "", acaoBase: d.planoAcao || "", material: d.necessitaMaterial ? (d.poRelacionada ? `PO ${d.poRelacionada}` : "precisa — sem PO") : "não precisa", prazoBase: d.previsaoExecucao || "", empresa: d.empresa || "" }));
+    return out;
+  }, [planningItems, docagemItems]);
+  const rows = useMemo(() => base.map((b) => {
+    const p = planos.find((x) => x.key === b.key) || {};
+    const acao = p.acao !== undefined ? p.acao : b.acaoBase;
+    const prazo = p.prazo !== undefined ? p.prazo : (isIsoD(b.prazoBase) ? b.prazoBase : "");
+    const status = p.status || "Pendente";
+    return { ...b, acao, prazo, status, resp: p.resp || "Bordo", resposta: p.resposta || "", atual: p.atual || "", atrasado: !!prazo && prazo < hoje && status !== "Concluído" };
+  }), [base, planos]);
+
+  const upd = (key, campo, valor) => setPlanosBordo((arr) => {
+    const a = arr || []; const i = a.findIndex((x) => x.key === key);
+    const ext = campo === "resposta" && valor && !(a[i]?.status && a[i].status !== "Pendente" && a[i].status !== "Enviado ao bordo") ? { status: "Respondido pelo bordo" } : {};
+    const novo = { ...(i >= 0 ? a[i] : { key }), [campo]: valor, ...ext, atual: todayISO() };
+    return i >= 0 ? a.map((x, k) => (k === i ? novo : x)) : [...a, novo];
+  });
+
+  const filtered = rows.filter((r) => (f.origem === "Todas" || r.origem === f.origem) && (f.status === "Todos" || (f.status === "Abertos" ? r.status !== "Concluído" : r.status === f.status)) && (f.resp === "Todos" || r.resp === f.resp)
+    && (!f.busca.trim() || `${r.nome} ${r.local} ${r.ref} ${r.acao} ${r.resposta}`.toLowerCase().includes(f.busca.trim().toLowerCase())))
+    .sort((a, b) => (b.atrasado - a.atrasado) || ((a.status === "Pendente" ? 0 : 1) - (b.status === "Pendente" ? 0 : 1)));
+  const kpi = { total: rows.length, semAcao: rows.filter((r) => !r.acao.trim()).length, aguardando: rows.filter((r) => r.status === "Enviado ao bordo").length, resp: rows.filter((r) => r.status === "Respondido pelo bordo").length, atras: rows.filter((r) => r.atrasado).length, conc: planos.filter((x) => x.status === "Concluído" && base.some((b) => b.key === x.key)).length };
+
+  const paraBordo = rows.filter((r) => /Bordo/.test(r.resp) && r.status !== "Concluído");
+  const assunto = `Plano de ação com o bordo — ${paraBordo.length} item(ns) pendente(s)`;
+  const cols = ["Origem", "Item", "Setor / Local", "Ref.", "Ação solicitada ao bordo", "Material / PO", "Prazo", "Status"];
+  const linha = (r) => [r.origem, r.nome, r.local, r.ref || "—", r.acao || "(definir ação)", r.material, r.prazo ? fmtDataCompleta(r.prazo) : "—", r.status];
+  const montarHtml = () => {
+    const th = (t) => `<th style="border:1px solid #1F3A5F;background:#1F3A5F;color:#fff;padding:5px 7px;font-size:12px;text-align:left">${escHtml(t)}</th>`;
+    const td = (t) => `<td style="border:1px solid #cfd8e6;padding:5px 7px;font-size:12px;vertical-align:top">${escHtml(t)}</td>`;
+    return `<div style="font-family:Calibri,Arial,sans-serif;color:#1b2430"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 8px;font-size:13px">Prezados, abaixo o plano de ação dos itens mapeados para execução e dos itens da DNV (docagem). Para <b>cada item</b>, favor responder na coluna “Resposta do bordo”: situação atual, o que é possível fazer a bordo, material necessário (nº da PO) e data prevista.</p>
+<table style="border-collapse:collapse;width:100%"><tr>${[...cols, "Resposta do bordo", "Data prevista"].map(th).join("")}</tr>${paraBordo.length ? paraBordo.map((r) => `<tr>${[...linha(r), "", ""].map(td).join("")}</tr>`).join("") : `<tr>${td("(nenhum item)")}</tr>`}</table></div>`;
+  };
+  const montarTexto = () => [assunto, "", [...cols, "Resposta do bordo", "Data prevista"].join(" | "), ...paraBordo.map((r) => [...linha(r), "______", "______"].join(" | "))].join("\n");
+  const copiar = async () => {
+    const html = montarHtml(); const txt = montarTexto();
+    try {
+      if (window.ClipboardItem && navigator.clipboard.write) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([txt], { type: "text/plain" }) })]);
+      else await navigator.clipboard.writeText(txt);
+      setMsg("Plano copiado com a tabela. Cole no corpo do e-mail (Ctrl+V).");
+    } catch (e) { setMsg("Não consegui copiar automaticamente — copie a prévia com Ctrl+C."); }
+    setTimeout(() => setMsg(""), 7000);
+  };
+  const abrirEmail = async () => {
+    try { localStorage.setItem("genesis_acao_bordo_para", para); } catch (e) { /* ignora */ }
+    await copiar();
+    setPlanosBordo((arr) => { const a = [...(arr || [])]; paraBordo.forEach((r) => { if (r.status === "Pendente") { const i = a.findIndex((x) => x.key === r.key); const n = { ...(i >= 0 ? a[i] : { key: r.key }), status: "Enviado ao bordo", atual: hoje }; if (i >= 0) a[i] = n; else a.push(n); } }); return a; });
+    const corpo = "Prezados,\n\nSegue o plano de ação com o bordo.\n\n[Cole aqui o plano com Ctrl+V — a tabela já está copiada]\n";
+    window.location.href = `mailto:${para.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  };
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn || !setReportFn) return;
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filtered.length ? filtered.map((r) => ({ Origem: r.origem, Item: r.nome, "Setor / Local": r.local, Referência: r.ref, Ação: r.acao, Responsável: r.resp, "Material / PO": r.material, Prazo: r.prazo, Status: r.status, "Resposta do bordo": r.resposta, "Atualizado em": r.atual })) : [{ "—": "Sem itens" }]), "Plano de Ação"); XLSX.writeFile(wb, `genesis-plano-acao-bordo-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Manutenção — Plano de Ação com Bordo", `${filtered.length} item(ns) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [{ label: "Itens", value: kpi.total }, { label: "Sem ação definida", value: kpi.semAcao }, { label: "Aguardando bordo", value: kpi.aguardando }, { label: "Respondidos", value: kpi.resp }, { label: "Prazo vencido", value: kpi.atras }]);
+      pdfTable(doc, y, ["Origem", "Item", "Local", "Ação", "Resp.", "Prazo", "Status", "Resposta do bordo"], filtered.map((r) => [r.origem, r.nome, r.local, r.acao, r.resp, r.prazo || "—", r.status, r.resposta]));
+      pdfSave(doc, "plano-acao-bordo");
+    });
+  }, [filtered]);
+
+  const sel = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11.5, background: "var(--panel, #fff)", color: "var(--text)" };
+  return (
+    <>
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Plano de ação com o bordo — Mapeados + Itens DNV</span></div>
+        <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>
+          Lista geral de tudo que está em <b>Mapeados para Execução</b> e nos <b>Itens DNV (Docagem)</b>, ainda não concluído. Para cada item defina a <b>ação</b>, o <b>responsável</b> e o <b>prazo</b>; o botão de e-mail envia ao bordo a tabela dos itens sob responsabilidade do bordo e marca como “Enviado ao bordo”. Quando o bordo responder, registre a <b>resposta</b> (o status vira “Respondido pelo bordo”) e acompanhe até Concluído. A ação sugerida vem do “Plano de Ação” já preenchido no item.
+        </div>
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="text" value={para} onChange={(e) => setPara(e.target.value)} placeholder="E-mail do bordo (vários separados por vírgula)" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
+          <button className="g-btn g-keep" onClick={copiar}>Copiar tabela</button>
+          <button className="g-btn primary g-keep" onClick={abrirEmail} disabled={!paraBordo.length}>Enviar ao bordo ({paraBordo.length})</button>
+        </div>
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {bigKpi("Itens no plano", kpi.total, "var(--teal)", ClipboardList)}
+        {bigKpi("Sem ação definida", kpi.semAcao, kpi.semAcao ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Aguardando o bordo", kpi.aguardando, "var(--warn)", Clock)}
+        {bigKpi("Respondidos pelo bordo", kpi.resp, "var(--teal)", ClipboardList)}
+        {bigKpi("Prazo vencido", kpi.atras, kpi.atras ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+      </div>
+      <div className="g-panel">
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+          <div className="g-mode-toggle">{["Todas", "Mapeado", "DNV"].map((o) => <button key={o} className={f.origem === o ? "active" : ""} onClick={() => setF((p) => ({ ...p, origem: o }))}>{o}</button>)}</div>
+          <select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))} style={sel}>{["Abertos", "Todos", ...AB_STATUS].map((x) => <option key={x}>{x}</option>)}</select>
+          <select value={f.resp} onChange={(e) => setF((p) => ({ ...p, resp: e.target.value }))} style={sel}>{["Todos", ...AB_RESP].map((x) => <option key={x}>{x}</option>)}</select>
+          <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar item, ação, resposta..." style={{ ...sel, minWidth: 220, padding: "6px 10px" }} />
+          <span className="g-muted" style={{ fontSize: 11.5 }}>{filtered.length} de {rows.length}</span>
+        </div>
+        <div className="g-table-wrap">
+          <table className="g-table tbl-modern" style={{ minWidth: 0, width: "100%" }}>
+            <thead><tr><th>Origem</th><th style={{ minWidth: 220 }}>Item</th><th style={{ minWidth: 240 }}>Ação</th><th>Responsável</th><th>Prazo</th><th>Status</th><th style={{ minWidth: 240 }}>Resposta do bordo</th></tr></thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={7} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item nesse filtro.</td></tr>}
+              {filtered.map((r) => (
+                <tr className="g-row tbl-row" key={r.key} style={{ "--c": r.atrasado ? "#EF4444" : AB_COR[r.status] }}>
+                  <td style={{ verticalAlign: "top" }}><span className="tbl-chip">{r.origem}</span></td>
+                  <td style={{ whiteSpace: "normal", verticalAlign: "top" }}><b>{r.nome}</b><div className="tbl-chips"><span className="tbl-chip">{r.local}</span>{r.ref && <span className="tbl-chip">{r.ref}</span>}<span className="tbl-chip" style={{ color: /sem PO/.test(r.material) ? "var(--crit)" : undefined }}>{r.material}</span></div></td>
+                  <td style={{ verticalAlign: "top" }}><ETextArea rows={2} value={r.acao} onChange={(v) => upd(r.key, "acao", v)} />{!r.acao.trim() && <div style={{ fontSize: 10.5, color: "var(--crit)" }}>definir ação</div>}</td>
+                  <td style={{ verticalAlign: "top" }}><select value={r.resp} onChange={(e) => upd(r.key, "resp", e.target.value)} style={sel}>{AB_RESP.map((x) => <option key={x}>{x}</option>)}</select></td>
+                  <td style={{ verticalAlign: "top" }}><DateOuTexto value={r.prazo} onChange={(v) => upd(r.key, "prazo", v)} />{r.atrasado && <div style={{ fontSize: 10.5, color: "var(--crit)", fontWeight: 700 }}>vencido</div>}</td>
+                  <td style={{ verticalAlign: "top" }}><select value={r.status} onChange={(e) => upd(r.key, "status", e.target.value)} style={{ ...sel, borderColor: AB_COR[r.status], color: AB_COR[r.status], fontWeight: 700 }}>{AB_STATUS.map((x) => <option key={x}>{x}</option>)}</select>{r.atual && <div style={{ fontSize: 10, color: "var(--text-faint)" }}>atualizado {fmtDataCompleta(r.atual)}</div>}</td>
+                  <td style={{ verticalAlign: "top" }}><ETextArea rows={2} value={r.resposta} onChange={(v) => upd(r.key, "resposta", v)} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
