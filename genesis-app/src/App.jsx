@@ -2836,7 +2836,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
         {tab === "manutencao" && (
           <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["portcall", "Solicitação Portcall"], ["reparo", "Reparo e Retorno"]].map(([k, l]) => (
+            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["escopo", "Análise de Escopo"], ["reparo", "Reparo e Retorno"]].map(([k, l]) => (
               <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
             ))}
           </div>
@@ -2847,9 +2847,10 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             expandedWp={expandedWp} setExpandedWp={setExpandedWp} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} newRowId={newRowId} />
         )}
 
-        {tab === "manutencao" && manSub === "portcall" && (
-          <PortcallRequestView portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} planningItems={planningItems} tmDue={tmDue} tmHistory={tmHistory}
-            allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+        {tab === "manutencao" && manSub === "escopo" && (
+          <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
+            allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} setPortcallReqs={setPortcallReqs}
+            irSolicitacao={() => { setReportFn(null); setExportXlsxFn(null); setManSub("planejamento"); setPlanSubTab("portcall"); }} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
         {tab === "manutencao" && manSub === "reparo" && (
@@ -2857,7 +2858,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "manutencao" && manSub === "planejamento" && (
-          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -3689,6 +3690,17 @@ function PortcallRequestView({ portcallReqs, setPortcallReqs, planningItems, tmD
     const temJob = !!(p.jobNo);
     addItem({ descricao: p.nome, justificativa: p.descricaoProblema || p.planoAcao || "", tipo: "Preventiva", linkado: temJob ? "sim" : "nao", jobTipo: p.jobTipo || "", jobNo: p.jobNo || "", planId: p.id });
   };
+  const sincronizar = () => {
+    let n = 0;
+    updReq("itens", sel.itens.map((it) => { const p = planningItems.find((x) => x.id === it.planId); if (!p) return it; n++;
+      return { ...it, descricao: p.nome, justificativa: it.justificativa || p.justificativa || p.descricaoProblema || p.planoAcao || "", ...(p.jobNo ? { linkado: "sim", jobTipo: p.jobTipo || "", jobNo: p.jobNo } : {}) }; }));
+    setMsg(`${n} item(ns) sincronizado(s) com os Mapeados para Execução (nome, justificativa e job).`); setTimeout(() => setMsg(""), 5000);
+  };
+  const addTodosMapeados = () => {
+    const novos = planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado" && !sel.itens.some((x) => x.planId === p.id))
+      .map((p) => novoItem({ descricao: p.nome, justificativa: p.justificativa || p.descricaoProblema || p.planoAcao || "", linkado: p.jobNo ? "sim" : "nao", jobTipo: p.jobTipo || "", jobNo: p.jobNo || "", planId: p.id }));
+    updReq("itens", [...sel.itens, ...novos]); setMsg(`${novos.length} mapeado(s) em aberto adicionado(s).`); setTimeout(() => setMsg(""), 5000);
+  };
   const achar = (t, n) => {
     if (!n) return null;
     const k = (x) => `${bordoNorm(x.jobType)}|${bordoNorm(x.jobNo)}`; const alvo = `${bordoNorm(t)}|${bordoNorm(n)}`;
@@ -3792,6 +3804,8 @@ function PortcallRequestView({ portcallReqs, setPortcallReqs, planningItems, tmD
                 {mapDisp.length > 0 && <select value="" onChange={(e) => { if (e.target.value) addMapeado(e.target.value); }} style={{ padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, maxWidth: 260 }}>
                   <option value="">+ Adicionar dos Mapeados…</option>{mapDisp.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
                 </select>}
+                <button className="g-btn" onClick={addTodosMapeados} title="Adiciona todos os mapeados não concluídos que ainda não estão na solicitação">+ Todos os mapeados em aberto</button>
+                <button className="g-btn" onClick={sincronizar} title="Atualiza nome, justificativa e job com o que está em Mapeados para Execução">🔄 Sincronizar com Mapeados</button>
                 <button className="g-btn" onClick={() => addItem()}><Plus size={14} />Item manual</button>
               </div>
             </div>
@@ -3803,7 +3817,7 @@ function PortcallRequestView({ portcallReqs, setPortcallReqs, planningItems, tmD
                   {sel.itens.map((it, i) => { const s = situacao(it); return (
                     <tr className="g-row tbl-row" key={it.id} style={{ "--c": s.cor }}>
                       <td>{i + 1}</td>
-                      <td style={{ verticalAlign: "top" }}><ETextArea rows={1} value={it.descricao} onChange={(v) => updItem(it.id, "descricao", v)} /></td>
+                      <td style={{ verticalAlign: "top" }}><ETextArea rows={1} value={it.descricao} onChange={(v) => updItem(it.id, "descricao", v)} />{it.planId && <span className="tbl-chip" style={{ color: "var(--ok)" }}>🔗 Mapeado</span>}</td>
                       <td style={{ verticalAlign: "top" }}><EText value={it.componente} onChange={(v) => updItem(it.id, "componente", v)} /></td>
                       <td><select value={it.tipo} onChange={(e) => updItem(it.id, "tipo", e.target.value)} style={inp}>{PC_TIPOS.map((t) => <option key={t}>{t}</option>)}</select></td>
                       <td style={{ verticalAlign: "top" }}><ETextArea rows={1} value={it.justificativa} onChange={(v) => updItem(it.id, "justificativa", v)} /></td>
@@ -3839,6 +3853,7 @@ function ReparoRetornoView({ reparoItens, setReparoItens, setReportFn, setExport
   const fileRef = useRef(null);
   const [msg, setMsg] = useState("");
   const [f, setF] = useState({ status: "ABERTO", fornecedor: "", busca: "" });
+  const [rrOpen, setRrOpen] = useState(null);
   const dias = (r) => (r.status !== "RECEBIDO" && isIsoD(r.dataEnvio) ? frDias(r.dataEnvio, hoje) : null);
   const rows = useMemo(() => itens.map((r) => ({ ...r, _d: dias(r) })), [itens]);
   const forn = useMemo(() => [...new Set(itens.map((r) => (r.fornecedor || "").trim()).filter(Boolean))].sort(), [itens]);
@@ -3941,22 +3956,231 @@ function ReparoRetornoView({ reparoItens, setReparoItens, setReportFn, setExport
           <span className="g-muted" style={{ fontSize: 11.5 }}>{filtered.length} de {rows.length} · ordenado pelos mais antigos em reparo</span>
         </div>
         <div className="g-table-wrap">
-          <table className="g-table tbl-modern">
-            <thead><tr><th>Item</th><th>SAP</th><th>Qtd</th><th style={{ minWidth: 220 }}>Descrição</th><th>S/N</th><th>NF_e GNSI</th><th>NF_e AÇU</th><th style={{ minWidth: 140 }}>Fornecedor</th><th>REQ/PO</th><th>PAD</th><th>BKL OUT</th><th>Date sent</th><th>LOM REC</th><th>Date received</th><th>Status</th><th style={{ textAlign: "right" }}>Dias em reparo</th><th style={{ minWidth: 200 }}>Remarks</th><th></th></tr></thead>
+          <table className="g-table tbl-modern" style={{ minWidth: 0, width: "100%" }}>
+            <thead><tr><th style={{ width: 30 }}></th><th style={{ minWidth: 280 }}>Item</th><th style={{ minWidth: 130 }}>Fornecedor</th><th style={{ minWidth: 190 }}>Documentos</th><th style={{ minWidth: 170 }}>Datas</th><th style={{ minWidth: 140 }}>Status</th><th style={{ minWidth: 200 }}>Remarks</th><th style={{ width: 40 }}></th></tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={18} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{rows.length ? "Nenhum item com esse filtro." : "Nenhum item ainda — importe a planilha “Reparo e Retorno” ou use “Novo item”."}</td></tr>}
-              {filtered.map((r) => (
-                <tr className="g-row tbl-row" key={r.id} style={{ "--c": r.status === "RECEBIDO" ? "#22C55E" : (r._d !== null && r._d > 90 ? "#EF4444" : "#F5A623") }}>
-                  {T(r, "item", 50)}{T(r, "sap", 90)}{T(r, "qty", 50)}
-                  <td style={{ minWidth: 220, verticalAlign: "top" }}><ETextArea rows={1} value={r.desc} onChange={(v) => upd(r.id, "desc", v)} /></td>
-                  {T(r, "sn", 100)}{T(r, "nfGnsi", 80)}{T(r, "nfAcu", 80)}{T(r, "fornecedor", 140)}{T(r, "po", 90)}{T(r, "pad", 70)}{T(r, "bklOut", 70)}
-                  <td><DateOuTexto value={r.dataEnvio} onChange={(v) => upd(r.id, "dataEnvio", v)} /></td>
-                  {T(r, "lomRec", 70)}
-                  <td><DateOuTexto value={r.dataRecebido} onChange={(v) => upd(r.id, "dataRecebido", v)} /></td>
-                  <td><select value={r.status} onChange={(e) => upd(r.id, "status", e.target.value)} style={{ ...inp, fontWeight: 700, color: r.status === "RECEBIDO" ? "var(--ok)" : "var(--warn)" }}><option>ABERTO</option><option>RECEBIDO</option></select></td>
-                  <td style={{ textAlign: "right", fontWeight: 700, color: r._d !== null && r._d > 90 ? "var(--crit)" : "inherit" }}>{r._d === null ? (r.status === "RECEBIDO" ? "—" : "sem data") : `${r._d} d`}</td>
-                  <td style={{ minWidth: 200, verticalAlign: "top" }}><ETextArea rows={1} value={r.obs} onChange={(v) => upd(r.id, "obs", v)} /></td>
-                  <td><span className="g-btn ghost danger" onClick={() => rem(r.id)}><Trash2 size={13} /></span></td>
+              {filtered.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{rows.length ? "Nenhum item com esse filtro." : "Nenhum item ainda — importe a planilha “Reparo e Retorno” ou use “Novo item”."}</td></tr>}
+              {filtered.map((r) => {
+                const aberto = rrOpen === r.id; const recv = r.status === "RECEBIDO";
+                const cor = recv ? "#22C55E" : r._d === null ? "#94A3B8" : r._d > 180 ? "#B91C1C" : r._d > 90 ? "#EF4444" : r._d > 30 ? "#F5A623" : "#22C55E";
+                const doc = (lbl, v) => { const vazio = !v || /^(tba|n\/a)$/i.test(String(v).trim()); return <div key={lbl} style={{ display: "flex", gap: 6, fontSize: 11.5, lineHeight: 1.55 }}><span style={{ color: "var(--text-faint)", minWidth: 58 }}>{lbl}</span><span style={{ fontFamily: "var(--mono)", color: vazio ? "var(--text-faint)" : "var(--text)", fontWeight: vazio ? 400 : 600 }}>{v || "—"}</span></div>; };
+                return (
+                  <React.Fragment key={r.id}>
+                    <tr className="g-row tbl-row" style={{ "--c": cor }}>
+                      <td className="tbl-first"><span className="g-btn ghost" onClick={() => setRrOpen(aberto ? null : r.id)} title="Editar todos os campos">{aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span></td>
+                      <td style={{ whiteSpace: "normal", verticalAlign: "top" }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.35 }}>{r.desc || "—"}</div>
+                        <div className="tbl-chips">{r.item && <span className="tbl-chip">#{r.item}</span>}{r.sap && <span className="tbl-chip">SAP {r.sap}</span>}{r.qty && <span className="tbl-chip">Qtd {r.qty}</span>}{r.sn && <span className="tbl-chip">S/N {r.sn}</span>}</div>
+                      </td>
+                      <td style={{ whiteSpace: "normal", verticalAlign: "top", fontWeight: 600 }}>{r.fornecedor || <span className="g-muted">—</span>}</td>
+                      <td style={{ verticalAlign: "top" }}>{doc("REQ/PO", r.po)}{doc("NF GNSI", r.nfGnsi)}{doc("NF AÇU", r.nfAcu)}{doc("PAD", r.pad)}</td>
+                      <td style={{ verticalAlign: "top" }}>
+                        <div style={{ fontSize: 10, color: "var(--text-faint)" }}>Enviado</div><DateOuTexto value={r.dataEnvio} onChange={(v) => upd(r.id, "dataEnvio", v)} />
+                        <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>Recebido</div><DateOuTexto value={r.dataRecebido} onChange={(v) => upd(r.id, "dataRecebido", v)} />
+                      </td>
+                      <td style={{ verticalAlign: "top" }}>
+                        <select value={r.status} onChange={(e) => upd(r.id, "status", e.target.value)} style={{ padding: "4px 8px", borderRadius: 99, border: `1px solid ${cor}`, background: "var(--panel-raised)", color: recv ? "var(--ok)" : "var(--warn)", fontWeight: 700, fontSize: 11.5 }}><option>ABERTO</option><option>RECEBIDO</option></select>
+                        <div style={{ marginTop: 6 }}>
+                          {recv ? <span style={{ fontSize: 11, color: "var(--ok)", fontWeight: 600 }}>✔ retornou</span>
+                            : r._d === null ? <span style={{ fontSize: 11, color: "var(--text-faint)" }}>sem data de envio</span>
+                            : <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99, color: cor, background: `${cor}1f` }}>{r._d} dias em reparo</span>}
+                        </div>
+                      </td>
+                      <td style={{ minWidth: 200, verticalAlign: "top" }}><ETextArea rows={2} value={r.obs} onChange={(v) => upd(r.id, "obs", v)} /></td>
+                      <td style={{ verticalAlign: "top" }}><span className="g-btn ghost danger" onClick={() => rem(r.id)}><Trash2 size={13} /></span></td>
+                    </tr>
+                    {aberto && (
+                      <tr className="tbl-detail"><td></td><td colSpan={7}>
+                        <div className="tbl-detail-grid">
+                          {[["item", "Item"], ["sap", "SAP"], ["qty", "Qtd"], ["sn", "S/N"], ["fornecedor", "Fornecedor do serviço"], ["po", "REQ/PO"], ["nfGnsi", "NF_e GNSI"], ["nfAcu", "NF_e AÇU"], ["pad", "PAD"], ["bklOut", "BKL OUT"], ["lomRec", "LOM REC"]].map(([k, l]) => (
+                            <div className="g-field" key={k}><label>{l}</label><EText value={r[k] || ""} onChange={(v) => upd(r.id, k, v)} /></div>
+                          ))}
+                          <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Descrição do item</label><ETextArea rows={1} value={r.desc} onChange={(v) => upd(r.id, "desc", v)} /></div>
+                        </div>
+                      </td></tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ============================================================
+   MANUTENÇÃO › Análise de Escopo do Port Call
+   Reúne tudo que pode ser feito no porto (Due, Mapeados, Failure Reports sem job,
+   Reparo e Retorno), pontua, aponta pendências e sugere o que fazer.
+   ============================================================ */
+const ESC_CLASSES = ["Executar neste Port Call", "Resolver pendência antes", "Planejar próximo Port Call", "Acompanhar"];
+const ESC_COR = { "Executar neste Port Call": "#22C55E", "Resolver pendência antes": "#EF4444", "Planejar próximo Port Call": "#F5A623", "Acompanhar": "#94A3B8" };
+
+function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparoItens, allPortCallDates, portCallMeta, portCallLabel, setPortcallReqs, irSolicitacao, setReportFn, setExportXlsxFn }) {
+  const hoje = todayISO();
+  const futuros = useMemo(() => allPortCallDates.filter((d) => d >= hoje), [allPortCallDates]);
+  const [pcSel, setPcSel] = useState("");
+  const pc = pcSel || futuros[0] || "";
+  const idxPc = futuros.indexOf(pc);
+  const proximo = idxPc >= 0 ? futuros[idxPc + 1] : null;
+  const horizonte = proximo ? Math.max(1, -frDias(proximo, pc)) : 45; // dias entre este Port Call e o seguinte (padrão 45)
+  const diasAtePc = pc ? -frDias(pc, hoje) : 0; // dias de hoje até o Port Call
+  const limiteDias = diasAtePc + horizonte; // o que vence até o Port Call seguinte
+  const duracao = pc ? (portCallMeta?.[pc]?.duration || 24) : 24;
+  const [cls, setCls] = useState("Todos");
+  const [orig, setOrig] = useState("Todas");
+  const [msg, setMsg] = useState("");
+
+  const lista = useMemo(() => {
+    const F = tmFailures || FR_EMPTY;
+    const out = [];
+    const jaNoPlano = new Set(planningItems.filter((p) => p.jobNo).map((p) => `${bordoNorm(p.jobTipo)}|${bordoNorm(p.jobNo)}`));
+    const isVenc = (d) => (d.diffValue !== null && d.diffValue !== undefined ? d.diffValue < 0 : !!d.dueDate && d.dueDate < hoje);
+    const dias = (d) => (d.diffValue !== null && d.diffValue !== undefined && d.diffUnit === "D" ? d.diffValue : (d.dueDate ? -frDias(d.dueDate, hoje) : null)); // <0 atrasado
+    const frDeJob = new Map(); (F.jobs || []).forEach((j) => { if (j.frNo) frDeJob.set(`${bordoNorm(j.jobType)}|${bordoNorm(j.jobNo)}`, j.frNo); });
+    // 1) Due
+    tmDue.forEach((d) => {
+      const dd = dias(d); if (dd === null) return;
+      const venc = isVenc(d); if (!venc && dd > limiteDias) return;
+      const k = `${bordoNorm(d.jobType)}|${bordoNorm(d.jobNo)}`; const fr = frDeJob.get(k);
+      const crit = !!critPrefixOf(d.code); const one = String(d.jobType || "").toUpperCase() === "ONE";
+      const mot = []; let sc = venc ? 40 + Math.min(Math.abs(dd), 60) / 2 : 30 + Math.max(0, 15 - dd / 4);
+      if (venc) mot.push(`vencido há ${Math.abs(dd)} d`); else mot.push(`vence em ${dd} d (antes do próximo Port Call)`);
+      if (d.pri === "High") { sc += 20; mot.push("prioridade alta"); }
+      if (crit) { sc += 15; mot.push("componente crítico (PMS)"); }
+      if (fr) { sc += 10; mot.push(`ligado ao ${fr}`); }
+      if (one) { sc += 10; mot.push("corretiva"); }
+      const pend = []; if (!d.planoAcao) pend.push("sem plano de ação"); if (!d.po) pend.push("PO não informada");
+      out.push({ id: `D${d.id || k}`, origem: "Due", item: d.jobName || d.component || "—", ref: `${d.jobType || ""} ${d.jobNo || ""}`.trim(), dept: d.department || "—", score: Math.round(sc), motivos: mot, pend, bloqueio: false,
+        sug: venc ? "Programar a execução neste Port Call e dar baixa no TM; se não for possível, justificar e repactuar a data." : "Executar neste Port Call para não vencer antes do próximo.", tipo: one ? "Corretiva" : "Preventiva", jobTipo: d.jobType || "", jobNo: d.jobNo || "", linkado: true, componente: `${d.code || ""} ${d.component || ""}`.trim() });
+    });
+    // 2) Mapeados
+    const pesoImp = { "Baixo": 10, "Médio": 25, "Alto": 40, "Crítico": 55 };
+    planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado").forEach((p) => {
+      let sc = pesoImp[p.impacto || "Baixo"] || 10; const mot = [`impacto ${p.impacto || "Baixo"}`]; const pend = []; let bloq = false;
+      if (p.dataExecucao && pc) { const dd = -frDias(p.dataExecucao, pc); if (Math.abs(dd) <= Math.max(1, Math.ceil(duracao / 24))) { sc += 20; mot.push("data de execução coincide com este Port Call"); } }
+      if (p.status === "Em Andamento") { sc += 5; mot.push("já em andamento"); }
+      if (p.precisaMaterial && !p.poMaterial) { pend.push("precisa de material e ainda sem PO"); bloq = true; }
+      if (p.precisaMaterial && p.poMaterial) mot.push(`material com PO ${p.poMaterial}`);
+      if (!p.jobNo) pend.push("sem job vinculado no TM"); else if (jaNoPlano.has(`${bordoNorm(p.jobTipo)}|${bordoNorm(p.jobNo)}`) && out.some((o) => o.origem === "Due" && o.ref === `${p.jobTipo} ${p.jobNo}`.trim())) { sc -= 5; mot.push(`mesmo job do Due (${p.jobTipo} ${p.jobNo})`); }
+      out.push({ id: `M${p.id}`, origem: "Mapeado", item: p.nome, ref: p.jobNo ? `${p.jobTipo} ${p.jobNo}`.trim() : "", dept: p.departamento || "—", score: Math.round(sc), motivos: mot, pend, bloqueio: bloq,
+        sug: bloq ? "Providenciar a PO/material antes do Port Call; sem isso não dá para executar." : (p.jobNo ? "Incluir no escopo do Port Call." : "Incluir no escopo e vincular/abrir o job no TM."), tipo: "Preventiva", jobTipo: p.jobTipo || "", jobNo: p.jobNo || "", linkado: !!p.jobNo, componente: "", planId: p.id, just: p.descricaoProblema || p.planoAcao || "" });
+    });
+    // 3) Failure Reports em aberto sem job
+    frGaps(F, hoje).filter((g) => g.noJob).forEach((g) => {
+      let sc = 45 + Math.min((g.dias || 0) / 10, 25); const mot = [`FR aberto há ${g.dias ?? "?"} d`]; const pend = ["sem job no TM"];
+      if (g.noAct) pend.push("sem action"); if (g.noOrd) pend.push("sem order de material/serviço");
+      if (g.n === 3) { sc += 10; mot.push("sem nenhuma tratativa"); }
+      out.push({ id: `F${g.r.no}`, origem: "Failure Report", item: g.r.name || g.r.no, ref: g.r.no, dept: g.r.department || "—", score: Math.round(sc), motivos: mot, pend, bloqueio: g.noOrd && g.noAct,
+        sug: "Abrir 1 job ONE no TM, definir a action e avaliar material; incluir no Port Call se a correção puder ser feita em porto.", tipo: "Corretiva", jobTipo: "", jobNo: "", linkado: false, componente: "" });
+    });
+    // 4) Reparo e Retorno em aberto
+    (reparoItens || []).filter((r) => r.status !== "RECEBIDO").forEach((r) => {
+      const dd = isIsoD(r.dataEnvio) ? frDias(r.dataEnvio, hoje) : null; let sc = 20; const mot = []; const pend = [];
+      if (dd !== null) { mot.push(`em reparo há ${dd} d`); if (dd > 90) sc += 25; if (dd > 180) sc += 10; } else pend.push("sem data de envio");
+      if (!r.po || /^(tba|n\/a)$/i.test(r.po)) pend.push("PO não informada");
+      out.push({ id: `R${r.id}`, origem: "Reparo e Retorno", item: r.desc || r.sap, ref: r.sn || r.sap, dept: "—", score: Math.round(sc), motivos: mot, pend, bloqueio: false,
+        sug: dd !== null && dd > 90 ? `Cobrar ${r.fornecedor || "o fornecedor"} e confirmar retorno até o Port Call; programar a reinstalação.` : "Acompanhar o retorno e programar a reinstalação para o Port Call.", tipo: "Corretiva", jobTipo: "", jobNo: "", linkado: false, componente: r.sap || "" });
+    });
+    out.forEach((o) => { o.classe = o.bloqueio ? "Resolver pendência antes" : o.score >= 60 ? "Executar neste Port Call" : o.score >= 35 ? "Planejar próximo Port Call" : "Acompanhar"; });
+    return out.sort((a, b) => b.score - a.score);
+  }, [tmDue, planningItems, tmFailures, reparoItens, pc, limiteDias]);
+
+  const vis = lista.filter((x) => (cls === "Todos" || x.classe === cls) && (orig === "Todas" || x.origem === orig));
+  const cont = (c) => lista.filter((x) => x.classe === c).length;
+  const porDept = useMemo(() => { const m = {}; lista.filter((x) => x.classe === "Executar neste Port Call").forEach((x) => { m[x.dept] = (m[x.dept] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [lista]);
+  const exec = lista.filter((x) => x.classe === "Executar neste Port Call");
+  const sugestoes = useMemo(() => {
+    const S = [];
+    const vencCrit = lista.filter((x) => x.origem === "Due" && x.motivos.some((m) => m.startsWith("vencido")) && x.motivos.includes("componente crítico (PMS)")).length;
+    if (vencCrit) S.push(`${vencCrit} job(s) vencido(s) de componente crítico: prioridade máxima no escopo deste Port Call.`);
+    const semMat = lista.filter((x) => x.bloqueio && x.origem === "Mapeado").length;
+    if (semMat) S.push(`${semMat} item(ns) mapeado(s) precisam de material sem PO: peça a PO agora, senão não serão executados no Port Call.`);
+    const frSem = lista.filter((x) => x.origem === "Failure Report").length;
+    if (frSem) S.push(`${frSem} Failure Report(s) em aberto sem job no TM: abra os jobs ONE e avalie levar a correção para o Port Call.`);
+    const rrAnt = lista.filter((x) => x.origem === "Reparo e Retorno" && x.motivos.some((m) => /há (\d+) d/.test(m) && Number(m.match(/há (\d+)/)[1]) > 90)).length;
+    if (rrAnt) S.push(`${rrAnt} item(ns) em Reparo e Retorno há mais de 90 dias: cobre os fornecedores e alinhe o retorno ao Port Call.`);
+    const semJob = lista.filter((x) => x.origem === "Mapeado" && !x.linkado).length;
+    if (semJob) S.push(`${semJob} item(ns) mapeado(s) sem job vinculado: vincule a um job do plano ou abra um ONE (se corretiva).`);
+    const horas = exec.length;
+    if (pc && horas > Math.max(8, duracao / 2)) S.push(`O Port Call tem ${duracao}h e há ${horas} itens recomendados: avalie a capacidade da equipe e a janela; considere repactuar os de menor score.`);
+    if (!S.length) S.push("Sem alertas relevantes: o escopo recomendado está equilibrado.");
+    return S;
+  }, [lista, exec.length, duracao, pc]);
+
+  const criarSolicitacao = () => {
+    const itens = exec.slice(0, 40).map((x) => ({ id: uid("PCI"), descricao: x.item, componente: x.componente || "", tipo: x.tipo, justificativa: x.motivos.join("; "), linkado: x.linkado ? "sim" : "nao", jobTipo: x.jobTipo, jobNo: x.jobNo, oneNo: "", planId: x.planId }));
+    setPortcallReqs((a) => [{ id: uid("PCR"), portCall: pc, itens, criado: hoje, enviado: "" }, ...(a || [])]);
+    setMsg(`Solicitação criada com ${itens.length} item(ns) recomendado(s). Abrindo a aba Solicitação Portcall...`);
+    setTimeout(() => { setMsg(""); irSolicitacao(); }, 900);
+  };
+
+  React.useEffect(() => {
+    if (!setExportXlsxFn || !setReportFn) return;
+    const lin = () => vis.map((x, i) => ({ "#": i + 1, Origem: x.origem, Item: x.item, Referência: x.ref, Departamento: x.dept, Score: x.score, Classificação: x.classe, Motivos: x.motivos.join("; "), Pendências: x.pend.join("; "), Sugestão: x.sug }));
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem itens" }]), "Análise de Escopo"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sugestoes.map((t) => ({ Sugestão: t }))), "Sugestões"); XLSX.writeFile(wb, `genesis-analise-escopo-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Manutenção — Análise de Escopo do Port Call", `${pc ? portCallLabel(pc) : "sem Port Call futuro"} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, ESC_CLASSES.map((c) => ({ label: c, value: cont(c) })));
+      y = pdfSectionTitle(doc, y, "Sugestões");
+      y = pdfTable(doc, y, ["Sugestão"], sugestoes.map((t) => [t]));
+      y = pdfSectionTitle(doc, y, "Escopo analisado");
+      pdfTable(doc, y, ["#", "Origem", "Item", "Ref.", "Dept.", "Score", "Classificação", "Motivos", "Pendências", "Sugestão"], vis.map((x, i) => [i + 1, x.origem, x.item, x.ref || "—", x.dept, x.score, x.classe, x.motivos.join("; "), x.pend.join("; ") || "—", x.sug]));
+      pdfSave(doc, "analise-escopo-portcall");
+    });
+  }, [vis, sugestoes, pc]);
+
+  return (
+    <>
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Análise de escopo — o que pode ser feito no Port Call</span></div>
+        <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>
+          O portal junta tudo que é candidato a ser executado em porto: <b>jobs do Due</b> vencidos ou que vencem antes do próximo Port Call, <b>mapeados para execução</b>, <b>Failure Reports em aberto sem job</b> e <b>itens em Reparo e Retorno</b>. Cada item recebe uma pontuação (vencimento, prioridade, criticidade PMS, Failure Report, impacto, material) e uma classificação com sugestão. Itens que dependem de docagem não entram.
+        </div>
+        <div className="g-flex" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div className="g-field"><label>Port Call analisado</label>
+            <select value={pc} onChange={(e) => setPcSel(e.target.value)} style={{ padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6, minWidth: 220 }}>
+              {futuros.length === 0 && <option value="">Sem Port Call futuro cadastrado</option>}
+              {futuros.map((d) => <option key={d} value={d}>{portCallLabel(d)}</option>)}
+            </select></div>
+          <div className="g-field"><label>Ou informe a data</label><input type="date" value={pc} onChange={(e) => setPcSel(e.target.value)} /></div>
+          <div className="g-muted" style={{ fontSize: 12 }}>{pc ? `em ${diasAtePc} dia(s) · duração ${duracao} h · considera o que vence em até ${limiteDias} dias${proximo ? " (até o Port Call seguinte)" : " (sem Port Call seguinte: horizonte de 45 dias)"}` : ""}</div>
+          <button className="g-btn primary g-keep" onClick={criarSolicitacao} disabled={!exec.length || !pc} style={{ marginLeft: "auto" }}>Criar solicitação com os recomendados ({Math.min(exec.length, 40)})</button>
+        </div>
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {ESC_CLASSES.map((c) => <div key={c} style={{ cursor: "pointer" }} onClick={() => setCls(cls === c ? "Todos" : c)}>{bigKpi(c, cont(c), ESC_COR[c], ClipboardList)}</div>)}
+      </div>
+      <div className="g-panel" style={{ borderLeft: "3px solid var(--teal)" }}>
+        <div className="g-panel-head"><span className="g-panel-title">Sugestões</span></div>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7 }}>{sugestoes.map((t, i) => <li key={i}>{t}</li>)}</ul>
+        {porDept.length > 0 && <div className="tbl-chips" style={{ marginTop: 10 }}><span className="g-muted" style={{ fontSize: 11.5 }}>Carga recomendada por departamento:</span>{porDept.map(([k, v]) => <span key={k} className="tbl-chip">{k}: <b>{v}</b></span>)}</div>}
+      </div>
+      <div className="g-panel">
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+          <div className="g-mode-toggle">{["Todos", ...ESC_CLASSES].map((c) => <button key={c} className={cls === c ? "active" : ""} onClick={() => setCls(c)}>{c}</button>)}</div>
+          <select value={orig} onChange={(e) => setOrig(e.target.value)} style={{ padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6 }}>{["Todas", "Due", "Mapeado", "Failure Report", "Reparo e Retorno"].map((o) => <option key={o}>{o}</option>)}</select>
+          <span className="g-muted" style={{ fontSize: 11.5 }}>{vis.length} de {lista.length} item(ns), do maior para o menor score</span>
+        </div>
+        <div className="g-table-wrap" style={{ maxHeight: 560, overflowY: "auto" }}>
+          <table className="g-table tbl-modern">
+            <thead><tr><th>#</th><th>Origem</th><th style={{ minWidth: 240 }}>Item</th><th>Ref.</th><th>Dept.</th><th style={{ textAlign: "right" }}>Score</th><th>Classificação</th><th style={{ minWidth: 220 }}>Por quê</th><th style={{ minWidth: 180 }}>Pendências</th><th style={{ minWidth: 260 }}>Sugestão</th></tr></thead>
+            <tbody>
+              {vis.length === 0 && <tr><td colSpan={10} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item nessa seleção.</td></tr>}
+              {vis.map((x, i) => (
+                <tr className="g-row tbl-row" key={x.id} style={{ "--c": ESC_COR[x.classe] }}>
+                  <td>{i + 1}</td><td><span className="tbl-chip">{x.origem}</span></td>
+                  <td style={{ whiteSpace: "normal" }}><b>{x.item}</b></td>
+                  <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{x.ref || "—"}</td><td>{x.dept}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>{x.score}</td>
+                  <td style={{ color: ESC_COR[x.classe], fontWeight: 700, whiteSpace: "normal" }}>{x.classe}</td>
+                  <td style={{ whiteSpace: "normal", fontSize: 11.5 }}>{x.motivos.join(" · ") || "—"}</td>
+                  <td style={{ whiteSpace: "normal", fontSize: 11.5, color: x.pend.length ? "var(--crit)" : "var(--ok)" }}>{x.pend.join(" · ") || "✔ sem pendência"}</td>
+                  <td style={{ whiteSpace: "normal", fontSize: 11.5 }}>{x.sug}</td>
                 </tr>
               ))}
             </tbody>
@@ -4273,7 +4497,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    ============================================================ */
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab, tmDue, tmHistory }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planSubTab, setPlanSubTab, tmDue, tmHistory, portcallReqs, setPortcallReqs }) {
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
@@ -4372,11 +4596,23 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
     rows.forEach((r) => { const k = (keyFn(r) || "").toString().trim() || fallback; if (!map.has(k)) map.set(k, []); map.get(k).push(r); });
     return [...map.entries()].sort((x, y) => (x[0] === fallback) - (y[0] === fallback) || x[0].localeCompare(y[0], "pt-BR")).map(([key, rs]) => ({ key, rows: rs }));
   };
+  /* vínculo Mapeados ↔ Solicitação Portcall */
+  const emSolic = useMemo(() => { const m = {}; (portcallReqs || []).forEach((r) => r.itens.forEach((it) => { if (it.planId) (m[it.planId] = m[it.planId] || []).push(r); })); return m; }, [portcallReqs]);
+  const solicitar = (p) => {
+    if (emSolic[p.id]) { setPlanSubTab("portcall"); return; }
+    const item = { id: uid("PCI"), descricao: p.nome, componente: "", tipo: "Preventiva", justificativa: p.justificativa || p.descricaoProblema || p.planoAcao || "", linkado: p.jobNo ? "sim" : "nao", jobTipo: p.jobTipo || "", jobNo: p.jobNo || "", oneNo: "", planId: p.id };
+    setPortcallReqs((a) => {
+      const arr = a || []; const alvo = arr.find((r) => !r.enviado);
+      if (alvo) return arr.map((r) => (r === alvo ? { ...r, itens: [...r.itens, item] } : r));
+      return [{ id: uid("PCR"), portCall: allPortCallDates.find((d) => d >= todayISO()) || allPortCallDates[allPortCallDates.length - 1] || "", itens: [item], criado: todayISO(), enviado: "" }, ...arr];
+    });
+    setPlanSubTab("portcall");
+  };
   const mapGroups = useMemo(() => groupRows(filteredMapeados, groupMap, (p) => p.departamento, "Sem departamento"), [filteredMapeados, groupMap]);
   const docGroups = useMemo(() => groupRows(filteredDocagem, groupDoc, (d) => d.localizacao, "Sem localização"), [filteredDocagem, groupDoc]);
 
   React.useEffect(() => {
-    if (!setExportXlsxFn) return;
+    if (!setExportXlsxFn || planSubTab === "portcall") return;
     setExportXlsxFn(() => () => {
       const wb = XLSX.utils.book_new();
       if (planSubTab === "mapeados") {
@@ -4395,7 +4631,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   }, [planSubTab, filteredMapeados, filteredDocagem, colunas, setExportXlsxFn]);
 
   React.useEffect(() => {
-    if (!setReportFn) return;
+    if (!setReportFn || planSubTab === "portcall") return;
     setReportFn(() => () => {
       const doc = new jsPDF();
       if (planSubTab === "mapeados") {
@@ -4459,9 +4695,13 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
         <button className={planSubTab === "docagem" ? "active" : ""} onClick={() => setPlanSubTab("docagem")}>Docagem (Machinery Items - DNV)</button>
+        <button className={planSubTab === "portcall" ? "active" : ""} onClick={() => setPlanSubTab("portcall")}>Solicitação Portcall</button>
       </div>
 
-      {planSubTab === "mapeados" ? (
+      {planSubTab === "portcall" ? (
+        <PortcallRequestView portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} planningItems={planningItems} tmDue={tmDue} tmHistory={tmHistory}
+          allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+      ) : planSubTab === "mapeados" ? (
         <>
           <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div>
@@ -4550,7 +4790,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                   <th style={{ minWidth: 150 }}>Material</th>
                   <th style={{ minWidth: 170 }}>Job vinculado (TM)</th>
                   <th style={{ minWidth: 150 }}>Status</th>
-                  <th style={{ width: 70 }}></th>
+                  <th style={{ width: 100 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -4579,6 +4819,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                           {p.empresa && <span className="tbl-chip">{p.empresa}</span>}
                           {p.precisaMaterial && p.poMaterial && <span className="tbl-chip">PO {p.poMaterial}</span>}
                           {p.planoAcao && <span className="tbl-chip" title={p.planoAcao}>com plano de ação</span>}
+                          {emSolic[p.id] && <span className="tbl-chip" style={{ color: "var(--ok)", cursor: "pointer" }} onClick={() => setPlanSubTab("portcall")} title="Já está em uma solicitação ao Port Call">📨 Solicitação Port Call</span>}
                         </div>
                       </td>
                       <td style={{ minWidth: 140 }}>
@@ -4628,6 +4869,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                         )}
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
+                        <span className="g-btn ghost g-keep" onClick={() => solicitar(p)} title={emSolic[p.id] ? "Já está na solicitação — abrir" : "Incluir na solicitação ao Port Call"}>📨</span>
                         <span className="g-btn ghost" onClick={() => setExpandedPlanRow(isOpen ? null : p.id)} title="Ver todos os detalhes">
                           {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </span>
