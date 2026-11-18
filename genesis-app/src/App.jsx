@@ -1625,6 +1625,11 @@ export default function Root() {
         if (!j || !Array.isArray(j.matReqs)) return;
         setMatReqs((cur) => { const novo = mesclarMatCliente(cur, [], j.matReqs, j.matDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
       }).catch(() => {});
+      /* permissões: quem não é administrador recebe aqui as mudanças de abas/departamentos feitas em Configurações */
+      if (!isAdminUser(currentUser)) fetch("/api/usuarios").then((r) => r.json()).then((j) => {
+        if (!j || !Array.isArray(j.users) || !j.users.length) return;
+        setUsers((cur) => (JSON.stringify(cur) === JSON.stringify(j.users) ? cur : j.users));
+      }).catch(() => {});
       fetch("/api/bordo").then((r) => r.json()).then((j) => {
         if (!j || !Array.isArray(j.tmBordo)) return;
         setTmBordo((cur) => { const novo = mesclarBordoCliente(cur, [], j.tmBordo, j.bordoDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
@@ -9931,6 +9936,9 @@ function SettingsView({ currentUser, users, setUsers }) {
     setUsers((r) => r.filter((_, idx) => idx !== i));
   };
   const addUser = () => setUsers((r) => [...r, { id: uid("USR"), name: "Novo usuário", username: `usuario${r.length + 1}`, password: "GenesisI", role: "viewer", tabs: ["dashboard"] }]);
+  const setTodasAbas = (i, marcar) => updUser(i, "tabs", marcar ? PERM_TABS.map((t) => t.key) : []);
+  const setTodosDeptos = (i, campo, lista, marcar) => updUser(i, campo, marcar ? [...lista] : []);
+  const lnk = { fontSize: 11, textDecoration: "underline", cursor: "pointer", color: "var(--teal)", marginRight: 8 };
   const toggleTab = (i, key) => {
     const u = users[i];
     const cur = Array.isArray(u.tabs) ? normTabs(u.tabs) : PERM_TABS.map((t) => t.key);
@@ -9978,6 +9986,7 @@ function SettingsView({ currentUser, users, setUsers }) {
                   <td style={{ minWidth: 150 }}>
                     {adm ? <span className="g-muted">Todos</span> : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Departamentos que esta pessoa pode lançar e editar na aba Materiais. Almoxarifado edita todos.">
+                        <div><span style={lnk} onClick={() => setTodosDeptos(i, "matDepts", MAT_DEPTS, true)}>Marcar todos</span><span style={lnk} onClick={() => setTodosDeptos(i, "matDepts", MAT_DEPTS, false)}>Limpar</span></div>
                         {MAT_DEPTS.map((d) => (
                           <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
                             <input type="checkbox" checked={deptsDoUsuario(u).includes(d)} onChange={(e) => { const at = deptsDoUsuario(u); updUser(i, "matDepts", e.target.checked ? [...at, d] : at.filter((x) => x !== d)); }} />{d}{d === "Almoxarifado" ? " (edita todos)" : ""}
@@ -9990,6 +9999,7 @@ function SettingsView({ currentUser, users, setUsers }) {
                   <td style={{ minWidth: 150 }}>
                     {adm ? <span className="g-muted">Todos</span> : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Departamentos que esta pessoa pode lançar e editar na aba TM Master › Registro de Bordo.">
+                        <div><span style={lnk} onClick={() => setTodosDeptos(i, "bordoDepts", BORDO_DEPTS, true)}>Marcar todos</span><span style={lnk} onClick={() => setTodosDeptos(i, "bordoDepts", BORDO_DEPTS, false)}>Limpar</span></div>
                         {BORDO_DEPTS.map((d) => (
                           <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
                             <input type="checkbox" checked={deptsBordoUsuario(u).includes(d)} onChange={(e) => { const at = deptsBordoUsuario(u); updUser(i, "bordoDepts", e.target.checked ? [...at, d] : at.filter((x) => x !== d)); }} />{d}
@@ -10002,6 +10012,7 @@ function SettingsView({ currentUser, users, setUsers }) {
                   <td style={{ minWidth: 330 }}>
                     {adm ? <span className="g-muted">Todas + Configurações</span> : (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                        <div style={{ width: "100%" }}><span style={lnk} onClick={() => setTodasAbas(i, true)}>Marcar todas</span><span style={lnk} onClick={() => setTodasAbas(i, false)}>Limpar</span></div>
                         {PERM_TABS.map((t) => (
                           <label key={t.key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
                             <input type="checkbox" checked={tabs.includes(t.key)} onChange={() => toggleTab(i, t.key)} />{t.label}
