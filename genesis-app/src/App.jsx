@@ -6688,6 +6688,8 @@ const bordoDate = (v) => {
 const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().toUpperCase();
 const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
 
+/* registro "sem Job" (ação "Sem job" ou sem Job Type/Job No): exige justificativa e fica EM VALIDAÇÃO até o administrador validar */
+const bordoSemJob = (r) => !!r && !r.semAtv && (r.acao === "Sem job" || !(String(r.jobTipo || "").trim() && String(r.jobNo || "").trim()));
 const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHistory, tmFailures, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, active }) => {
   const hoje = todayISO();
   const admin = isAdminUser(currentUser);
@@ -6739,14 +6741,21 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
     return { ok: false, cat: "Job não encontrado", txt: "Job criado a bordo ainda não aparece no TM importado — conferir nº ou reimportar o Due" };
   };
 
+  const validarSemJob = (r, c) => {
+    if (!bordoSemJob(r)) return c;
+    if (!String(r.justificativa || "").trim()) return { ok: false, cat: "Falta justificativa", txt: "Registro sem Job: escreva a justificativa para ele entrar em validação" };
+    if (r.valStatus === "Validado") return { ok: true, cat: "Validado (sem job)", txt: `Sem job validado${r.valPor ? ` por ${r.valPor}` : ""}${r.valEm ? ` em ${fmt(r.valEm)}` : ""}${r.valNota ? ` — ${r.valNota}` : ""}` };
+    if (r.valStatus === "Recusado") return { ok: false, cat: "Recusado na validação", txt: `Justificativa recusada${r.valPor ? ` por ${r.valPor}` : ""}${r.valNota ? ` — ${r.valNota}` : ""}. Informe o job ou corrija a justificativa.` };
+    return { ok: false, cat: "Em validação", txt: "Registro sem Job aguardando validação do administrador" };
+  };
   const atrasoEnvio = (r) => (r.recebido && r.data ? Math.round((new Date(r.recebido + "T00:00:00") - new Date(r.data + "T00:00:00")) / 86400000) : null);
-  const rows = useMemo(() => tmBordo.filter((r) => (r.data || "") >= BORDO_INICIO && BORDO_DEPTS.includes(r.departamento)).map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : conferir(r), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
+  const rows = useMemo(() => tmBordo.filter((r) => (r.data || "") >= BORDO_INICIO && BORDO_DEPTS.includes(r.departamento)).map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : validarSemJob(r, conferir(r)), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
   const norm = (v) => String(v || "").toLowerCase();
   const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status) && (f.dept === "Todos" || r.departamento === f.dept)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
     && (!f.de || r.data >= f.de) && (!f.ate || r.data <= f.ate)
     && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.obs} ${r.fr || ""} ${r.departamento || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  const cats = ["Todos", "Confirmado no TM", "Não baixado no TM", "Divergente", "Job não encontrado", "Sem registro no TM", "Falta informar o job", "Sem atividade"];
+  const cats = ["Todos", "Em validação", "Falta justificativa", "Recusado na validação", "Validado (sem job)", "Confirmado no TM", "Não baixado no TM", "Divergente", "Job não encontrado", "Sem registro no TM", "Falta informar o job", "Sem atividade"];
   const iso = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const diasAtras = (n) => { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - n); return iso(d); };
 
@@ -6785,18 +6794,32 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   };
 
   /* ---------- edição (só as linhas dos departamentos da pessoa; administrador edita todas) ---------- */
-  const upd = (id, patch) => setTmBordo((arr) => arr.map((r) => (r.id === id && pode(r.departamento) ? { ...r, ...patch, upd: Date.now() } : r)));
+  const upd = (id, patch) => setTmBordo((arr) => arr.map((r) => {
+    if (!(r.id === id && pode(r.departamento))) return r;
+    const n = { ...r, ...patch, upd: Date.now() };
+    /* qualquer mudança do departamento em um registro sem Job devolve para "Em validação"; se o job foi informado, a validação deixa de valer */
+    if (bordoSemJob(n)) { if (!("valStatus" in patch)) { n.valStatus = "Em validação"; n.valPor = ""; n.valEm = ""; n.valNota = ""; } }
+    else { n.valStatus = ""; n.valPor = ""; n.valEm = ""; n.valNota = ""; n.justificativa = n.justificativa || ""; }
+    return n;
+  }));
+  const validar = (r, status) => {
+    if (!admin) return;
+    const nota = status === "Recusado" ? (window.prompt("Motivo da recusa (aparece para o departamento):", "") || "") : "";
+    if (status === "Recusado" && !nota.trim()) return;
+    setTmBordo((arr) => arr.map((x) => (x.id === r.id ? { ...x, valStatus: status, valPor: currentUser?.name || "Administrador", valEm: hoje, valNota: nota, upd: Date.now() } : x)));
+  };
   const rem = (r) => {
     if (!window.confirm(`Excluir o registro "${r.descricao || r.jobNo || r.id}"?`)) return;
     setTmBordo((arr) => arr.filter((x) => x.id !== r.id));
     setBordoDeleted((d) => [...new Set([...(d || []), r.id])]);
   };
-  const rascunho = () => ({ data: hoje, departamento: deptsEditaveis.length === 1 ? deptsEditaveis[0] : "", tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", por: currentUser?.name || "", obs: "" });
+  const rascunho = () => ({ data: hoje, departamento: deptsEditaveis.length === 1 ? deptsEditaveis[0] : "", tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", por: currentUser?.name || "", obs: "", justificativa: "" });
   const salvarNovo = (manter) => {
     if (!novo.departamento) { setMsg("Escolha o departamento."); return; }
     if (!novo.data || novo.data < BORDO_INICIO) { setMsg("O Registro de Bordo vale a partir de " + fmtDataCompleta(BORDO_INICIO) + "."); return; }
     if (!String(novo.descricao).trim()) { setMsg("Descreva a manutenção realizada."); return; }
-    const r = { ...novo, id: uid("BRD"), origem: "Portal", email: "", recebido: hoje, upd: Date.now() };
+    if (bordoSemJob(novo) && !String(novo.justificativa || "").trim()) { setMsg("Registro sem Job: a justificativa é obrigatória."); return; }
+    const r = { ...novo, ...(bordoSemJob(novo) ? { valStatus: "Em validação" } : { justificativa: "" }), id: uid("BRD"), origem: "Portal", email: "", recebido: hoje, upd: Date.now() };
     setTmBordo((arr) => [r, ...arr]);
     setNovo(manter ? { ...rascunho(), departamento: novo.departamento, data: novo.data, por: novo.por } : null);
     setMsg("Registro adicionado."); setTimeout(() => setMsg(""), 4000);
@@ -6808,7 +6831,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
 
   React.useEffect(() => {
     if (!active || !setExportXlsxFn || !setReportFn) return;
-    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Departamento: r.departamento || "", Tipo: r.semAtv ? "Sem atividade" : r.tipo, Manutenção: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Ação no TM": r.semAtv ? "" : r.acao, "Reportado por": r.por, Observação: r.obs, "Lançado em": r.recebido ? fmt(r.recebido) : "", "Dias até o lançamento": r._a ?? "", Conferência: r._c.cat, Detalhe: r._c.txt }));
+    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Departamento: r.departamento || "", Tipo: r.semAtv ? "Sem atividade" : r.tipo, Manutenção: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Ação no TM": r.semAtv ? "" : r.acao, "Reportado por": r.por, "Justificativa (sem job)": r.justificativa || "", "Validação": r.valStatus || "", Observação: r.obs, "Lançado em": r.recebido ? fmt(r.recebido) : "", "Dias até o lançamento": r._a ?? "", Conferência: r._c.cat, Detalhe: r._c.txt }));
     const matriz = () => obrig.map((d) => ({ Departamento: d, ...Object.fromEntries(dias7.map((x) => [fmt(x), feitoEm(d, x) ? `${feitoEm(d, x)} registro(s)` : "SEM REGISTRO"])) }));
     setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem registros" }]), "Registro de Bordo"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(matriz()), "Controle diário"); XLSX.writeFile(wb, `genesis-registro-de-bordo-${todayISO()}.xlsx`); });
     setReportFn(() => () => {
@@ -6824,7 +6847,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
     });
   }, [active, filtered, kpi, tmBordo, regObrig]);
 
-  const cor = (c) => (c === "Confirmado no TM" || c === "Sem atividade" ? "d1" : c === "Divergente" || c === "Falta informar o job" ? "d2" : "d3");
+  const cor = (c) => (c === "Confirmado no TM" || c === "Sem atividade" || c === "Validado (sem job)" ? "d1" : c === "Divergente" || c === "Falta informar o job" || c === "Em validação" ? "d2" : "d3");
   const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
   const sel = { padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)" };
   const ro = (v) => <span style={{ fontSize: 12 }}>{v === "" || v == null ? "—" : String(v)}</span>;
@@ -6913,6 +6936,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
             {campo("Job No", nv("jobNo"))}
             {campo("Failure Report", nv("fr", "text", { onChange: (e) => setNovo((p) => ({ ...p, fr: e.target.value.toUpperCase() })), placeholder: "FAIL-GEN-2026-xxxx (corretivas)" }))}
             {campo("Reportado por", nv("por"))}
+            {bordoSemJob(novo) && campo("Justificativa (sem Job) * — o registro entra em validação", <textarea className="g-edit-wrap" rows={2} value={novo.justificativa || ""} placeholder="Por que não há job? (ex.: serviço sem job cadastrado, aguardando criação…)" onChange={(e) => setNovo((p) => ({ ...p, justificativa: e.target.value }))} style={{ borderColor: String(novo.justificativa || "").trim() ? undefined : "var(--crit)" }} />, true)}
             {campo("Observação", <textarea className="g-edit-wrap" rows={2} value={novo.obs} onChange={(e) => setNovo((p) => ({ ...p, obs: e.target.value }))} />, true)}
           </div>
           <div className="g-flex" style={{ gap: 8, marginTop: 10 }}>
@@ -6934,6 +6958,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
       </div>
 
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+        {bigKpi("Sem job em validação", rows.filter((r) => r._c.cat === "Em validação" || r._c.cat === "Falta justificativa").length, rows.some((r) => r._c.cat === "Em validação" || r._c.cat === "Falta justificativa") ? "var(--warn)" : "var(--ok)", AlertTriangle)}
         {bigKpi("Departamentos sem registro hoje", pendHoje.length, pendHoje.length ? "var(--crit)" : "var(--ok)", AlertTriangle)}
         {bigKpi("Dias em atraso (em aberto)", totalFaltas, totalFaltas ? "var(--crit)" : "var(--ok)", Clock)}
         {bigKpi("Registros", kpi.total, "var(--teal)", ClipboardList)}
@@ -6956,9 +6981,9 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
           <table className="g-table tbl-modern">
-            <thead><tr>{th("Data", 118)}{th("Departamento", 130)}{th("Tipo", 112)}{th("Manutenção", 240)}{th("Componente", 150)}{th("Job Type", 70)}{th("Job No", 70)}{th("Failure Report", 190)}{th("Ação no TM", 130)}{th("Reportado por", 120)}{th("Observação", 180)}{th("Lançado em", 110)}{th("Conferência no TM", 260)}<th></th></tr></thead>
+            <thead><tr>{th("Data", 118)}{th("Departamento", 130)}{th("Tipo", 112)}{th("Manutenção", 240)}{th("Componente", 150)}{th("Job Type", 70)}{th("Job No", 70)}{th("Failure Report", 190)}{th("Ação no TM", 130)}{th("Justificativa / validação", 230)}{th("Reportado por", 120)}{th("Observação", 180)}{th("Lançado em", 110)}{th("Conferência no TM", 260)}<th></th></tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={14} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Use “Novo registro” para lançar o primeiro."}</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={15} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Use “Novo registro” para lançar o primeiro."}</td></tr>}
               {filtered.map((r) => {
                 const ok = pode(r.departamento);
                 const E = (k, el, ver) => (ok ? el : ro(ver !== undefined ? ver : r[k]));
@@ -6977,6 +7002,16 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
                       {r._f.nos.length === 0 && !r.semAtv && r.tipo === "Corretiva" && frIdx.has && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--crit)" }}>Corretiva sem Failure Report ligado</div>}
                     </td>
                     <td>{r.semAtv ? ro("") : E("acao", <select value={r.acao} onChange={(e) => upd(r.id, { acao: e.target.value })} style={inp}>{BORDO_ACOES.map((o) => <option key={o}>{o}</option>)}</select>)}</td>
+                    <td style={{ whiteSpace: "normal" }}>
+                      {bordoSemJob(r) ? (<>
+                        {E("justificativa", <input value={r.justificativa || ""} onChange={(e) => upd(r.id, { justificativa: e.target.value })} placeholder="Justificativa (obrigatória)" style={{ ...inp, borderColor: String(r.justificativa || "").trim() ? undefined : "var(--crit)" }} />)}
+                        <div style={{ fontSize: 10.5, marginTop: 3, color: r.valStatus === "Validado" ? "var(--ok)" : r.valStatus === "Recusado" ? "var(--crit)" : "var(--warn)", fontWeight: 700 }}>{r.valStatus || "Em validação"}{r.valPor ? ` · ${r.valPor}` : ""}</div>
+                        {admin && String(r.justificativa || "").trim() && <div className="g-flex g-keep" style={{ gap: 4, marginTop: 3 }}>
+                          {r.valStatus !== "Validado" && <button className="g-btn primary g-keep" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => validar(r, "Validado")}>Validar</button>}
+                          {r.valStatus !== "Recusado" && <button className="g-btn g-keep" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => validar(r, "Recusado")}>Recusar</button>}
+                        </div>}
+                      </>) : <span className="g-muted" style={{ fontSize: 11 }}>—</span>}
+                    </td>
                     <td>{E("por", <input value={r.por} onChange={(e) => upd(r.id, { por: e.target.value })} style={inp} />)}</td>
                     <td>{E("obs", <input value={r.obs} onChange={(e) => upd(r.id, { obs: e.target.value })} style={inp} />)}</td>
                     <td style={{ whiteSpace: "normal", fontFamily: "var(--mono)", fontSize: 12 }}>{r.recebido ? fmt(r.recebido) : "—"}{r._a !== null && r._a > 1 && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>lançado +{r._a} dias depois</div>}</td>
