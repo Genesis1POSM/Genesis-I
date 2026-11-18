@@ -5,6 +5,11 @@
 export const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
 export const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Elétrica", "OIM", "Subsea", "Almoxarifado"];
 
+/* departamento "canônico": ignora acento, maiúscula/minúscula e espaços (ex.: "MAQUINAS", " maquinas " → "Máquinas") */
+const semAcento = (x) => String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+export const canonDept = (d) => MAT_DEPTS.find((x) => semAcento(x) === semAcento(d)) || BORDO_DEPTS.find((x) => semAcento(x) === semAcento(d)) || d;
+export const canonMat = (rows) => (rows || []).map((r) => { const c = canonDept(r && r.departamento); return r && c !== r.departamento ? { ...r, departamento: c } : r; });
+
 export function acharUsuario(users, nome, senha) {
   if (!nome || !senha) return null;
   const n = String(nome).trim().toLowerCase();
@@ -14,8 +19,8 @@ const ehAdmin = (u) => !!u && (u.admin === true || (u.admin === undefined && Str
 export function podeEditarDepto(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
-  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
-  return ds.includes("Almoxarifado") || ds.includes(depto);
+  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).map(canonDept).filter((d) => MAT_DEPTS.includes(d));
+  return ds.includes("Almoxarifado") || ds.includes(canonDept(depto));
 }
 
 export function mesclarLista(atual, atualDel, recebido, recebidoDel, pode) {
@@ -34,7 +39,10 @@ export function mesclarLista(atual, atualDel, recebido, recebidoDel, pode) {
   return { rows: [...cur.values()], deleted: [...del] };
 }
 
-export const mesclarMateriais = (a, ad, r, rd, u) => mesclarLista(a, ad, r, rd, (d) => podeEditarDepto(u, d));
+export const mesclarMateriais = (a, ad, r, rd, u) => {
+  const res = mesclarLista(canonMat(a), ad, canonMat(r), rd, (d) => podeEditarDepto(u, d));
+  return { rows: canonMat(res.rows), deleted: res.deleted };
+};
 /* Registro de Bordo: administrador edita tudo; demais, só os departamentos atribuídos (Almoxarifado é um departamento comum aqui) */
 const normB = (v) => String(v || "").trim().toLowerCase();
 export const donoBordo = (r, u) => !!(r && u) && (r.criadoPor ? r.criadoPor === u.username : !!normB(r.por) && (normB(r.por) === normB(u.name) || normB(r.por) === normB(u.username)));
@@ -42,7 +50,7 @@ export function podeEditarBordo(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
   const base = Array.isArray(u.bordoDepts) ? u.bordoDepts : (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []);
-  return base.filter((d) => BORDO_DEPTS.includes(d)).includes(depto);
+  return base.map(canonDept).filter((d) => BORDO_DEPTS.includes(d)).includes(canonDept(depto));
 }
 /* validação de registro sem Job: só o administrador pode marcar "Validado"/"Recusado"; os demais só deixam "Em validação" */
 const VAL = ["valStatus", "valPor", "valEm", "valNota"];
