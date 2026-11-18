@@ -6698,6 +6698,7 @@ const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLo
 /* registro "sem Job" (ação no TM = "Sem job"): exige justificativa e fica EM VALIDAÇÃO até o administrador validar */
 const bordoSemJob = (r) => !!r && !r.semAtv && r.acao === "Sem job";
 const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHistory, tmFailures, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, active }) => {
+  const [sub, setSub] = useState("preench");
   const hoje = todayISO();
   const admin = isAdminUser(currentUser);
   const pode = (d) => podeEditarBordo(currentUser, d);
@@ -6867,6 +6868,11 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
 
   return (
     <>
+      <div className="g-mode-toggle" style={{ marginBottom: 14, width: "fit-content" }}>
+        <button className={sub === "preench" ? "active" : ""} onClick={() => setSub("preench")}>Preenchimento</button>
+        <button className={sub === "dash" ? "active" : ""} onClick={() => setSub("dash")}>Dashboard</button>
+      </div>
+      {sub === "preench" && <>
       <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
         <Lock size={14} style={{ marginTop: 1 }} />
         {admin ? "Administrador: você edita os registros de todos os departamentos."
@@ -6956,6 +6962,20 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         </div>
       )}
 
+      </>}
+      {sub === "preench" && <>
+      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
+        <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
+        <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...BORDO_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>De</label><input type="date" min={BORDO_INICIO} value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
+        <div className="g-field"><label>Até</label><input type="date" value={f.ate} onChange={(e) => setF((p) => ({ ...p, ate: e.target.value }))} /></div>
+      </div>
+
+      </>}
+      {sub === "dash" && <>
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
         <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...BORDO_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
@@ -6986,6 +7006,8 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         </div>
       )}
 
+      </>}
+      {sub === "preench" && (
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
@@ -7037,6 +7059,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
           <b> Criação de job</b> é confirmada quando o job aparece no Due ou no History. Para a conferência valer, mantenha o Due e o History do TM Master sempre atualizados.
         </div>
       </div>
+      )}
     </>
   );
 };
@@ -7604,7 +7627,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
         const periodo = hasActiveFiltroMetricas
           ? `Período: ${metricasFiltro.mes === "Todos" ? "todos os meses" : MONTH_NAMES[Number(metricasFiltro.mes) - 1]} / ${metricasFiltro.ano === "Todos" ? "todos os anos" : metricasFiltro.ano}`
           : "Todos os períodos";
-        let y = pdfHeader(doc, "TM Master — Métricas", `${periodo} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+        let y = pdfHeader(doc, "TM Master — Dashboard", `${periodo} · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
         y = pdfKpis(doc, y, [
           { label: "Total de Jobs", value: totalDue },
           { label: "Vencidas", value: vencidas.length },
@@ -7702,7 +7725,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
         <button className={tmSubTab === "history" ? "active" : ""} onClick={() => setTmSubTab("history")}>History (Fechados)</button>
         <button className={tmSubTab === "falhas" ? "active" : ""} onClick={() => setTmSubTab("falhas")}>Failure Reports</button>
         <button className={tmSubTab === "bordo" ? "active" : ""} onClick={() => setTmSubTab("bordo")}>Registro de Bordo</button>
-        <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Métricas</button>
+        <button className={tmSubTab === "metricas" ? "active" : ""} onClick={() => setTmSubTab("metricas")}>Dashboard</button>
       </div>
 
       <ResumoEmailTm tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} />
