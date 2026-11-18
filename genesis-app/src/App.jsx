@@ -1600,7 +1600,7 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "" } : {}) },
         body: JSON.stringify({
-          data: roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
+          data: roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { ...(isAdminUser(currentUser) ? { users } : {}), workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
         }),
       }).then((r) => r.json()).then((j) => {
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
@@ -1615,7 +1615,7 @@ export default function Root() {
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
+  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
 
   /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
   React.useEffect(() => {
