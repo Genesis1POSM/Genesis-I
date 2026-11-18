@@ -2923,9 +2923,9 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
           {tab !== "tmmaster" && tab !== "materials" && !(tab === "manutencao" && manSub !== "services") && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
-          <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
-          <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
-            title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
+          {tab !== "materials" && <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>}
+          {tab !== "materials" && <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
+            title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>}
           {tab === "manutencao" && manSub === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
           {tab === "manutencao" && manSub === "planejamento" && planSubTab === "mapeados" && <button className="g-btn primary" onClick={addPlanningItem}><Plus size={14} />Novo mapeamento</button>}
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
@@ -8834,21 +8834,15 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
     valor: abertas.reduce((s, r) => s + (Number(r.valor) || 0), 0),
   };
 
-  React.useEffect(() => {
-    if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => exportSheets("genesis-materiais", [["Materiais", rowsToSheet(filtered, MAT2_COLS)]]));
-  }, [filtered, setExportXlsxFn]);
-  React.useEffect(() => {
-    if (!setReportFn) return;
-    setReportFn(() => () => {
-      const doc = new jsPDF({ orientation: "landscape" });
-      let y = pdfHeader(doc, "Relatório de Materiais", `${filtered.length} requisição(ões) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-      y = pdfKpis(doc, y, [{ label: "Total", value: kpi.total }, { label: "Em aberto", value: kpi.abertas }, { label: "Aguardando entrega", value: kpi.aguard }, { label: "Em compras", value: kpi.compras }, { label: "Recebidos", value: kpi.receb }]);
-      pdfTable(doc, y, ["Depto.", "TM Master", "Prior.", "SAP", "Descrição", "Qtd", "Status", "Processo", "PO", "ETA"],
-        filtered.map((r) => [r.departamento, r.tmMaster || "—", r.priority, r.sap || "—", r.descricao, r.quantidade, r.status, r.statusProcesso, r.po || "—", r.eta ? fmtDate(r.eta) : "—"]));
-      pdfSave(doc, "relatorio-materiais");
-    });
-  }, [filtered, kpi.total, setReportFn]);
+  const gerarRelatorio = () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    let y = pdfHeader(doc, "Relatório de Materiais", `${filtered.length} requisição(ões) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+    y = pdfKpis(doc, y, [{ label: "Total", value: kpi.total }, { label: "Em aberto", value: kpi.abertas }, { label: "Aguardando entrega", value: kpi.aguard }, { label: "Em compras", value: kpi.compras }, { label: "Recebidos", value: kpi.receb }]);
+    pdfTable(doc, y, ["Depto.", "TM Master", "Prior.", "SAP", "Descrição", "Qtd", "Status", "Processo", "PO", "ETA"],
+      filtered.map((r) => [r.departamento, r.tmMaster || "—", r.priority, r.sap || "—", r.descricao, r.quantidade, r.status, r.statusProcesso, r.po || "—", r.eta ? fmtDate(r.eta) : "—"]));
+    pdfSave(doc, "relatorio-materiais");
+  };
+  React.useEffect(() => { setExportXlsxFn && setExportXlsxFn(null); setReportFn && setReportFn(null); }, []);
 
   const sel = { padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)" };
   const num = (v) => (v === "" || v == null ? "" : v);
@@ -8894,6 +8888,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
           {podeCriar && <><input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
             <button className="g-btn" onClick={() => fileRef.current?.click()} title="Importa várias requisições de uma planilha Excel (só as do seu departamento)"><Upload size={14} />Importar Excel</button>
             <button className="g-btn" onClick={baixarModelo} title="Baixa a planilha modelo com as colunas e as listas permitidas"><Download size={14} />Baixar modelo</button></>}
+          <button className="g-btn g-keep" onClick={gerarRelatorio} title="Gera o relatório em PDF das requisições do filtro atual"><FileText size={14} />Exportar relatório</button>
           <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar TM Master, SAP, descrição, PO, RC, OE..." style={{ ...sel, minWidth: 280, padding: "7px 10px" }} />
           <select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))} style={sel}>{["Todos", ...MAT_DEPTS].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os departamentos" : x}</option>)}</select>
           <select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))} style={sel}>{["Todos", ...MAT_STATUS2].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os status" : x}</option>)}</select>
