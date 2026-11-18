@@ -88,6 +88,16 @@ app.get("/api/materiais", async (req, res) => {
   }
 });
 
+app.get("/api/usuarios", async (req, res) => {
+  try {
+    const d = (await getState()) || {};
+    res.json({ users: Array.isArray(d.users) ? d.users : [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Falha ao carregar usuários." });
+  }
+});
+
 app.get("/api/bordo", async (req, res) => {
   try {
     const d = (await getState()) || {};
