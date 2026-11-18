@@ -42,4 +42,19 @@ export function podeEditarBordo(u, depto) {
   const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d) || d === "Elétrica");
   return ds.includes(depto);
 }
-export const mesclarBordo = (a, ad, r, rd, u) => mesclarLista(a, ad, r, rd, (d) => podeEditarBordo(u, d));
+/* validação de registro sem Job: só o administrador pode marcar "Validado"/"Recusado"; os demais só deixam "Em validação" */
+const VAL = ["valStatus", "valPor", "valEm", "valNota"];
+export function mesclarBordo(a, ad, r, rd, u) {
+  const adm = ehAdmin(u);
+  const antes = new Map((a || []).map((x) => [x.id, x]));
+  const rec = (r || []).map((x) => {
+    if (adm || !x) return x;
+    const e = antes.get(x.id);
+    if (x.valStatus === "Validado" || x.valStatus === "Recusado") {
+      if (e && e.valStatus === x.valStatus) { const y = { ...x }; for (const k of VAL) y[k] = e[k]; return y; }
+      const y = { ...x, valStatus: "Em validação" }; for (const k of VAL.slice(1)) y[k] = ""; return y;
+    }
+    return x;
+  });
+  return mesclarLista(a, ad, rec, rd, (d) => podeEditarBordo(u, d));
+}
