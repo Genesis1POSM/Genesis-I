@@ -351,6 +351,11 @@ const Theme = () => (
     /* ---------- Tables ---------- */
     .g-table { width: 100%; border-collapse: collapse; }
     .g-table-wrap { overflow-x: auto; }
+    .g-mat-scroll { overflow: auto; max-height: calc(100vh - 230px); scrollbar-width: auto; }
+    .g-mat-scroll::-webkit-scrollbar { height: 14px; width: 14px; }
+    .g-mat-scroll::-webkit-scrollbar-thumb { background: #8a94a6; border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+    .g-mat-scroll::-webkit-scrollbar-track { background: rgba(128,128,128,.15); }
+    .g-mat-scroll thead th { position: sticky; top: 0; z-index: 2; }
     .g-edit-wrap {
       background: transparent; border: 1px solid transparent; color: var(--text); font-family: inherit;
       font-size: 12px; padding: 5px 6px; border-radius: 3px; width: 100%; min-width: 0;
@@ -3024,7 +3029,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
         {tab === "manutencao" && (
           <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["docagem", "Itens DNV (Docagem)"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
+            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
               <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
             ))}
           </div>
@@ -5067,7 +5072,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
           <button className="g-btn primary g-keep" onClick={adicionar}><Plus size={14} />Adicionar</button>
         </div>
         {msg && <div className="g-muted" style={{ fontSize: 12, marginTop: 6 }}>{msg}</div>}
-        <div className="g-muted" style={{ fontSize: 11, marginTop: 6 }}>Itens que já existem em “Mapeados para Execução” e “Itens DNV” aparecem aqui automaticamente — esta é a lista única de tudo o que está mapeado.</div>
+        <div className="g-muted" style={{ fontSize: 11, marginTop: 6 }}>Todos os itens mapeados (inclusive os de Mapeados para Execução e DNV já cadastrados) aparecem aqui automaticamente — esta é a lista única de tudo o que está mapeado.</div>
       </div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
         {bigKpi("Mapeado em aberto", abertos.length, "var(--teal)", ClipboardList)}
@@ -5433,9 +5438,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   return (
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content", display: soDocagem ? "none" : undefined }}>
-        <button className={planSubTab === "funil" ? "active" : ""} onClick={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("funil"); }}>Funil: Mapear → Analisar → Programar</button>
-        <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
-        <button className={planSubTab === "acao" ? "active" : ""} onClick={() => setPlanSubTab("acao")}>Plano de Ação com Bordo</button>
+        <button className={planSubTab === "funil" ? "active" : ""} onClick={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("funil"); }}>Mapear → Analisar → Programar</button>
         <button className={planSubTab === "escopo" ? "active" : ""} onClick={() => setPlanSubTab("escopo")}>Análise de Escopo</button>
         <button className={planSubTab === "portcall" ? "active" : ""} onClick={() => setPlanSubTab("portcall")}>Solicitação Portcall</button>
       </div>
@@ -5473,7 +5476,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
           <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
             Cadastre aqui toda manutenção que você precisa mapear — mesmo sem saber ainda quando ela vai acontecer.
             O item só vira Serviço (aba Serviços e Port Call) quando for <strong>confirmado no Cronograma</strong>,
-            na aba “Funil: Mapear → Analisar → Programar”. A Data de Execução abaixo é apenas uma previsão informativa.
+            na aba “Mapear → Analisar → Programar”. A Data de Execução abaixo é apenas uma previsão informativa.
           </div>
 
           <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
@@ -8997,7 +9000,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
 
       <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
         {navPag}
-        <div className="g-table-wrap">
+        <div className="g-table-wrap g-mat-scroll">
           <table className="g-table tbl-modern g-editavel" style={{ minWidth: 2700 }}>
             <thead><tr>
               {th("TM Master", 110)}{th("Departamento", 130)}{th("Prioridade", 120)}{th("SAP", 100)}{th("Descrição", 240)}{th("Qtd", 70)}{th("Justificativa", 240)}{th("Status", 210)}{th("Status do Processo", 120)}{th("OE", 90)}{th("Data da Solicitação", 130)}{th("Reserva", 100)}{th("RC", 100)}{th("PO", 110)}{th("Item da PO", 80)}{th("Valor Total", 110)}{th("ETA", 130)}{th("Data de Recebimento", 130)}{th("Observação", 260)}<th></th>
