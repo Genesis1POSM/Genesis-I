@@ -731,7 +731,7 @@ const mesclarListaCliente = (local, localDel, srv, srvDel, pode) => {
   return [...m.values()];
 };
 const mesclarMatCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d) => podeEditarMat(u, d));
-const mesclarBordoCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d, row) => podeEditarBordo(u, d) || !!(row && row.criadoPor && u && row.criadoPor === u.username));
+const mesclarBordoCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d, row) => podeEditarBordo(u, d) || bordoDono(row, u));
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
 const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
 const PLAN_STATUS = ["A Executar", "Em Andamento", "Concluído", "Cancelado"];
@@ -7050,6 +7050,9 @@ const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().t
 const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
 
 /* registro "sem Job" (ação no TM = "Sem job"): exige justificativa e fica EM VALIDAÇÃO até o administrador validar */
+/* "dono" do registro: quem lançou (criadoPor); em registros antigos, sem esse dado, vale o nome em "Reportado por" */
+const bordoMin = (v) => String(v || "").trim().toLowerCase();
+const bordoDono = (r, u) => !!(r && u) && (r.criadoPor ? r.criadoPor === u.username : !!bordoMin(r.por) && (bordoMin(r.por) === bordoMin(u.name) || bordoMin(r.por) === bordoMin(u.username)));
 const bordoSemJob = (r) => !!r && !r.semAtv && r.acao === "Sem job";
 const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHistory, tmFailures, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, active }) => {
   const [sub, setSub] = useState("preench");
@@ -7057,13 +7060,13 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const admin = isAdminUser(currentUser);
   const pode = (d) => podeEditarBordo(currentUser, d);
   /* quem lançou o registro continua podendo editá-lo (além de quem tem o departamento liberado) */
-  const podeRow = (r) => pode(r.departamento) || !!(r.criadoPor && currentUser?.username && r.criadoPor === currentUser.username);
+  const podeRow = (r) => pode(r.departamento) || bordoDono(r, currentUser);
   const deptsEditaveis = admin ? BORDO_DEPTS : deptsBordoUsuario(currentUser);
   const podeCriar = deptsEditaveis.length > 0;
   const [msg, setMsg] = useState("");
   const [novo, setNovo] = useState(null);
   const [emailBordo, setEmailBordo] = useState(() => { try { return localStorage.getItem("genesis_email_bordo") || ""; } catch (e) { return ""; } });
-  const [f, setF] = useState({ busca: "", tipo: "Todos", status: "Todos", fr: "Todos", dept: "Todos", de: "", ate: "" });
+  const [f, setF] = useState({ busca: "", tipo: "Todos", status: "Todos", fr: "Todos", dept: "Todos", de: "", ate: "", meus: false });
   const fmt = (iso) => (iso ? fmtDataCompleta(iso) : "—");
 
   /* índices de conferência contra o TM Master */
@@ -7115,7 +7118,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const atrasoEnvio = (r) => (r.recebido && r.data ? Math.round((new Date(r.recebido + "T00:00:00") - new Date(r.data + "T00:00:00")) / 86400000) : null);
   const rows = useMemo(() => tmBordo.filter((r) => (r.data || "") >= BORDO_INICIO && BORDO_DEPTS.includes(r.departamento)).map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : validarSemJob(r, conferir(r)), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
   const norm = (v) => String(v || "").toLowerCase();
-  const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status) && (f.dept === "Todos" || r.departamento === f.dept)
+  const filtered = rows.filter((r) => (!f.meus || podeRow(r)) && (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status) && (f.dept === "Todos" || r.departamento === f.dept)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
     && (!f.de || r.data >= f.de) && (!f.ate || r.data <= f.ate)
     && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.obs} ${r.fr || ""} ${r.departamento || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
@@ -7321,6 +7324,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
         <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...BORDO_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>&nbsp;</label><label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={!!f.meus} onChange={(e) => setF((p) => ({ ...p, meus: e.target.checked }))} />Só os que posso editar</label></div>
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
@@ -7333,6 +7337,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
         <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...BORDO_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>&nbsp;</label><label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={!!f.meus} onChange={(e) => setF((p) => ({ ...p, meus: e.target.checked }))} />Só os que posso editar</label></div>
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
@@ -7373,7 +7378,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
                 const ok = podeRow(r);
                 const E = (k, el, ver) => (ok ? el : ro(ver !== undefined ? ver : r[k]));
                 return (
-                  <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
+                  <tr className="g-row tbl-row" key={r.id} title={ok ? undefined : "Somente leitura: você edita registros dos seus departamentos liberados ou que você mesmo lançou."} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
                     <td>{E("data", <input type="date" min={BORDO_INICIO} value={r.data} onChange={(e) => e.target.value >= BORDO_INICIO && upd(r.id, { data: e.target.value })} style={inp} />, fmt(r.data))}</td>
                     <td>{ok && !r.semAtv ? <select value={r.departamento || ""} onChange={(e) => upd(r.id, { departamento: e.target.value })} style={inp}>{!r.departamento && <option value="">—</option>}{(r.departamento && !deptsEditaveis.includes(r.departamento) ? [r.departamento, ...deptsEditaveis] : deptsEditaveis).map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">{r.departamento || "sem depto."}</span>}</td>
                     <td>{r.semAtv ? <span className="tbl-chip">Sem atividade</span> : E("tipo", <select value={r.tipo} onChange={(e) => upd(r.id, { tipo: e.target.value })} style={inp}>{BORDO_TIPOS.map((o) => <option key={o}>{o}</option>)}</select>)}</td>
