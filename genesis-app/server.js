@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
+import { criarServicoDeAlertas } from "./alerts.js";
+import { acharUsuario, mesclarMateriais } from "./matmerge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -77,13 +79,51 @@ app.get("/api/state", async (req, res) => {
   }
 });
 
+app.get("/api/materiais", async (req, res) => {
+  try {
+    const d = (await getState()) || {};
+    res.json({ matReqs: d.matReqs || [], matDeleted: d.matDeleted || [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Falha ao carregar materiais." });
+  }
+});
+
 app.put("/api/state", async (req, res) => {
   try {
-    await setState(req.body.data);
-    res.json({ ok: true });
+    const data = { ...(req.body.data || {}) };
+    let extra = {};
+    if (Array.isArray(data.matReqs)) {
+      /* Materiais: quem salva é identificado pelo usuário/senha enviados nos cabeçalhos e só consegue
+         alterar as linhas do seu departamento (Almoxarifado e administrador: todas) */
+      const atual = (await getState()) || {};
+      const usuario = acharUsuario(atual.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
+      const r = mesclarMateriais(atual.matReqs, atual.matDeleted, data.matReqs, data.matDeleted, usuario);
+      data.matReqs = r.rows; data.matDeleted = r.deleted;
+      extra = { matReqs: r.rows, matDeleted: r.deleted };
+    }
+    await setState(data);
+    res.json({ ok: true, ...extra });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Falha ao salvar o estado." });
+  }
+});
+
+/* ============================================================
+   ALERTA POR E-MAIL (jobs a vencer) — ver alerts.js
+   /api/alerts/run?token=SEU_ALERT_TOKEN          → roda a verificação do dia (serve para um "ping" externo)
+   /api/alerts/run?token=SEU_ALERT_TOKEN&force=1  → envia agora (teste), ignorando "já enviado hoje" e fim de semana
+   ============================================================ */
+const alertas = criarServicoDeAlertas({ getState, setState });
+alertas.iniciar();
+app.get("/api/alerts/run", async (req, res) => {
+  if (!process.env.ALERT_TOKEN || req.query.token !== process.env.ALERT_TOKEN) return res.status(403).json({ error: "Token inválido." });
+  try {
+    res.json(await alertas.executar({ forcar: req.query.force === "1" }));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
