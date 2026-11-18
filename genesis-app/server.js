@@ -140,7 +140,7 @@ app.put("/api/state", async (req, res) => {
          (com a lista desatualizada) não pode mais sobrescrever usuários e permissões recém-criados */
       const ehAdm0 = !!u0 && (u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"));
       /* usuários agora são gravados só por PUT /api/usuarios; aqui só entram se o servidor ainda não tiver nenhum (primeira carga) */
-      if ("users" in data && Array.isArray(atualU.users) && atualU.users.length) delete data.users;
+      if ("users" in data && Array.isArray(atualU.users) && atualU.users.length && !ehAdm0) delete data.users;
       if (u0 && u0.role === "viewer" && !(u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"))) {
         for (const k of Object.keys(data)) if (!["matReqs", "matDeleted", "tmBordo", "bordoDeleted"].includes(k)) delete data[k];
       }
