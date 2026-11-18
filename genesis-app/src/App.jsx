@@ -7835,6 +7835,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
     tmHistory.forEach((h) => {
       if (!h.dateDone || !isPostergada(h)) return;
       if (metricasFiltro.ano !== "Todos" && h.dateDone.slice(0, 4) !== String(metricasFiltro.ano)) return;
+      if (metricasFiltro.mes !== "Todos" && Number(h.dateDone.slice(5, 7)) !== Number(metricasFiltro.mes)) return;
       const k = ymOf(h.dateDone); const pk = planKey(h);
       const r = (map[k] = map[k] || { total: 0, realizados: 0, emAberto: 0, vencidos: 0 });
       r.total++;
@@ -7845,7 +7846,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
     const rows = Object.keys(map).sort().map((k) => ({ mes: ymLabel(k), mesKey: k, ...map[k] }));
     const sm = (f) => rows.reduce((a, r) => a + r[f], 0);
     return { rows, total: sm("total"), realizados: sm("realizados"), emAberto: sm("emAberto"), vencidos: sm("vencidos") };
-  }, [tmHistory, tmDue, metricasFiltro.ano, hojeLocal]);
+  }, [tmHistory, tmDue, metricasFiltro.ano, metricasFiltro.mes, hojeLocal]);
   /* backlog de jobs overdue (situação de hoje): em aberto no Due com vencimento passado, por mês de vencimento */
   const backlogOverdueMes = useMemo(() => {
     const m = {};
