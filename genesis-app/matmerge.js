@@ -36,6 +36,8 @@ export function mesclarLista(atual, atualDel, recebido, recebidoDel, pode) {
 
 export const mesclarMateriais = (a, ad, r, rd, u) => mesclarLista(a, ad, r, rd, (d) => podeEditarDepto(u, d));
 /* Registro de Bordo: administrador edita tudo; demais, só os departamentos atribuídos (Almoxarifado é um departamento comum aqui) */
+const normB = (v) => String(v || "").trim().toLowerCase();
+export const donoBordo = (r, u) => !!(r && u) && (r.criadoPor ? r.criadoPor === u.username : !!normB(r.por) && (normB(r.por) === normB(u.name) || normB(r.por) === normB(u.username)));
 export function podeEditarBordo(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
@@ -58,5 +60,5 @@ export function mesclarBordo(a, ad, r, rd, u) {
     }
     return x;
   });
-  return mesclarLista(a, ad, rec, rd, (d, row) => podeEditarBordo(u, d) || !!(row && row.criadoPor && u && row.criadoPor === u.username));
+  return mesclarLista(a, ad, rec, rd, (d, row) => podeEditarBordo(u, d) || donoBordo(row, u));
 }
