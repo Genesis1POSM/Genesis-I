@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { criarServicoDeAlertas } from "./alerts.js";
 import { acharUsuario, mesclarMateriais } from "./matmerge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -107,23 +106,6 @@ app.put("/api/state", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Falha ao salvar o estado." });
-  }
-});
-
-/* ============================================================
-   ALERTA POR E-MAIL (jobs a vencer) — ver alerts.js
-   /api/alerts/run?token=SEU_ALERT_TOKEN          → roda a verificação do dia (serve para um "ping" externo)
-   /api/alerts/run?token=SEU_ALERT_TOKEN&force=1  → envia agora (teste), ignorando "já enviado hoje" e fim de semana
-   ============================================================ */
-const alertas = criarServicoDeAlertas({ getState, setState });
-alertas.iniciar();
-app.get("/api/alerts/run", async (req, res) => {
-  if (!process.env.ALERT_TOKEN || req.query.token !== process.env.ALERT_TOKEN) return res.status(403).json({ error: "Token inválido." });
-  try {
-    res.json(await alertas.executar({ forcar: req.query.force === "1" }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
   }
 });
 
