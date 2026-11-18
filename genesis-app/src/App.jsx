@@ -6447,7 +6447,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   const fileRef = useRef(null);
   const hoje = todayISO();
   const F = tmFailures || FR_EMPTY;
-  const [f, setF] = useState({ busca: "", status: "Todos", dept: "Todos", crit: "Todas", mes: "Todos", pend: false });
+  const [f, setF] = useState({ busca: "", status: "Todos", dept: "Todos", crit: "Todas", mes: [], pend: false });
   const [open, setOpen] = useState(() => new Set());
   const toggleOpen = (no) => setOpen((p) => { const n = new Set(p); if (n.has(no)) n.delete(no); else n.add(no); return n; });
 
@@ -6475,7 +6475,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   const norm = (v) => String(v || "").toLowerCase();
   const filtered = useMemo(() => F.reports.filter((r) =>
     (f.status === "Todos" || r.status === f.status) && (f.dept === "Todos" || r.department === f.dept)
-    && (f.crit === "Todas" || r.criticality === f.crit) && (f.mes === "Todos" || frMesKey(r.failureDate) === f.mes)
+    && (f.crit === "Todas" || r.criticality === f.crit) && (f.mes.length === 0 || f.mes.includes(frMesKey(r.failureDate)))
     && (!f.pend || pendencias(r) > 0)
     && (!f.busca || norm(`${r.no} ${r.name} ${r.compCode} ${r.compName} ${r.cause} ${r.mechanism} ${r.createdBy}`).includes(norm(f.busca)))
   ).sort((a, b) => (b.failureDate || "").localeCompare(a.failureDate || "") || b.no.localeCompare(a.no)), [F, f, links]);
@@ -6696,7 +6696,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
               <select value={f.crit} onChange={(e) => setF((p) => ({ ...p, crit: e.target.value }))}>
                 <option value="Todas">Todas</option>{opts("criticality").filter((o) => o !== "Todos").map((o) => <option key={o}>{o}</option>)}</select></div>
             <div className="g-field"><label>Mês da falha</label>
-              <select value={f.mes} onChange={(e) => setF((p) => ({ ...p, mes: e.target.value }))}>{meses.map((o) => <option key={o} value={o}>{o === "Todos" ? o : frMesLabel(o)}</option>)}</select></div>
+              <FiltroMeses meses={meses.filter((m) => m !== "Todos")} sel={f.mes} onChange={(v) => setF((p) => ({ ...p, mes: v }))} label={frMesLabel} /></div>
             <div className="g-field"><label>Pendências</label>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer", padding: "6px 0" }}>
                 <input type="checkbox" checked={f.pend} onChange={(e) => setF((p) => ({ ...p, pend: e.target.checked }))} />Só com itens em aberto</label></div>
@@ -8749,6 +8749,44 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
+
+/* filtro de meses com seleção múltipla (caixinhas) */
+function FiltroMeses({ meses, sel, onChange, label }) {
+  const [aberto, setAberto] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!aberto) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false); };
+    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+  }, [aberto]);
+  const alterna = (m) => onChange(sel.includes(m) ? sel.filter((x) => x !== m) : [...sel, m]);
+  const resumo = sel.length === 0 ? "Todos" : sel.length <= 2 ? [...sel].sort().map(label).join(", ") : `${sel.length} meses`;
+  const anos = [...new Set(meses.map((m) => m.slice(0, 4)))];
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button type="button" className="g-keep" onClick={() => setAberto((a) => !a)} style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--panel, #fff)", color: "var(--text)", fontSize: 12.5, cursor: "pointer", minWidth: 150, textAlign: "left", display: "flex", justifyContent: "space-between", gap: 8, ...(sel.length ? { borderColor: "var(--teal)", fontWeight: 600 } : {}) }}>
+        <span>{resumo}</span><span style={{ opacity: .6, fontSize: 10 }}>▾</span>
+      </button>
+      {aberto && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50, minWidth: 210, background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.25)", padding: 8 }}>
+          <div style={{ display: "flex", gap: 10, fontSize: 11.5, marginBottom: 6, flexWrap: "wrap" }}>
+            <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => onChange([...meses])}>Selecionar todos</span>
+            {anos.map((a) => <span key={a} style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => onChange(meses.filter((m) => m.startsWith(a)))}>Ano {a}</span>)}
+            <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => onChange([])}>Limpar</span>
+          </div>
+          <div style={{ maxHeight: 260, overflowY: "auto" }}>
+            {meses.length === 0 && <div className="g-muted" style={{ fontSize: 12 }}>Sem meses</div>}
+            {meses.map((m) => (
+              <label key={m} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "4px 4px", cursor: "pointer" }}>
+                <input type="checkbox" checked={sel.includes(m)} onChange={() => alterna(m)} />{label(m)}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* campo de texto que cresce em altura e quebra linha, para mostrar tudo que está escrito */
 function TextoAuto({ value, onChange, style, placeholder }) {
