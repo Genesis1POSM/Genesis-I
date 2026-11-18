@@ -706,7 +706,9 @@ const MAT2_COLS = [
 /* quem pode editar uma requisição: administrador e Almoxarifado em todas; os demais, só as do seu departamento
    (mesma regra aplicada pelo servidor em matmerge.js) */
 /* departamentos de Materiais de um usuário: lista nova (matDepts) ou o campo antigo de um só (matDept) */
-const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).filter((d) => DEPTS_TODOS.includes(d));
+const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
+/* liberação do Registro de Bordo é separada da de Materiais (bordoDepts); contas antigas, sem essa lista, herdam as marcações de Materiais que existem no Registro de Bordo */
+const deptsBordoUsuario = (u) => (Array.isArray(u?.bordoDepts) ? u.bordoDepts : (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : [])).filter((d) => BORDO_DEPTS.includes(d));
 const podeEditarMat = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
@@ -718,7 +720,7 @@ const podeEditarMat = (u, depto) => {
 const podeEditarBordo = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
-  return deptsDoUsuario(u).includes(depto);
+  return deptsBordoUsuario(u).includes(depto);
 };
 /* junta a lista local com a do servidor, linha a linha (a edição mais recente de cada requisição vence) */
 const mesclarListaCliente = (local, localDel, srv, srvDel, pode) => {
@@ -6694,7 +6696,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const hoje = todayISO();
   const admin = isAdminUser(currentUser);
   const pode = (d) => podeEditarBordo(currentUser, d);
-  const deptsEditaveis = admin ? BORDO_DEPTS : deptsDoUsuario(currentUser);
+  const deptsEditaveis = admin ? BORDO_DEPTS : deptsBordoUsuario(currentUser);
   const podeCriar = deptsEditaveis.length > 0;
   const [msg, setMsg] = useState("");
   const [novo, setNovo] = useState(null);
@@ -9950,11 +9952,11 @@ function SettingsView({ currentUser, users, setUsers }) {
         </div>
         <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
-          Somente o administrador acessa Configurações. "Visualizador" só consulta as abas em geral (não edita, não importa, não exclui) e vê apenas as abas marcadas. EXCEÇÃO: nas abas Materiais e TM Master › Registro de Bordo, quem tem departamentos marcados abaixo edita esses departamentos mesmo sendo Visualizador (o perfil não importa ali; o que vale é a marcação). Login local ao navegador — não é uma autenticação segura de servidor.
+          Somente o administrador acessa Configurações. "Visualizador" só consulta as abas em geral (não edita, não importa, não exclui) e vê apenas as abas marcadas. EXCEÇÃO: nas abas Materiais e TM Master › Registro de Bordo, quem tem departamentos marcados nas colunas "aba Materiais" e "aba Registro de Bordo" edita só esses departamentos, cada aba com a sua liberação, mesmo sendo Visualizador (o perfil não importa ali; o que vale é a marcação). Login local ao navegador — não é uma autenticação segura de servidor.
         </div>
         <table className="g-table">
           <thead>
-            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamentos (Materiais e Registro de Bordo)</th><th>Abas liberadas</th><th></th></tr>
+            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamentos — aba Materiais</th><th>Departamentos — aba Registro de Bordo</th><th>Abas liberadas</th><th></th></tr>
           </thead>
           <tbody>
             {users.map((u, i) => {
@@ -9975,13 +9977,25 @@ function SettingsView({ currentUser, users, setUsers }) {
                   </td>
                   <td style={{ minWidth: 150 }}>
                     {adm ? <span className="g-muted">Todos</span> : (
-<div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Marque um ou mais departamentos de Materiais que esta pessoa pode editar. Almoxarifado edita todos.">
-                        {DEPTS_TODOS.map((d) => (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Departamentos que esta pessoa pode lançar e editar na aba Materiais. Almoxarifado edita todos.">
+                        {MAT_DEPTS.map((d) => (
                           <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
                             <input type="checkbox" checked={deptsDoUsuario(u).includes(d)} onChange={(e) => { const at = deptsDoUsuario(u); updUser(i, "matDepts", e.target.checked ? [...at, d] : at.filter((x) => x !== d)); }} />{d}{d === "Almoxarifado" ? " (edita todos)" : ""}
                           </label>
                         ))}
                         {!deptsDoUsuario(u).length && <span className="g-muted" style={{ fontSize: 11 }}>só consulta</span>}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ minWidth: 150 }}>
+                    {adm ? <span className="g-muted">Todos</span> : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Departamentos que esta pessoa pode lançar e editar na aba TM Master › Registro de Bordo.">
+                        {BORDO_DEPTS.map((d) => (
+                          <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+                            <input type="checkbox" checked={deptsBordoUsuario(u).includes(d)} onChange={(e) => { const at = deptsBordoUsuario(u); updUser(i, "bordoDepts", e.target.checked ? [...at, d] : at.filter((x) => x !== d)); }} />{d}
+                          </label>
+                        ))}
+                        {!deptsBordoUsuario(u).length && <span className="g-muted" style={{ fontSize: 11 }}>só consulta</span>}
                       </div>
                     )}
                   </td>
