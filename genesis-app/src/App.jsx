@@ -689,11 +689,11 @@ const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação rece
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Normal", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 /* Materiais (nova aba): departamentos, status e colunas da requisição */
-const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Almoxarifado"];
+const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Elétrica", "Almoxarifado"];
 /* Registro de Bordo: departamentos próprios e data de início (só vale a partir daqui) */
 const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
 const BORDO_INICIO = "2026-11-18";
-const DEPTS_TODOS = [...MAT_DEPTS, "Elétrica"];
+const DEPTS_TODOS = [...new Set([...MAT_DEPTS, ...BORDO_DEPTS])];
 const MAT_STATUS2 = ["Aguardando Entrega", "Cancelado", "Em Processo de Compras", "Recebido", "Recusado", "Stand By"];
 const MAT_PROC = ["Aberto", "Fechado"];
 const MAT_STATUS_COR = { "Aguardando Entrega": "#3B82F6", "Cancelado": "#6B7280", "Em Processo de Compras": "#F5A623", "Recebido": "#22C55E", "Recusado": "#EF4444", "Stand By": "#9499A8" };
@@ -1509,6 +1509,9 @@ export default function Root() {
 
   const [users, setUsers] = useState(DEFAULT_USERS);
   const [currentUserRaw, setCurrentUser] = useState(null);
+  /* usuários/permissões: salvos por um canal próprio, leve e imediato (não dependem do salvamento grande de todo o sistema) */
+  const usersSalvos = useRef(null);
+  const [usersSave, setUsersSave] = useState({ estado: "ok", msg: "" });
   const currentUser = currentUserRaw ? (users.find((x) => x.id === currentUserRaw.id) || currentUserRaw) : null;
   const roMode = isViewerUser(currentUser);
   const noop = () => {};
@@ -1554,7 +1557,7 @@ export default function Root() {
         if (cancelled) return;
         const d = res && res.data;
         if (d) {
-          if (d.users) setUsers(d.users);
+          if (d.users) { setUsers(d.users); usersSalvos.current = JSON.stringify(d.users); }
           if (d.workPackages) setWorkPackages(d.workPackages);
           if (d.materials) setMaterials(d.materials);
           if (Array.isArray(d.matReqs)) setMatReqs(d.matReqs);
@@ -1598,9 +1601,9 @@ export default function Root() {
     const t = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "" } : {}) },
+        headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "", "x-genesis-oldpass": currentUserRaw.password || "" } : {}) },
         body: JSON.stringify({
-          data: roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { ...(isAdminUser(currentUser) ? { users } : {}), workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
+          data: roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
         }),
       }).then((r) => r.json()).then((j) => {
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
@@ -1615,9 +1618,34 @@ export default function Root() {
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
+  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
 
   /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
+  React.useEffect(() => {
+    if (!loaded || !saveEnabled || !currentUserRaw || !isAdminUser(currentUser)) return;
+    const json = JSON.stringify(users);
+    if (json === usersSalvos.current) return;
+    setUsersSave({ estado: "salvando", msg: "Salvando usuários…" });
+    const t = setTimeout(() => {
+      fetch("/api/usuarios", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "", "x-genesis-oldpass": currentUserRaw.password || "" },
+        body: json.length ? JSON.stringify({ users }) : "{}",
+      }).then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `erro ${r.status}`);
+        usersSalvos.current = json;
+        setUsersSave({ estado: "ok", msg: "Usuários salvos no servidor às " + new Date().toLocaleTimeString("pt-BR") });
+      }).catch((e) => setUsersSave({ estado: "erro", msg: "NÃO salvou os usuários: " + (e.message || "falha de conexão") }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [loaded, saveEnabled, currentUserRaw, currentUser, users]);
+  /* avisa antes de fechar/atualizar a página se houver alteração de usuários ainda não salva */
+  React.useEffect(() => {
+    const h = (e) => { if (usersSave.estado !== "ok") { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h);
+  }, [usersSave.estado]);
+
   React.useEffect(() => {
     if (!loaded || !saveEnabled || !currentUserRaw) return;
     const t = setInterval(() => {
@@ -1667,7 +1695,7 @@ export default function Root() {
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
       readOnly={roMode}
-      users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop}
+      users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop} usersSave={usersSave}
       workPackages={workPackages} setWorkPackages={roMode ? noop : setWorkPackages}
       materials={materials} setMaterials={roMode ? noop : setMaterials}
       matReqs={matReqs} setMatReqs={setMatReqs} setMatDeleted={setMatDeleted}
@@ -1692,7 +1720,7 @@ export default function Root() {
    MAIN APP
    ============================================================ */
 function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
-  workPackages, setWorkPackages, materials, setMaterials, matReqs, setMatReqs, setMatDeleted, payments, setPayments,
+  usersSave, workPackages, setWorkPackages, materials, setMaterials, matReqs, setMatReqs, setMatDeleted, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
@@ -3028,7 +3056,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "settings" && (
-          <SettingsView currentUser={currentUser} users={users} setUsers={setUsers} />
+          <SettingsView currentUser={currentUser} users={users} setUsers={setUsers} usersSave={usersSave} />
         )}
       </div>
     </div>
@@ -8835,12 +8863,8 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
   };
 
   const gerarRelatorio = () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-    let y = pdfHeader(doc, "Relatório de Materiais", `${filtered.length} requisição(ões) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-    y = pdfKpis(doc, y, [{ label: "Total", value: kpi.total }, { label: "Em aberto", value: kpi.abertas }, { label: "Aguardando entrega", value: kpi.aguard }, { label: "Em compras", value: kpi.compras }, { label: "Recebidos", value: kpi.receb }]);
-    pdfTable(doc, y, ["Depto.", "TM Master", "Prior.", "SAP", "Descrição", "Qtd", "Status", "Processo", "PO", "ETA"],
-      filtered.map((r) => [r.departamento, r.tmMaster || "—", r.priority, r.sap || "—", r.descricao, r.quantidade, r.status, r.statusProcesso, r.po || "—", r.eta ? fmtDate(r.eta) : "—"]));
-    pdfSave(doc, "relatorio-materiais");
+    const resumo = [["Total", kpi.total], ["Em aberto", kpi.abertas], ["Aguardando entrega", kpi.aguard], ["Em processo de compras", kpi.compras], ["Recebidos", kpi.receb], ["Em aberto sem PO", kpi.semPo], ["Valor em aberto", kpi.valor], ["Requisições no filtro atual", filtered.length], ["Gerado em", new Date().toLocaleDateString("pt-BR")]].map(([i, v]) => ({ Indicador: i, Valor: v }));
+    exportSheets("relatorio-materiais", [["Materiais", rowsToSheet(filtered, MAT2_COLS)], ["Resumo", resumo]]);
   };
   React.useEffect(() => { setExportXlsxFn && setExportXlsxFn(null); setReportFn && setReportFn(null); }, []);
 
@@ -8888,7 +8912,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
           {podeCriar && <><input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
             <button className="g-btn" onClick={() => fileRef.current?.click()} title="Importa várias requisições de uma planilha Excel (só as do seu departamento)"><Upload size={14} />Importar Excel</button>
             <button className="g-btn" onClick={baixarModelo} title="Baixa a planilha modelo com as colunas e as listas permitidas"><Download size={14} />Baixar modelo</button></>}
-          <button className="g-btn g-keep" onClick={gerarRelatorio} title="Gera o relatório em PDF das requisições do filtro atual"><FileText size={14} />Exportar relatório</button>
+          <button className="g-btn g-keep" onClick={gerarRelatorio} title="Exporta em planilha (.xlsx) as requisições do filtro atual, com uma aba de resumo"><Download size={14} />Exportar relatório</button>
           <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar TM Master, SAP, descrição, PO, RC, OE..." style={{ ...sel, minWidth: 280, padding: "7px 10px" }} />
           <select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))} style={sel}>{["Todos", ...MAT_DEPTS].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os departamentos" : x}</option>)}</select>
           <select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))} style={sel}>{["Todos", ...MAT_STATUS2].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os status" : x}</option>)}</select>
@@ -10291,7 +10315,7 @@ function CostsView({ setExportXlsxFn, serviceInvoices, updInv, exchangeRate, set
 /* ============================================================
    SETTINGS — user/login management (client-side demo accounts)
    ============================================================ */
-function SettingsView({ currentUser, users, setUsers }) {
+function SettingsView({ currentUser, users, setUsers, usersSave }) {
   const updUser = (i, field, value) => setUsers((r) => r.map((u, idx) => (idx === i ? { ...u, [field]: value } : u)));
   const remUser = (i) => {
     if (isAdminUser(users[i])) { window.alert("O administrador não pode ser removido."); return; }
@@ -10319,6 +10343,7 @@ function SettingsView({ currentUser, users, setUsers }) {
       <div className="g-panel">
         <div className="g-panel-head">
           <span className="g-panel-title">Usuários, senhas e permissões</span>
+          {usersSave && usersSave.msg && <span style={{ fontSize: 12, fontWeight: 700, color: usersSave.estado === "erro" ? "var(--crit)" : usersSave.estado === "salvando" ? "var(--warn)" : "var(--ok)" }}>{usersSave.estado === "ok" ? "✓ " : ""}{usersSave.msg}</span>}
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
         <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
