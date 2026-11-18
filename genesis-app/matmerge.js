@@ -14,7 +14,7 @@ const ehAdmin = (u) => !!u && (u.admin === true || (u.admin === undefined && Str
 export function podeEditarDepto(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
-  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d) || d === "Elétrica");
+  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
   return ds.includes("Almoxarifado") || ds.includes(depto);
 }
 
@@ -39,8 +39,8 @@ export const mesclarMateriais = (a, ad, r, rd, u) => mesclarLista(a, ad, r, rd, 
 export function podeEditarBordo(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
-  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d) || d === "Elétrica");
-  return ds.includes(depto);
+  const base = Array.isArray(u.bordoDepts) ? u.bordoDepts : (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []);
+  return base.filter((d) => BORDO_DEPTS.includes(d)).includes(depto);
 }
 /* validação de registro sem Job: só o administrador pode marcar "Validado"/"Recusado"; os demais só deixam "Em validação" */
 const VAL = ["valStatus", "valPor", "valEm", "valNota"];
