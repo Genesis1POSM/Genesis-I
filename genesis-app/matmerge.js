@@ -2,6 +2,7 @@
    Cada requisição tem `upd` (ms da última edição). Quem salva manda a lista inteira, mas só as linhas
    que a pessoa pode editar (o seu departamento; todos para Almoxarifado e administrador) são aceitas;
    as demais ficam como estão no banco. Exclusões viajam em `matDeleted` (ids). */
+export const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
 export const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Almoxarifado"];
 
 export function acharUsuario(users, nome, senha) {
@@ -13,7 +14,7 @@ const ehAdmin = (u) => !!u && (u.admin === true || (u.admin === undefined && Str
 export function podeEditarDepto(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
-  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
+  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d) || d === "Elétrica");
   return ds.includes("Almoxarifado") || ds.includes(depto);
 }
 
@@ -38,7 +39,7 @@ export const mesclarMateriais = (a, ad, r, rd, u) => mesclarLista(a, ad, r, rd, 
 export function podeEditarBordo(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
-  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
+  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d) || d === "Elétrica");
   return ds.includes(depto);
 }
 export const mesclarBordo = (a, ad, r, rd, u) => mesclarLista(a, ad, r, rd, (d) => podeEditarBordo(u, d));
