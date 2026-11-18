@@ -688,6 +688,34 @@ const WP_STATUS_DEFAULT_PROGRESS = { "Planejamento": 0, "Não iniciado": 0, "Em 
 const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo", "Dentro do Prazo", "Fora do Prazo", "Recusado", "Devolvido"];
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
+/* Materiais (nova aba): departamentos, status e colunas da requisição */
+const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Almoxarifado"];
+const MAT_STATUS2 = ["Aguardando Entrega", "Cancelado", "Em Processo de Compras", "Recebido", "Recusado", "Stand By"];
+const MAT_PROC = ["Aberto", "Fechado"];
+const MAT_STATUS_COR = { "Aguardando Entrega": "#3B82F6", "Cancelado": "#6B7280", "Em Processo de Compras": "#F5A623", "Recebido": "#22C55E", "Recusado": "#EF4444", "Stand By": "#9499A8" };
+const MAT2_COLS = [
+  ["tmMaster", "TM Master"], ["departamento", "Departamento"], ["priority", "Prioridade"], ["sap", "SAP"], ["descricao", "Descrição"],
+  ["quantidade", "Quantidade"], ["justificativa", "Justificativa"], ["status", "Status"], ["statusProcesso", "Status do Processo"], ["oe", "OE"],
+  ["dataSolicitacao", "Data da Solicitação"], ["reserva", "Reserva"], ["rc", "RC"], ["po", "PO"], ["linhaPo", "Item da PO"],
+  ["valor", "Valor Total"], ["eta", "ETA"], ["dataRecebimento", "Data de Recebimento"], ["obs", "Observação"], ["id", "ID"],
+];
+/* quem pode editar uma requisição: administrador e Almoxarifado em todas; os demais, só as do seu departamento
+   (mesma regra aplicada pelo servidor em matmerge.js) */
+const podeEditarMat = (u, depto) => {
+  if (!u) return false;
+  if (isAdminUser(u)) return true;
+  if (u.role === "viewer") return false;
+  if (u.matDept === "Almoxarifado") return true;
+  return !!u.matDept && u.matDept === depto;
+};
+/* junta a lista local com a do servidor, linha a linha (a edição mais recente de cada requisição vence) */
+const mesclarMatCliente = (local, localDel, srv, srvDel, u) => {
+  const del = new Set([...(localDel || []), ...(srvDel || [])]);
+  const m = new Map((srv || []).map((r) => [r.id, r]));
+  (local || []).forEach((r) => { const e = m.get(r.id); if (!e) { if (podeEditarMat(u, r.departamento)) m.set(r.id, r); } else if ((r.upd || 0) > (e.upd || 0) && podeEditarMat(u, e.departamento)) m.set(r.id, r); });
+  del.forEach((id) => m.delete(id));
+  return [...m.values()];
+};
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
 const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
 const PLAN_STATUS = ["A Executar", "Em Andamento", "Concluído", "Cancelado"];
@@ -1471,6 +1499,8 @@ export default function Root() {
 
   const [workPackages, setWorkPackages] = useState(INITIAL_WORK_PACKAGES);
   const [materials, setMaterials] = useState(INITIAL_MATERIALS);
+  const [matReqs, setMatReqs] = useState([]);
+  const [matDeleted, setMatDeleted] = useState([]);
   const [payments, setPayments] = useState(INITIAL_PAYMENTS);
   const [serviceInvoices, setServiceInvoices] = useState(INITIAL_SERVICE_INVOICES);
   const [portCallMeta, setPortCallMeta] = useState(INITIAL_PORT_CALL_META);
@@ -1509,6 +1539,8 @@ export default function Root() {
           if (d.users) setUsers(d.users);
           if (d.workPackages) setWorkPackages(d.workPackages);
           if (d.materials) setMaterials(d.materials);
+          if (Array.isArray(d.matReqs)) setMatReqs(d.matReqs);
+          if (Array.isArray(d.matDeleted)) setMatDeleted(d.matDeleted);
           if (d.payments) setPayments(d.payments);
           if (d.serviceInvoices) setServiceInvoices(d.serviceInvoices);
           if (d.portCallMeta) setPortCallMeta(d.portCallMeta);
@@ -1546,14 +1578,32 @@ export default function Root() {
     const t = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "" } : {}) },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted },
         }),
+      }).then((r) => r.json()).then((j) => {
+        /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
+        if (j && Array.isArray(j.matReqs)) {
+          setMatReqs((cur) => { const novo = mesclarMatCliente(cur, [], j.matReqs, j.matDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
+          setMatDeleted((cur) => ((j.matDeleted || []).length === cur.length ? cur : j.matDeleted));
+        }
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo]);
+  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted]);
+
+  /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
+  React.useEffect(() => {
+    if (!loaded || !saveEnabled || !currentUserRaw) return;
+    const t = setInterval(() => {
+      fetch("/api/materiais").then((r) => r.json()).then((j) => {
+        if (!j || !Array.isArray(j.matReqs)) return;
+        setMatReqs((cur) => { const novo = mesclarMatCliente(cur, [], j.matReqs, j.matDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
+      }).catch(() => {});
+    }, 20000);
+    return () => clearInterval(t);
+  }, [loaded, saveEnabled, currentUserRaw, currentUser]);
 
   if (!loaded) {
     return (
@@ -1587,6 +1637,7 @@ export default function Root() {
       users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop}
       workPackages={workPackages} setWorkPackages={roMode ? noop : setWorkPackages}
       materials={materials} setMaterials={roMode ? noop : setMaterials}
+      matReqs={matReqs} setMatReqs={roMode ? noop : setMatReqs} setMatDeleted={roMode ? noop : setMatDeleted}
       payments={payments} setPayments={roMode ? noop : setPayments}
       serviceInvoices={serviceInvoices} setServiceInvoices={roMode ? noop : setServiceInvoices}
       portCallMeta={portCallMeta} setPortCallMeta={roMode ? noop : setPortCallMeta}
@@ -1608,7 +1659,7 @@ export default function Root() {
    MAIN APP
    ============================================================ */
 function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
-  workPackages, setWorkPackages, materials, setMaterials, payments, setPayments,
+  workPackages, setWorkPackages, materials, setMaterials, matReqs, setMatReqs, setMatDeleted, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
@@ -2307,15 +2358,6 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     return filterRange;
   }, [selectedPortCallDate, filterRange, portCallSpans]);
 
-  const addMat = () => {
-    const id = uid("MAT");
-    setMaterials((r) => [...r, {
-      id, wp: "", tmMaster: "", departamento: "", sap: "", descricao: "Novo item",
-      quantidade: 1, priority: "Média", dataSolicitacao: todayISO(), dataNecessidade: "", reserva: "", rc: "", po: "", linhaPo: "",
-      valor: 0, eta: "", obs: "", dataRecebimento: "", status: "Solicitado",
-    }]);
-    flashNewRow(id);
-  };
   const addPay = () => setPayments((r) => [...r, {
     id: uid("PAY"), service: "—", po: "", poValue: 0,
     nf: "", nfValue: 0, issue: "", due: "", status: "Orçamento",
@@ -2360,9 +2402,9 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     const emAndamento = workPackages.filter((w) => w.status === "Em andamento").length;
     const planejados = workPackages.filter((w) => w.status === "Planejamento").length;
 
-    const requisicoesAbertas = materials.filter((m) => !["Recebido", "Entregue a bordo"].includes(m.status)).length;
-    const materiaisUrgentes = materials.filter((m) =>
-      ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && !["Recebido", "Entregue a bordo"].includes(m.status)
+    const requisicoesAbertas = matReqs.filter((m) => m.statusProcesso !== "Fechado").length;
+    const materiaisUrgentes = matReqs.filter((m) =>
+      ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && m.statusProcesso !== "Fechado"
     );
 
     const pagos = payments.filter((p) => paymentSituation(p) === "Pago");
@@ -2379,7 +2421,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
       pendentesCount: pendentes.length, pendentesSum: sum(pendentes),
       atrasados, totalDiasAtraso,
     };
-  }, [workPackages, filteredWorkPackages, materials, payments, portCallRange]);
+  }, [workPackages, filteredWorkPackages, materials, matReqs, payments, portCallRange]);
 
   const disciplineCosts = useMemo(() => {
     const map = {};
@@ -2432,7 +2474,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(custoPorCategoria), "CustoPorCategoria");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(workPackages, WP_COLS)), "Servicos");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(materials, MAT_COLS)), "Materiais");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(matReqs, MAT2_COLS)), "Materiais");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(payments, PAY_COLS)), "Pagamentos");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsToSheet(serviceInvoices, INV_COLS)), "StatusPagamentos");
     XLSX.writeFile(wb, `genesis-${selectedPortCallLabel.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -2636,8 +2678,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         }
         if (wb.SheetNames.includes("Materiais")) {
           const json = XLSX.utils.sheet_to_json(wb.Sheets["Materiais"], { defval: "" });
-          setMaterials(sheetToRows(json, MAT_COLS));
-          imported.push(`${json.length} materiais`);
+          if (json.length && Object.keys(json[0]).includes("Status do Processo")) { setMatReqs(sheetToRows(json, MAT2_COLS).map((r) => ({ ...r, upd: Date.now() }))); imported.push(`${json.length} materiais`); }
         }
         if (wb.SheetNames.includes("Pagamentos")) {
           const json = XLSX.utils.sheet_to_json(wb.Sheets["Pagamentos"], { defval: "" });
@@ -2792,13 +2833,12 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         </div>
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
-          {tab !== "tmmaster" && !(tab === "manutencao" && manSub !== "services") && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
+          {tab !== "tmmaster" && tab !== "materials" && !(tab === "manutencao" && manSub !== "services") && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
           <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>
           <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>
           {tab === "manutencao" && manSub === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
           {tab === "manutencao" && manSub === "planejamento" && planSubTab === "mapeados" && <button className="g-btn primary" onClick={addPlanningItem}><Plus size={14} />Novo mapeamento</button>}
-          {tab === "materials" && <button className="g-btn primary" onClick={addMat}><Plus size={14} />Nova requisição</button>}
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
         </div>
       </div>
@@ -2859,7 +2899,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "manutencao" && manSub === "docagem" && (
-          <PlanejamentoView soDocagem tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <PlanejamentoView soDocagem tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={[]} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -2868,7 +2908,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "manutencao" && manSub === "planejamento" && (
-          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={materials} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={[]} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -2883,7 +2923,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
-        {tab === "materials" && <MaterialsView setExportXlsxFn={setExportXlsxFn} materials={materials} updMat={updMat} remMat={remMat} workPackages={workPackages} setReportFn={setReportFn} handleImportEmergenciais={handleImportEmergenciais} newRowId={newRowId} />}
+        {tab === "materials" && <MaterialsView setExportXlsxFn={setExportXlsxFn} setReportFn={setReportFn} matReqs={matReqs} setMatReqs={setMatReqs} setMatDeleted={setMatDeleted} currentUser={currentUser} />}
 
         {tab === "payments" && (
           <PaymentsSection setExportXlsxFn={setExportXlsxFn}
@@ -3085,7 +3125,7 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
         ["Próximas Manutenções", upcomingMaintenance.map((w) => ({ Manutenção: w.name, Categoria: w.discipline, Empresa: w.empresa, Início: w.start, Status: w.status }))],
         ["Último Port Call", lastPortCallServices.map((w) => ({ "Port Call": lastPortCallLabel, Serviço: w.name, Empresa: w.empresa, Data: w.start, Status: w.status }))],
         ["TM Master", tmPorDepto.map((d) => ({ Departamento: d.departamento, Vencidas: d.Vencidas, "Até 40 dias": d["Até 40 dias"], "No prazo": d["No prazo"], Total: d.total }))],
-        ["Materiais Urgentes", kpis.materiaisUrgentes.map((m) => ({ Descrição: m.descricao, Necessidade: m.dataNecessidade, Prioridade: m.priority, Status: m.status }))],
+        ["Materiais Urgentes", kpis.materiaisUrgentes.map((m) => ({ Descrição: m.descricao, Solicitação: m.dataSolicitacao, Prioridade: m.priority, Status: m.status }))],
       ]);
     });
   }, [financeiro, servicos, pagamentos, topOpenInvoices, upcomingMaintenance, lastPortCallServices, tmPorDepto, kpis, setExportXlsxFn]);
@@ -3123,7 +3163,7 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
       if (y > 220) { doc.addPage(); y = 15; }
       y = pdfSectionTitle(doc, y, "Materiais urgentes");
       pdfTable(doc, y, ["Descrição", "Necessidade", "Prioridade", "Status"],
-        kpis.materiaisUrgentes.map((m) => [m.descricao, fmtDate(m.dataNecessidade), m.priority, m.status]));
+        kpis.materiaisUrgentes.map((m) => [m.descricao, fmtDate(m.dataSolicitacao), m.priority, m.status]));
       pdfSave(doc, "relatorio-dashboard");
     });
   }, [financeiro, servicos, pagamentos, topOpenInvoices, upcomingMaintenance, lastPortCallServices, lastPortCallLabel, tmPorDepto, kpis, dp, setReportFn]);
@@ -3287,7 +3327,7 @@ function DashboardView({ setExportXlsxFn, kpis, workPackages, disciplineCosts, s
               <div className="dsh-item" key={m.id}>
                 <div>
                   <div className="dsh-item-main">{m.descricao}</div>
-                  <div className="dsh-item-sub">Necessário {fmtDate(m.dataNecessidade)}</div>
+                  <div className="dsh-item-sub">{m.departamento} · solicitado {fmtDate(m.dataSolicitacao)}</div>
                 </div>
                 <span className="g-flex">
                   <span className="g-pill" style={{ background: "var(--panel-raised)" }}>
@@ -8154,391 +8194,198 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
-function MaterialsView({ setExportXlsxFn, materials, updMat, remMat, workPackages, setReportFn, handleImportEmergenciais, newRowId }) {
-  React.useEffect(() => {
-    if (!newRowId) return;
-    const el = document.getElementById(`row-${newRowId}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [newRowId]);
-  const [matSubTab, setMatSubTab] = useState("requisicoes"); // "requisicoes" | "analises"
-  const emergFileRef = useRef(null);
-  const [expandedRow, setExpandedRow] = useState(null);
-  const [sort, setSort] = useState({ key: null, dir: 1 });
-  const [mf, setMf] = useState({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos", dataInicio: "", dataFim: "" });
-  const hasActiveFilter = mf.tmMaster || mf.sap || mf.descricao || mf.rc || mf.reserva || mf.po || mf.status !== "Todos" || mf.priority !== "Todos" || mf.dataInicio || mf.dataFim;
+function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setMatDeleted, currentUser }) {
+  const admin = isAdminUser(currentUser);
+  const dept = currentUser?.matDept || "";
+  const verTodos = admin || dept === "Almoxarifado";
+  const pode = (d) => podeEditarMat(currentUser, d);
+  const deptsEditaveis = admin || dept === "Almoxarifado" ? MAT_DEPTS : (MAT_DEPTS.includes(dept) && currentUser?.role !== "viewer" ? [dept] : []);
+  const podeCriar = deptsEditaveis.length > 0;
+
+  const [f, setF] = useState({ busca: "", dept: "Todos", status: "Todos", proc: "Todos", meu: false });
+  const [novo, setNovo] = useState(null);
+  const [msg, setMsg] = useState("");
+  const rascunho = () => ({ departamento: deptsEditaveis.length === 1 ? deptsEditaveis[0] : "", tmMaster: "", priority: "Média", sap: "", descricao: "", quantidade: 1, justificativa: "", status: "Em Processo de Compras", statusProcesso: "Aberto", oe: "", dataSolicitacao: todayISO(), reserva: "", rc: "", po: "", linhaPo: "", valor: "", eta: "", dataRecebimento: "", obs: "" });
+
+  const upd = (id, patch) => setMatReqs((rows) => rows.map((r) => (r.id === id && pode(r.departamento) ? { ...r, ...patch, upd: Date.now() } : r)));
+  const setStatus = (r, v) => {
+    const patch = { status: v };
+    if (v === "Recebido" && !r.dataRecebimento) patch.dataRecebimento = todayISO();
+    if (["Recebido", "Cancelado", "Recusado"].includes(v)) patch.statusProcesso = "Fechado";
+    upd(r.id, patch);
+  };
+  const remover = (r) => {
+    if (!window.confirm(`Excluir a requisição "${r.descricao || r.sap || r.id}"?`)) return;
+    setMatReqs((rows) => rows.filter((x) => x.id !== r.id));
+    setMatDeleted((d) => [...new Set([...(d || []), r.id])]);
+  };
+  const salvarNovo = () => {
+    if (!novo.departamento) { setMsg("Escolha o departamento."); return; }
+    if (!String(novo.descricao).trim()) { setMsg("Preencha a descrição."); return; }
+    const r = { ...novo, id: uid("MAT"), quantidade: Number(novo.quantidade) || 0, valor: novo.valor === "" ? "" : Number(novo.valor), upd: Date.now() };
+    setMatReqs((rows) => [r, ...rows]);
+    setNovo(null); setMsg("Requisição adicionada.");
+    setTimeout(() => setMsg(""), 4000);
+  };
 
   const filtered = useMemo(() => {
-    const norm = (s) => String(s ?? "").toLowerCase().trim();
-    return materials.filter((m) =>
-      (!mf.tmMaster || norm(m.tmMaster).includes(norm(mf.tmMaster))) &&
-      (!mf.sap || norm(m.sap).includes(norm(mf.sap))) &&
-      (!mf.descricao || norm(m.descricao).includes(norm(mf.descricao))) &&
-      (!mf.rc || norm(m.rc).includes(norm(mf.rc))) &&
-      (!mf.reserva || norm(m.reserva).includes(norm(mf.reserva))) &&
-      (!mf.po || norm(m.po).includes(norm(mf.po))) &&
-      (mf.status === "Todos" || norm(m.status) === norm(mf.status)) &&
-      (mf.priority === "Todos" || norm(m.priority) === norm(mf.priority)) &&
-      (!mf.dataInicio || !m.dataSolicitacao || m.dataSolicitacao >= mf.dataInicio) &&
-      (!mf.dataFim || !m.dataSolicitacao || m.dataSolicitacao <= mf.dataFim)
-    );
-  }, [materials, mf]);
-  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+    const q = f.busca.trim().toLowerCase();
+    return matReqs.filter((r) =>
+      (!f.meu || r.departamento === dept) &&
+      (f.dept === "Todos" || r.departamento === f.dept) &&
+      (f.status === "Todos" || r.status === f.status) &&
+      (f.proc === "Todos" || r.statusProcesso === f.proc) &&
+      (!q || [r.tmMaster, r.sap, r.descricao, r.justificativa, r.oe, r.reserva, r.rc, r.po, r.obs].join(" ").toLowerCase().includes(q))
+    ).sort((a, b) => ((a.statusProcesso === "Fechado") - (b.statusProcesso === "Fechado")) || String(b.dataSolicitacao || "").localeCompare(String(a.dataSolicitacao || "")));
+  }, [matReqs, f, dept]);
 
-  const naoRecebido = (m) => !["Recebido", "Entregue a bordo"].includes(m.status);
-  const PRIO_COLOR = { "Crítica": "#EF4444", "Emergencial": "#EF4444", "Sobressalente crítico": "#EF4444", "Alta": "#F5A623", "Importante": "#F5A623", "Média": "#3B82F6", "Baixa": "#9499A8" };
-  const [groupByPrio, setGroupByPrio] = useState(true);
-  const [collapsedMat, setCollapsedMat] = useState(new Set());
-  const toggleMatGroup = (k) => setCollapsedMat((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const matGroups = useMemo(() => {
-    if (!groupByPrio) return [{ key: "Todas", rows: sorted }];
-    const ordem = ["Emergencial", "Sobressalente crítico", "Crítica", "Alta", "Importante", "Média", "Baixa"];
-    const map = new Map();
-    sorted.forEach((m) => { const k = m.priority || "Sem prioridade"; if (!map.has(k)) map.set(k, []); map.get(k).push(m); });
-    const pos = (k) => { const x = ordem.indexOf(k); return x < 0 ? 99 : x; };
-    return [...map.entries()].sort((x, y) => pos(x[0]) - pos(y[0])).map(([key, rows]) => ({ key, rows }));
-  }, [sorted, groupByPrio]);
-  const urgentes = filtered.filter((m) => ["Alta", "Crítica", "Emergencial", "Sobressalente crítico"].includes(m.priority) && naoRecebido(m));
-  const abertas = filtered.filter(naoRecebido);
-  const semEta = filtered.filter((m) => !m.eta && naoRecebido(m));
-  const semPo = filtered.filter((m) => !m.po && naoRecebido(m));
-
-  /* dados para os gráficos — sempre em cima do conjunto já filtrado na página */
-  const PRIORITY_COLOR = {
-    "Baixa": "#8D9BB5", "Média": "#F2C94C", "Alta": "#F2A93B",
-    "Crítica": "#F2685B", "Importante": "#F2A93B", "Emergencial": "#F2685B", "Sobressalente crítico": "#C0392B",
+  const abertas = matReqs.filter((r) => r.statusProcesso !== "Fechado");
+  const kpi = {
+    total: matReqs.length, abertas: abertas.length,
+    aguard: matReqs.filter((r) => r.status === "Aguardando Entrega").length,
+    compras: matReqs.filter((r) => r.status === "Em Processo de Compras").length,
+    receb: matReqs.filter((r) => r.status === "Recebido").length,
+    semPo: abertas.filter((r) => !String(r.po || "").trim()).length,
+    valor: abertas.reduce((s, r) => s + (Number(r.valor) || 0), 0),
   };
-  const porStatus = useMemo(() => {
-    const map = {};
-    filtered.forEach((m) => { const k = m.status || "—"; map[k] = (map[k] || 0) + 1; });
-    return Object.entries(map).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
-  }, [filtered]);
-  const porPrioridade = useMemo(() => {
-    const map = {};
-    filtered.forEach((m) => { const k = m.priority || "—"; map[k] = (map[k] || 0) + 1; });
-    return PRIORITY.filter((p) => map[p]).map((p) => ({ priority: p, count: map[p] }));
-  }, [filtered]);
-  const porDepartamento = useMemo(() => {
-    const map = {};
-    filtered.forEach((m) => { const k = m.departamento || "Sem departamento"; map[k] = (map[k] || 0) + 1; });
-    return Object.entries(map).map(([departamento, count]) => ({ departamento, count })).sort((a, b) => b.count - a.count);
-  }, [filtered]);
 
   React.useEffect(() => {
     if (!setExportXlsxFn) return;
-    setExportXlsxFn(() => () => {
-      if (matSubTab === "analises") {
-        exportSheets("genesis-materiais-analises", [
-          ["Por Status", porStatus.map((x) => ({ Status: x.status, Quantidade: x.count }))],
-          ["Por Prioridade", porPrioridade.map((x) => ({ Prioridade: x.priority, Quantidade: x.count }))],
-          ["Por Departamento", porDepartamento.map((x) => ({ Departamento: x.departamento, Quantidade: x.count }))],
-        ]);
-      } else {
-        exportSheets("genesis-materiais", [["Materiais", rowsToSheet(sorted, MAT_COLS)]]);
-      }
-    });
-  }, [matSubTab, sorted, porStatus, porPrioridade, porDepartamento, setExportXlsxFn]);
-
+    setExportXlsxFn(() => () => exportSheets("genesis-materiais", [["Materiais", rowsToSheet(filtered, MAT2_COLS)]]));
+  }, [filtered, setExportXlsxFn]);
   React.useEffect(() => {
     if (!setReportFn) return;
     setReportFn(() => () => {
-      const doc = new jsPDF();
-      const analises = matSubTab === "analises";
-      let y = pdfHeader(doc, analises ? "Relatório de Materiais — Análises" : "Relatório de Materiais — Requisições",
-        `${filtered.length} material(is) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-      y = pdfKpis(doc, y, [
-        { label: "Total de Materiais", value: filtered.length },
-        { label: "Materiais Urgentes", value: urgentes.length },
-        { label: "Requisições Abertas", value: abertas.length },
-        { label: "Sem ETA", value: semEta.length },
-        { label: "Sem PO", value: semPo.length },
-      ]);
-      if (analises) {
-        y = pdfSectionTitle(doc, y, "Por Status");
-        y = pdfTable(doc, y, ["Status", "Quantidade"], porStatus.map((d) => [d.status, d.count]), { columnStyles: { 1: { halign: "right" } } });
-        y = pdfSectionTitle(doc, y, "Por Prioridade");
-        y = pdfTable(doc, y, ["Prioridade", "Quantidade"], porPrioridade.map((d) => [d.priority, d.count]), { columnStyles: { 1: { halign: "right" } } });
-        y = pdfSectionTitle(doc, y, "Por Departamento");
-        pdfTable(doc, y, ["Departamento", "Quantidade"], porDepartamento.map((d) => [d.departamento, d.count]), { columnStyles: { 1: { halign: "right" } } });
-      } else {
-        y = pdfSectionTitle(doc, y, "Materiais");
-        pdfTable(doc, y,
-          ["TM Master", "Descrição", "Qtd", "Prioridade", "Necessidade", "PO", "ETA", "Status"],
-          sorted.map((m) => [m.tmMaster || "—", m.descricao, m.quantidade, m.priority, fmtDate(m.dataNecessidade), m.po || "—", m.eta ? fmtDate(m.eta) : "sem ETA", m.status])
-        );
-      }
-      pdfSave(doc, analises ? "relatorio-materiais-analises" : "relatorio-materiais");
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Relatório de Materiais", `${filtered.length} requisição(ões) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [{ label: "Total", value: kpi.total }, { label: "Em aberto", value: kpi.abertas }, { label: "Aguardando entrega", value: kpi.aguard }, { label: "Em compras", value: kpi.compras }, { label: "Recebidos", value: kpi.receb }]);
+      pdfTable(doc, y, ["Depto.", "TM Master", "Prior.", "SAP", "Descrição", "Qtd", "Status", "Processo", "PO", "ETA"],
+        filtered.map((r) => [r.departamento, r.tmMaster || "—", r.priority, r.sap || "—", r.descricao, r.quantidade, r.status, r.statusProcesso, r.po || "—", r.eta ? fmtDate(r.eta) : "—"]));
+      pdfSave(doc, "relatorio-materiais");
     });
-  }, [matSubTab, filtered, sorted, urgentes, abertas, semEta, semPo, porStatus, porPrioridade, porDepartamento, setReportFn]);
+  }, [filtered, kpi.total, setReportFn]);
+
+  const sel = { padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)" };
+  const num = (v) => (v === "" || v == null ? "" : v);
+  const campo = (rot, el, span) => <div className="g-field" style={span ? { gridColumn: "1 / -1" } : undefined}><label>{rot}</label>{el}</div>;
+  const inp = (k, tipo = "text", extra = {}) => <input className="g-edit" type={tipo} value={num(novo[k])} onChange={(e) => setNovo((p) => ({ ...p, [k]: e.target.value }))} {...extra} />;
+  const dd = (k, ops) => <select className="g-edit" value={novo[k]} onChange={(e) => setNovo((p) => ({ ...p, [k]: e.target.value }))}>{ops.map((o) => <option key={o} value={o}>{o}</option>)}</select>;
+
+  const th = (t, w) => <th style={{ minWidth: w }}>{t}</th>;
+  /* célula: editável se a pessoa pode editar a linha; senão só mostra o valor */
+  const C = (r, k, kind = "text", opts) => {
+    const ok = pode(r.departamento);
+    const v = r[k];
+    if (!ok) return <span style={{ fontSize: 12, ...(k === "status" ? { color: MAT_STATUS_COR[v], fontWeight: 700 } : {}) }}>{kind === "date" ? (v ? fmtDate(v) : "—") : kind === "money" ? (v === "" || v == null ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })) : (v === "" || v == null ? "—" : String(v))}</span>;
+    if (kind === "select") return <select className="g-edit" value={v || ""} onChange={(e) => (k === "status" ? setStatus(r, e.target.value) : upd(r.id, { [k]: e.target.value }))} style={k === "status" ? { color: MAT_STATUS_COR[v], fontWeight: 700, minWidth: 190 } : undefined}>{!v && <option value="">—</option>}{opts.map((o) => <option key={o} value={o}>{o}</option>)}</select>;
+    if (kind === "date") return <EDate value={v} onChange={(x) => upd(r.id, { [k]: x })} />;
+    if (kind === "num" || kind === "money") return <input className="g-edit num" type="number" step={kind === "money" ? "0.01" : "1"} value={num(v)} onChange={(e) => upd(r.id, { [k]: e.target.value === "" ? "" : Number(e.target.value) })} />;
+    if (kind === "area") return <ETextArea rows={1} value={v} onChange={(x) => upd(r.id, { [k]: x })} />;
+    return <EText value={v || ""} onChange={(x) => upd(r.id, { [k]: x })} mono={kind === "mono"} />;
+  };
 
   return (
     <>
-      <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-        <button className={matSubTab === "requisicoes" ? "active" : ""} onClick={() => setMatSubTab("requisicoes")}>Requisições</button>
-        <button className={matSubTab === "analises" ? "active" : ""} onClick={() => setMatSubTab("analises")}>Análises</button>
+      <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
+        <Lock size={14} style={{ marginTop: 1 }} />
+        {admin ? "Administrador: você edita as requisições de todos os departamentos."
+          : dept === "Almoxarifado" ? "Almoxarifado: você edita as requisições de todos os departamentos."
+          : podeCriar ? <>Você edita só as requisições do departamento <b>{dept}</b>. As dos outros departamentos aparecem para consulta.</>
+          : "Somente consulta. Peça ao administrador para definir o seu departamento em Configurações para poder editar."}
       </div>
 
-      {/* filtros da aba Materiais — digitáveis + selecionáveis, compartilhados pelas duas sub-abas */}
-      <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
-        <div className="g-field">
-          <label>TM Master</label>
-          <input type="text" value={mf.tmMaster} onChange={(e) => setMf((p) => ({ ...p, tmMaster: e.target.value }))} placeholder="digitar..." style={{ minWidth: 110 }} />
-        </div>
-        <div className="g-field">
-          <label>SAP</label>
-          <input type="text" value={mf.sap} onChange={(e) => setMf((p) => ({ ...p, sap: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
-        </div>
-        <div className="g-field">
-          <label>Descrição</label>
-          <input type="text" value={mf.descricao} onChange={(e) => setMf((p) => ({ ...p, descricao: e.target.value }))} placeholder="digitar..." style={{ minWidth: 150 }} />
-        </div>
-        <div className="g-field">
-          <label>RC</label>
-          <input type="text" value={mf.rc} onChange={(e) => setMf((p) => ({ ...p, rc: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
-        </div>
-        <div className="g-field">
-          <label>Reserva</label>
-          <input type="text" value={mf.reserva} onChange={(e) => setMf((p) => ({ ...p, reserva: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
-        </div>
-        <div className="g-field">
-          <label>PO</label>
-          <input type="text" value={mf.po} onChange={(e) => setMf((p) => ({ ...p, po: e.target.value }))} placeholder="digitar..." style={{ minWidth: 100 }} />
-        </div>
-        <div className="g-field">
-          <label>Status</label>
-          <select value={mf.status} onChange={(e) => setMf((p) => ({ ...p, status: e.target.value }))}>
-            <option>Todos</option>
-            {MAT_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div className="g-field">
-          <label>Prioridade</label>
-          <select value={mf.priority} onChange={(e) => setMf((p) => ({ ...p, priority: e.target.value }))}>
-            <option>Todos</option>
-            {PRIORITY.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-        <div className="g-field">
-          <label>Período (Data da Solicitação) — de</label>
-          <input type="date" value={mf.dataInicio} onChange={(e) => setMf((p) => ({ ...p, dataInicio: e.target.value }))} />
-        </div>
-        <div className="g-field">
-          <label>Período — até</label>
-          <input type="date" value={mf.dataFim} onChange={(e) => setMf((p) => ({ ...p, dataFim: e.target.value }))} />
-        </div>
-        <div className="g-field">
-          <label>&nbsp;</label>
-          <button className="g-btn" onClick={() => setMf({ tmMaster: "", sap: "", descricao: "", rc: "", reserva: "", po: "", status: "Todos", priority: "Todos", dataInicio: "", dataFim: "" })}
-            disabled={!hasActiveFilter} style={{ opacity: hasActiveFilter ? 1 : 0.5 }}>
-            <X size={13} />Limpar filtro
-          </button>
-        </div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+        {bigKpi("Requisições", kpi.total, "var(--teal)", Package)}
+        {bigKpi("Processo aberto", kpi.abertas, "var(--warn)", Clock)}
+        {bigKpi("Aguardando entrega", kpi.aguard, "#3B82F6", Package)}
+        {bigKpi("Em compras", kpi.compras, "var(--warn)", ClipboardList)}
+        {bigKpi("Abertas sem PO", kpi.semPo, kpi.semPo ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Valor em aberto", kpi.valor.toLocaleString("pt-BR", { maximumFractionDigits: 0 }), "var(--teal)", Package)}
       </div>
 
-      {/* KPIs de análise de materiais — visíveis nas duas sub-abas */}
-      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
-        {bigKpi("Total de Materiais", filtered.length, "var(--teal)", Package)}
-        {bigKpi("Materiais Urgentes", urgentes.length, "var(--crit)", AlertTriangle)}
-        {bigKpi("Requisições Abertas", abertas.length, "var(--warn)", AlertTriangle)}
-        {bigKpi("Sem ETA", semEta.length, "var(--crit)", AlertTriangle)}
-        {bigKpi("Sem PO", semPo.length, "var(--warn)", AlertTriangle)}
+      <div className="g-panel">
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {podeCriar && <button className="g-btn primary" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Nova requisição"}</button>}
+          <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar TM Master, SAP, descrição, PO, RC, OE..." style={{ ...sel, minWidth: 280, padding: "7px 10px" }} />
+          <select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))} style={sel}>{["Todos", ...MAT_DEPTS].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os departamentos" : x}</option>)}</select>
+          <select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))} style={sel}>{["Todos", ...MAT_STATUS2].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os status" : x}</option>)}</select>
+          <select value={f.proc} onChange={(e) => setF((p) => ({ ...p, proc: e.target.value }))} style={sel}>{["Todos", ...MAT_PROC].map((x) => <option key={x} value={x}>{x === "Todos" ? "Qualquer processo" : `Processo ${x.toLowerCase()}`}</option>)}</select>
+          {!verTodos && MAT_DEPTS.includes(dept) && <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={f.meu} onChange={(e) => setF((p) => ({ ...p, meu: e.target.checked }))} />Só o meu departamento</label>}
+          <span className="g-muted" style={{ fontSize: 11.5 }}>{filtered.length} de {matReqs.length}</span>
+        </div>
+        {msg && <div style={{ marginTop: 8, fontSize: 12, color: "var(--teal)" }}>{msg}</div>}
       </div>
 
-      {matSubTab === "analises" ? (
-        <>
-          <div className="g-grid-2">
-            <div className="g-panel">
-              <div className="g-panel-head"><span className="g-panel-title">Materiais por Status</span></div>
-              <div style={{ width: "100%", height: 220 }}>
-                <ResponsiveContainer>
-                  <BarChart data={porStatus} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                    <YAxis type="category" dataKey="status" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                    <Bar dataKey="count" name="Materiais" radius={[0, 3, 3, 0]}>
-                      {porStatus.map((d, idx) => <Cell key={idx} fill={statusColor(d.status)} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="g-panel">
-              <div className="g-panel-head"><span className="g-panel-title">Materiais por Prioridade</span></div>
-              <div style={{ width: "100%", height: 220 }}>
-                <ResponsiveContainer>
-                  <BarChart data={porPrioridade} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                    <XAxis dataKey="priority" tick={{ fill: "var(--text-faint)", fontSize: 9 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
-                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                    <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                    <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]}>
-                      {porPrioridade.map((d, idx) => <Cell key={idx} fill={PRIORITY_COLOR[d.priority] || "var(--teal)"} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+      {novo && (
+        <div className="g-panel" style={{ borderLeft: "4px solid var(--teal)" }}>
+          <div className="g-panel-head"><span className="g-panel-title">Nova requisição de material</span></div>
+          <div className="tbl-detail-grid">
+            {campo("Departamento *", deptsEditaveis.length === 1 ? <input className="g-edit" value={novo.departamento} disabled /> : <select className="g-edit" value={novo.departamento} onChange={(e) => setNovo((p) => ({ ...p, departamento: e.target.value }))}><option value="">— escolher —</option>{deptsEditaveis.map((o) => <option key={o} value={o}>{o}</option>)}</select>)}
+            {campo("TM Master", inp("tmMaster"))}
+            {campo("Prioridade", dd("priority", PRIORITY))}
+            {campo("SAP", inp("sap"))}
+            {campo("Descrição *", inp("descricao"))}
+            {campo("Quantidade", inp("quantidade", "number", { min: 0 }))}
+            {campo("Status", dd("status", MAT_STATUS2))}
+            {campo("Status do Processo", dd("statusProcesso", MAT_PROC))}
+            {campo("OE", inp("oe"))}
+            {campo("Data da Solicitação", inp("dataSolicitacao", "date"))}
+            {campo("Reserva", inp("reserva"))}
+            {campo("RC", inp("rc"))}
+            {campo("PO", inp("po"))}
+            {campo("Item da PO", inp("linhaPo"))}
+            {campo("Valor Total", inp("valor", "number", { step: "0.01", min: 0 }))}
+            {campo("ETA", inp("eta", "date"))}
+            {campo("Data de Recebimento", inp("dataRecebimento", "date"))}
+            {campo("Justificativa", <textarea className="g-edit-wrap" rows={2} value={novo.justificativa} onChange={(e) => setNovo((p) => ({ ...p, justificativa: e.target.value }))} />, true)}
+            {campo("Observação", <textarea className="g-edit-wrap" rows={2} value={novo.obs} onChange={(e) => setNovo((p) => ({ ...p, obs: e.target.value }))} />, true)}
           </div>
-
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Materiais por Departamento</span></div>
-            <div style={{ width: "100%", height: 220 }}>
-              <ResponsiveContainer>
-                <BarChart data={porDepartamento} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
-                  <XAxis dataKey="departamento" tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
-                  <YAxis allowDecimals={false} tick={{ fill: "var(--text-faint)", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                  <Tooltip contentStyle={{ background: "var(--panel-raised)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }} labelStyle={{ color: "var(--text)" }} cursor={{ fill: "rgba(10,14,20,0.04)" }} />
-                  <Bar dataKey="count" name="Materiais" radius={[3, 3, 0, 0]} fill="var(--accent)" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="g-panel">
-            <div className="g-panel-head"><span className="g-panel-title">Materiais urgentes em aberto ({urgentes.length})</span></div>
-            {urgentes.length === 0 && <div className="g-muted">Nenhum material urgente em aberto no momento.</div>}
-            {urgentes.slice(0, 15).map((m) => (
-              <div className="g-list-item" key={m.id}>
-                <span>{m.descricao} · {m.departamento || "sem departamento"} · necessário {fmtDate(m.dataNecessidade)}</span>
-                <span className="g-flex">
-                  <span className="g-pill" style={{ background: "var(--panel-raised)" }}>
-                    <span className="g-dot" style={{ background: PRIORITY_COLOR[m.priority] || "var(--warn)" }} />{m.priority}
-                  </span>
-                  <Pill status={m.status} />
-                </span>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div className="g-panel-title" style={{ marginBottom: 4 }}>Importação semanal — Pedidos Emergenciais</div>
-          <div className="g-muted" style={{ fontSize: 11.5 }}>
-            Suba a planilha toda semana neste mesmo padrão de colunas. Itens já existentes (mesmo SAP) são atualizados; itens novos são adicionados — nada é duplicado.
+          <div className="g-flex" style={{ gap: 8, marginTop: 10 }}>
+            <button className="g-btn primary" onClick={salvarNovo}>Adicionar requisição</button>
+            <button className="g-btn" onClick={() => setNovo(null)}>Cancelar</button>
           </div>
         </div>
-        <div>
-          <input ref={emergFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportEmergenciais} />
-          <button className="g-btn primary" onClick={() => emergFileRef.current?.click()}>
-            <Upload size={14} />Importar Pedidos Emergenciais
-          </button>
-        </div>
-      </div>
       )}
 
-      {matSubTab === "requisicoes" && (
       <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
-        <div className="tbl-toolbar">
-          <label className="tbl-check"><input type="checkbox" checked={groupByPrio} onChange={(e) => setGroupByPrio(e.target.checked)} />Agrupar por prioridade</label>
-          <span className="g-muted" style={{ fontSize: 11 }}>{filtered.length} material(is) · clique na seta de uma linha para editar todos os detalhes</span>
-        </div>
         <div className="g-table-wrap">
-        <table className="g-table tbl-modern">
-          <thead>
-            <tr>
-              <th style={{ width: 34 }}></th>
-              <SortTh sortKey="descricao" sort={sort} setSort={setSort} style={{ minWidth: 320 }}>Material</SortTh>
-              <SortTh sortKey="quantidade" sort={sort} setSort={setSort}>Qtd</SortTh>
-              <SortTh sortKey="dataNecessidade" sort={sort} setSort={setSort} style={{ minWidth: 150 }}>Necessário Até</SortTh>
-              <SortTh sortKey="priority" sort={sort} setSort={setSort} style={{ minWidth: 130 }}>Prioridade</SortTh>
-              <SortTh sortKey="status" sort={sort} setSort={setSort} style={{ minWidth: 180 }}>Status</SortTh>
-              <SortTh sortKey="valor" sort={sort} setSort={setSort}>Valor</SortTh>
-              <th style={{ width: 70 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {matGroups.map((g) => (
-              <React.Fragment key={g.key}>
-                {groupByPrio && (
-                  <tr className="tbl-group" onClick={() => toggleMatGroup(g.key)}>
-                    <td colSpan={8}>
-                      <span className="tbl-group-arrow">{collapsedMat.has(g.key) ? "▸" : "▾"}</span>
-                      Prioridade {g.key}
-                      <span className="tbl-group-cnt">{g.rows.length} item(ns)</span>
-                      <span className="tbl-group-tot">{g.rows.filter((x) => naoRecebido(x)).length} em aberto</span>
-                    </td>
+          <table className="g-table tbl-modern" style={{ minWidth: 2700 }}>
+            <thead><tr>
+              {th("TM Master", 110)}{th("Departamento", 130)}{th("Prioridade", 120)}{th("SAP", 100)}{th("Descrição", 240)}{th("Qtd", 70)}{th("Justificativa", 240)}{th("Status", 210)}{th("Status do Processo", 120)}{th("OE", 90)}{th("Data da Solicitação", 130)}{th("Reserva", 100)}{th("RC", 100)}{th("PO", 110)}{th("Item da PO", 80)}{th("Valor Total", 110)}{th("ETA", 130)}{th("Data de Recebimento", 130)}{th("Observação", 260)}<th></th>
+            </tr></thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={20} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{matReqs.length ? "Nenhuma requisição nesse filtro." : "Nenhuma requisição ainda. Use “Nova requisição” para cadastrar."}</td></tr>}
+              {filtered.map((r) => {
+                const ok = pode(r.departamento);
+                return (
+                  <tr className="g-row tbl-row" key={r.id} style={{ "--c": MAT_STATUS_COR[r.status] || "#9499A8", opacity: ok || !podeCriar ? 1 : 0.88 }}>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "tmMaster", "mono")}</td>
+                    <td style={{ verticalAlign: "top" }}><span className="tbl-chip">{r.departamento}</span></td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "priority", "select", PRIORITY)}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "sap", "mono")}</td>
+                    <td style={{ verticalAlign: "top", whiteSpace: "normal" }}>{C(r, "descricao", "area")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "quantidade", "num")}</td>
+                    <td style={{ verticalAlign: "top", whiteSpace: "normal" }}>{C(r, "justificativa", "area")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "status", "select", MAT_STATUS2)}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "statusProcesso", "select", MAT_PROC)}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "oe", "mono")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "dataSolicitacao", "date")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "reserva", "mono")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "rc", "mono")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "po", "mono")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "linhaPo", "mono")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "valor", "money")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "eta", "date")}</td>
+                    <td style={{ verticalAlign: "top" }}>{C(r, "dataRecebimento", "date")}</td>
+                    <td style={{ verticalAlign: "top", whiteSpace: "normal" }}>{C(r, "obs", "area")}</td>
+                    <td style={{ verticalAlign: "top" }}>{ok ? <span className="g-btn ghost danger" title="Excluir requisição" onClick={() => remover(r)}><Trash2 size={13} /></span> : <Lock size={12} color="var(--text-faint)" title="Só o departamento dono ou o Almoxarifado edita" />}</td>
                   </tr>
-                )}
-                {!(groupByPrio && collapsedMat.has(g.key)) && g.rows.map((m) => {
-              const i = materials.indexOf(m);
-              const isOpen = expandedRow === i;
-              const cor = PRIO_COLOR[m.priority] || "#9499A8";
-              const dn = naoRecebido(m) && m.dataNecessidade ? Math.round((new Date(m.dataNecessidade) - new Date(todayISO())) / 86400000) : null;
-              return (
-                <React.Fragment key={i}>
-                  <tr id={`row-${m.id}`} className={"g-row tbl-row" + (newRowId === m.id ? " g-row-flash" : "")} style={{ "--c": cor }}>
-                    <td className="tbl-first"></td>
-                    <td style={{ minWidth: 320, whiteSpace: "normal", verticalAlign: "top" }}>
-                      <ETextArea rows={1} value={m.descricao} onChange={(v) => updMat(i, "descricao", v)} />
-                      <div className="tbl-chips">
-                        {m.departamento && <span className="tbl-chip">{m.departamento}</span>}
-                        {m.tmMaster && <span className="tbl-chip">TM {m.tmMaster}</span>}
-                        {m.sap && <span className="tbl-chip">SAP {m.sap}</span>}
-                        {m.rc && <span className="tbl-chip">RC {m.rc}</span>}
-                        {m.po && <span className="tbl-chip">PO {m.po}</span>}
-                      </div>
-                    </td>
-                    <td><ENum value={m.quantidade} onChange={(v) => updMat(i, "quantidade", v)} /></td>
-                    <td style={{ minWidth: 150 }}>
-                      <EDate value={m.dataNecessidade} onChange={(v) => updMat(i, "dataNecessidade", v)} />
-                      {dn !== null && <div className="tbl-sub" style={{ color: dn < 0 ? "#B91C1C" : dn <= 7 ? "#B45309" : undefined, fontWeight: dn <= 7 ? 700 : 400 }}>{dn < 0 ? `atrasado ${Math.abs(dn)} dia(s)` : dn === 0 ? "é hoje" : `em ${dn} dia(s)`}</div>}
-                    </td>
-                    <td style={{ minWidth: 130 }}><ESelect value={m.priority} onChange={(v) => updMat(i, "priority", v)} options={PRIORITY} /></td>
-                    <td style={{ minWidth: 180 }}><ESelect value={m.status} onChange={(v) => updMat(i, "status", v)} options={MAT_STATUS} /></td>
-                    <td><ENum value={m.valor} onChange={(v) => updMat(i, "valor", v)} /></td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      <span className="g-btn ghost" onClick={() => setExpandedRow(isOpen ? null : i)} title="Ver todos os detalhes">
-                        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </span>
-                      <span className="g-btn ghost danger" onClick={() => remMat(i)}><Trash2 size={13} /></span>
-                    </td>
-                  </tr>
-                  {isOpen && (
-                    <tr className="tbl-detail">
-                      <td></td>
-                      <td colSpan={7}>
-                        <div className="tbl-detail-grid">
-                          <div className="g-field"><label>TM Master</label><EText value={m.tmMaster} onChange={(v) => updMat(i, "tmMaster", v)} mono /></div>
-                          <div className="g-field"><label>Departamento</label><EText value={m.departamento} onChange={(v) => updMat(i, "departamento", v)} /></div>
-                          <div className="g-field"><label>SAP</label><EText value={m.sap} onChange={(v) => updMat(i, "sap", v)} mono /></div>
-                          <div className="g-field"><label>Reserva</label><EText value={m.reserva} onChange={(v) => updMat(i, "reserva", v)} mono /></div>
-                          <div className="g-field"><label>RC</label><EText value={m.rc} onChange={(v) => updMat(i, "rc", v)} mono /></div>
-                          <div className="g-field"><label>PO</label><EText value={m.po} onChange={(v) => updMat(i, "po", v)} mono /></div>
-                          <div className="g-field"><label>Linha da PO</label><EText value={m.linhaPo} onChange={(v) => updMat(i, "linhaPo", v)} mono /></div>
-                          <div className="g-field"><label>Data da Solicitação</label><EDate value={m.dataSolicitacao} onChange={(v) => updMat(i, "dataSolicitacao", v)} /></div>
-                          <div className="g-field"><label>ETA</label>
-                            {m.eta
-                              ? <EDate value={m.eta} onChange={(v) => updMat(i, "eta", v)} />
-                              : <span className="g-flex"><span style={{ color: "var(--crit)", fontSize: 11 }}>sem ETA</span>
-                                  <input type="date" className="g-edit mono" onChange={(e) => updMat(i, "eta", e.target.value)} /></span>}
-                          </div>
-                          <div className="g-field"><label>Data de Recebimento</label><EDate value={m.dataRecebimento} onChange={(v) => updMat(i, "dataRecebimento", v)} /></div>
-                          <div className="g-field" style={{ minWidth: 220 }}>
-                            <label>Vincular a um serviço (opcional)</label>
-                            <select className="g-edit" value={m.wp || ""} onChange={(e) => updMat(i, "wp", e.target.value)}>
-                              <option value="">— nenhum —</option>
-                              {workPackages.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Observação</label><ETextArea rows={1} value={m.obs} onChange={(v) => updMat(i, "obs", v)} /></div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        {filtered.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum material encontrado com esses filtros.</div>}
       </div>
-      )}
     </>
   );
 }
@@ -9891,7 +9738,7 @@ function SettingsView({ currentUser, users, setUsers }) {
         </div>
         <table className="g-table">
           <thead>
-            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Abas liberadas</th><th></th></tr>
+            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamento (Materiais)</th><th>Abas liberadas</th><th></th></tr>
           </thead>
           <tbody>
             {users.map((u, i) => {
@@ -9907,6 +9754,14 @@ function SettingsView({ currentUser, users, setUsers }) {
                       <select value={u.role === "viewer" ? "viewer" : "editor"} onChange={(e) => updUser(i, "role", e.target.value)}>
                         <option value="editor">Editor</option>
                         <option value="viewer">Visualizador</option>
+                      </select>
+                    )}
+                  </td>
+                  <td style={{ minWidth: 150 }}>
+                    {adm ? <span className="g-muted">Todos</span> : (
+                      <select value={u.matDept || ""} onChange={(e) => updUser(i, "matDept", e.target.value)} title="Define quais requisições de Materiais esta pessoa edita. Almoxarifado edita todas.">
+                        <option value="">— só consulta —</option>
+                        {MAT_DEPTS.map((d) => <option key={d} value={d}>{d}{d === "Almoxarifado" ? " (edita todos)" : ""}</option>)}
                       </select>
                     )}
                   </td>
