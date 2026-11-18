@@ -1621,25 +1621,36 @@ export default function Root() {
   }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
 
   /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
+  const salvarUsuariosAgora = React.useCallback(async () => {
+    if (!currentUserRaw) return;
+    const json = JSON.stringify(users);
+    const hdr = { "Content-Type": "application/json", "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "", "x-genesis-oldpass": currentUserRaw.password || "" };
+    setUsersSave({ estado: "salvando", msg: "Salvando usuários…" });
+    try {
+      let r = await fetch("/api/usuarios", { method: "PUT", headers: hdr, body: JSON.stringify({ users }) });
+      if (r.status === 404 || r.status === 405) {
+        /* servidor mais antigo, sem a rota de usuários: usa o salvamento geral */
+        r = await fetch("/api/state", { method: "PUT", headers: hdr, body: JSON.stringify({ data: { users } }) });
+      }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(`${j.error || "o servidor recusou"} (código ${r.status})`); }
+      /* confirma lendo de volta do servidor — só diz "salvo" se realmente está lá */
+      const v = await fetch("/api/usuarios", { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+      const lido = v && Array.isArray(v.users) ? v.users : null;
+      if (!lido) throw new Error("o servidor não confirmou a gravação (server.js desatualizado no Render? troque também o server.js)");
+      if (lido.length !== users.length || JSON.stringify(lido.map((u) => [u.id, u.username, u.password, u.role, u.tabs, u.matDepts, u.bordoDepts])) !== JSON.stringify(users.map((u) => [u.id, u.username, u.password, u.role, u.tabs, u.matDepts, u.bordoDepts]))) {
+        throw new Error(`o servidor tem ${lido.length} usuário(s), mas aqui há ${users.length}; a gravação não foi aceita`);
+      }
+      usersSalvos.current = json;
+      setUsersSave({ estado: "ok", msg: `Confirmado no servidor: ${lido.length} usuário(s) — ${new Date().toLocaleTimeString("pt-BR")}` });
+    } catch (e) { setUsersSave({ estado: "erro", msg: "NÃO salvou os usuários: " + (e.message || "falha de conexão") }); }
+  }, [users, currentUser, currentUserRaw]);
   React.useEffect(() => {
     if (!loaded || !saveEnabled || !currentUserRaw || !isAdminUser(currentUser)) return;
-    const json = JSON.stringify(users);
-    if (json === usersSalvos.current) return;
+    if (JSON.stringify(users) === usersSalvos.current) return;
     setUsersSave({ estado: "salvando", msg: "Salvando usuários…" });
-    const t = setTimeout(() => {
-      fetch("/api/usuarios", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "", "x-genesis-oldpass": currentUserRaw.password || "" },
-        body: json.length ? JSON.stringify({ users }) : "{}",
-      }).then(async (r) => {
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || `erro ${r.status}`);
-        usersSalvos.current = json;
-        setUsersSave({ estado: "ok", msg: "Usuários salvos no servidor às " + new Date().toLocaleTimeString("pt-BR") });
-      }).catch((e) => setUsersSave({ estado: "erro", msg: "NÃO salvou os usuários: " + (e.message || "falha de conexão") }));
-    }, 300);
+    const t = setTimeout(salvarUsuariosAgora, 400);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, currentUserRaw, currentUser, users]);
+  }, [loaded, saveEnabled, currentUserRaw, currentUser, users, salvarUsuariosAgora]);
   /* avisa antes de fechar/atualizar a página se houver alteração de usuários ainda não salva */
   React.useEffect(() => {
     const h = (e) => { if (usersSave.estado !== "ok") { e.preventDefault(); e.returnValue = ""; } };
@@ -1695,7 +1706,7 @@ export default function Root() {
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
       readOnly={roMode}
-      users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop} usersSave={usersSave}
+      users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop} usersSave={usersSave} salvarUsuarios={salvarUsuariosAgora}
       workPackages={workPackages} setWorkPackages={roMode ? noop : setWorkPackages}
       materials={materials} setMaterials={roMode ? noop : setMaterials}
       matReqs={matReqs} setMatReqs={setMatReqs} setMatDeleted={setMatDeleted}
@@ -1720,7 +1731,7 @@ export default function Root() {
    MAIN APP
    ============================================================ */
 function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
-  usersSave, workPackages, setWorkPackages, materials, setMaterials, matReqs, setMatReqs, setMatDeleted, payments, setPayments,
+  usersSave, salvarUsuarios, workPackages, setWorkPackages, materials, setMaterials, matReqs, setMatReqs, setMatDeleted, payments, setPayments,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
@@ -3056,7 +3067,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "settings" && (
-          <SettingsView currentUser={currentUser} users={users} setUsers={setUsers} usersSave={usersSave} />
+          <SettingsView currentUser={currentUser} users={users} setUsers={setUsers} usersSave={usersSave} salvarUsuarios={salvarUsuarios} />
         )}
       </div>
     </div>
@@ -10315,7 +10326,7 @@ function CostsView({ setExportXlsxFn, serviceInvoices, updInv, exchangeRate, set
 /* ============================================================
    SETTINGS — user/login management (client-side demo accounts)
    ============================================================ */
-function SettingsView({ currentUser, users, setUsers, usersSave }) {
+function SettingsView({ currentUser, users, setUsers, usersSave, salvarUsuarios }) {
   const updUser = (i, field, value) => setUsers((r) => r.map((u, idx) => (idx === i ? { ...u, [field]: value } : u)));
   const remUser = (i) => {
     if (isAdminUser(users[i])) { window.alert("O administrador não pode ser removido."); return; }
@@ -10344,6 +10355,7 @@ function SettingsView({ currentUser, users, setUsers, usersSave }) {
         <div className="g-panel-head">
           <span className="g-panel-title">Usuários, senhas e permissões</span>
           {usersSave && usersSave.msg && <span style={{ fontSize: 12, fontWeight: 700, color: usersSave.estado === "erro" ? "var(--crit)" : usersSave.estado === "salvando" ? "var(--warn)" : "var(--ok)" }}>{usersSave.estado === "ok" ? "✓ " : ""}{usersSave.msg}</span>}
+          <button className="g-btn g-keep" onClick={() => salvarUsuarios && salvarUsuarios()} title="Grava agora e confere no servidor">Salvar usuários agora</button>
           <button className="g-btn primary" onClick={addUser}><Plus size={14} />Novo usuário</button>
         </div>
         <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
