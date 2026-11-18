@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { acharUsuario, mesclarMateriais } from "./matmerge.js";
+import { acharUsuario, mesclarMateriais, mesclarBordo } from "./matmerge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -88,6 +88,16 @@ app.get("/api/materiais", async (req, res) => {
   }
 });
 
+app.get("/api/bordo", async (req, res) => {
+  try {
+    const d = (await getState()) || {};
+    res.json({ tmBordo: d.tmBordo || [], bordoDeleted: d.bordoDeleted || [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Falha ao carregar o registro de bordo." });
+  }
+});
+
 app.put("/api/state", async (req, res) => {
   try {
     const data = { ...(req.body.data || {}) };
@@ -100,6 +110,14 @@ app.put("/api/state", async (req, res) => {
       const r = mesclarMateriais(atual.matReqs, atual.matDeleted, data.matReqs, data.matDeleted, usuario);
       data.matReqs = r.rows; data.matDeleted = r.deleted;
       extra = { matReqs: r.rows, matDeleted: r.deleted };
+    }
+    if (Array.isArray(data.tmBordo)) {
+      /* Registro de Bordo: mesma regra por departamento (administrador edita tudo) */
+      const atual = (await getState()) || {};
+      const usuario = acharUsuario(atual.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
+      const r = mesclarBordo(atual.tmBordo, atual.bordoDeleted, data.tmBordo, data.bordoDeleted, usuario);
+      data.tmBordo = r.rows; data.bordoDeleted = r.deleted;
+      extra = { ...extra, tmBordo: r.rows, bordoDeleted: r.deleted };
     }
     await setState(data);
     res.json({ ok: true, ...extra });
