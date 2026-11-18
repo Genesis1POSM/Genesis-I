@@ -3,7 +3,7 @@
    que a pessoa pode editar (o seu departamento; todos para Almoxarifado e administrador) são aceitas;
    as demais ficam como estão no banco. Exclusões viajam em `matDeleted` (ids). */
 export const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
-export const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Elétrica", "Almoxarifado"];
+export const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Elétrica", "OIM", "Subsea", "Almoxarifado"];
 
 export function acharUsuario(users, nome, senha) {
   if (!nome || !senha) return null;
