@@ -97,7 +97,7 @@ const Theme = () => (
     .g-bell-item { display: grid; grid-template-columns: 104px 1fr; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; align-items: center; }
     .g-bell-days { white-space: nowrap; font-weight: 700; text-align: center; padding: 4px 6px; border-radius: 6px; font-size: 11.5px; }
     .g-bell-days.d1 { background: #FEE2E2; color: #B91C1C; } .g-bell-days.d2 { background: #FEF3C7; color: #B45309; } .g-bell-days.d3 { background: #E0E7FF; color: #3730A3; }
-    .g-ro .g-btn.primary:not(.g-keep), .g-ro .g-btn.ghost.danger, .g-ro .g-edit-only { display: none !important; }
+    .g-ro .g-btn.primary:not(.g-keep), .g-ro .g-btn.ghost.danger:not(.g-keep), .g-ro .g-edit-only { display: none !important; }
     .g-ro .g-table tbody input, .g-ro .g-table tbody select, .g-ro .g-table tbody textarea { pointer-events: none; }
     .g-alert-banner { margin: 10px 22px 0 22px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: #FFF7E6; border: 1px solid #F5C77A; color: #8A5300; font-size: 13px; }
     .g-nav-item { border-radius: 8px !important; }
@@ -706,7 +706,6 @@ const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matD
 const podeEditarMat = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
-  if (u.role === "viewer") return false;
   const ds = deptsDoUsuario(u);
   return ds.includes("Almoxarifado") || ds.includes(depto);
 };
@@ -715,7 +714,6 @@ const podeEditarMat = (u, depto) => {
 const podeEditarBordo = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
-  if (u.role === "viewer") return false;
   return deptsDoUsuario(u).includes(depto);
 };
 /* junta a lista local com a do servidor, linha a linha (a edição mais recente de cada requisição vence) */
@@ -1590,13 +1588,13 @@ export default function Root() {
      independente de qual usuário fez a alteração. Só roda depois de um load bem-sucedido
      (saveEnabled) — nunca com dados ainda não confirmados vindos do servidor. */
   React.useEffect(() => {
-    if (!loaded || !saveEnabled || roMode) return;
+    if (!loaded || !saveEnabled) return;
     const t = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "" } : {}) },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
+          data: roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
         }),
       }).then((r) => r.json()).then((j) => {
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
@@ -1661,7 +1659,7 @@ export default function Root() {
       users={users} setUsers={isAdminUser(currentUser) ? setUsers : noop}
       workPackages={workPackages} setWorkPackages={roMode ? noop : setWorkPackages}
       materials={materials} setMaterials={roMode ? noop : setMaterials}
-      matReqs={matReqs} setMatReqs={roMode ? noop : setMatReqs} setMatDeleted={roMode ? noop : setMatDeleted}
+      matReqs={matReqs} setMatReqs={setMatReqs} setMatDeleted={setMatDeleted}
       payments={payments} setPayments={roMode ? noop : setPayments}
       serviceInvoices={serviceInvoices} setServiceInvoices={roMode ? noop : setServiceInvoices}
       portCallMeta={portCallMeta} setPortCallMeta={roMode ? noop : setPortCallMeta}
@@ -1672,7 +1670,7 @@ export default function Root() {
       tmDue={tmDue} setTmDue={roMode ? noop : setTmDue} tmHistory={tmHistory} setTmHistory={roMode ? noop : setTmHistory}
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       tmFailures={tmFailures} setTmFailures={roMode ? noop : setTmFailures}
-      tmBordo={tmBordo} setTmBordo={roMode ? noop : setTmBordo} setBordoDeleted={roMode ? noop : setBordoDeleted} regObrig={regObrig} setRegObrig={roMode ? noop : setRegObrig}
+      tmBordo={tmBordo} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={roMode ? noop : setRegObrig}
       portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
@@ -6690,7 +6688,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const hoje = todayISO();
   const admin = isAdminUser(currentUser);
   const pode = (d) => podeEditarBordo(currentUser, d);
-  const deptsEditaveis = admin ? MAT_DEPTS : (currentUser?.role !== "viewer" ? deptsDoUsuario(currentUser) : []);
+  const deptsEditaveis = admin ? MAT_DEPTS : deptsDoUsuario(currentUser);
   const podeCriar = deptsEditaveis.length > 0;
   const [msg, setMsg] = useState("");
   const [novo, setNovo] = useState(null);
@@ -6888,7 +6886,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
             O portal <b>confere sozinho</b> contra o History e o Due do TM Master. Dia sem atividade: botão “sem atividades” no controle acima. Corretiva: informe o <b>Failure Report</b>; o portal também detecta quando o job já está ligado a um.
           </div>
         </div>
-        {podeCriar && <button className="g-btn primary" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Novo registro"}</button>}
+        {podeCriar && <button className="g-btn primary g-keep" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Novo registro"}</button>}
       </div>
       {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
 
@@ -6909,7 +6907,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
             {campo("Observação", <textarea className="g-edit-wrap" rows={2} value={novo.obs} onChange={(e) => setNovo((p) => ({ ...p, obs: e.target.value }))} />, true)}
           </div>
           <div className="g-flex" style={{ gap: 8, marginTop: 10 }}>
-            <button className="g-btn primary" onClick={() => salvarNovo(false)}>Adicionar registro</button>
+            <button className="g-btn primary g-keep" onClick={() => salvarNovo(false)}>Adicionar registro</button>
             <button className="g-btn" onClick={() => salvarNovo(true)} title="Adiciona e já abre outro em branco, mantendo data, departamento e quem reportou">Adicionar e lançar outro</button>
             <button className="g-btn" onClick={() => setNovo(null)}>Cancelar</button>
           </div>
@@ -6974,7 +6972,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
                     <td>{E("obs", <input value={r.obs} onChange={(e) => upd(r.id, { obs: e.target.value })} style={inp} />)}</td>
                     <td style={{ whiteSpace: "normal", fontFamily: "var(--mono)", fontSize: 12 }}>{r.recebido ? fmt(r.recebido) : "—"}{r._a !== null && r._a > 1 && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>lançado +{r._a} dias depois</div>}</td>
                     <td style={{ whiteSpace: "normal" }}><span className={`tbl-days ${cor(r._c.cat)}`}>{r._c.cat}</span><div className="g-muted" style={{ fontSize: 11, marginTop: 3 }}>{r._c.txt}</div></td>
-                    <td>{ok ? <span className="g-btn ghost danger" title="Excluir registro" onClick={() => rem(r)}><Trash2 size={13} /></span> : <Lock size={12} color="var(--text-faint)" title="Só o departamento dono (ou o administrador) edita" />}</td>
+                    <td>{ok ? <span className="g-btn ghost danger g-keep" title="Excluir registro" onClick={() => rem(r)}><Trash2 size={13} /></span> : <Lock size={12} color="var(--text-faint)" title="Só o departamento dono (ou o administrador) edita" />}</td>
                   </tr>
                 );
               })}
@@ -8276,7 +8274,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
   const almox = meusDeptos.includes("Almoxarifado");
   const verTodos = admin || almox;
   const pode = (d) => podeEditarMat(currentUser, d);
-  const deptsEditaveis = admin || almox ? MAT_DEPTS : (currentUser?.role !== "viewer" ? meusDeptos : []);
+  const deptsEditaveis = admin || almox ? MAT_DEPTS : meusDeptos;
   const podeCriar = deptsEditaveis.length > 0;
 
   const [f, setF] = useState({ busca: "", dept: "Todos", status: "Todos", proc: "Todos", meu: false });
@@ -8475,7 +8473,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
 
       <div className="g-panel">
         <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          {podeCriar && <button className="g-btn primary" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Nova requisição"}</button>}
+          {podeCriar && <button className="g-btn primary g-keep" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Nova requisição"}</button>}
           {podeCriar && <><input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
             <button className="g-btn" onClick={() => fileRef.current?.click()} title="Importa várias requisições de uma planilha Excel (só as do seu departamento)"><Upload size={14} />Importar Excel</button>
             <button className="g-btn" onClick={baixarModelo} title="Baixa a planilha modelo com as colunas e as listas permitidas"><Download size={14} />Baixar modelo</button></>}
@@ -8515,7 +8513,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
             {campo("Observação", <textarea className="g-edit-wrap" rows={2} value={novo.obs} onChange={(e) => setNovo((p) => ({ ...p, obs: e.target.value }))} />, true)}
           </div>
           <div className="g-flex" style={{ gap: 8, marginTop: 10 }}>
-            <button className="g-btn primary" onClick={salvarNovo}>Adicionar requisição</button>
+            <button className="g-btn primary g-keep" onClick={salvarNovo}>Adicionar requisição</button>
             <button className="g-btn" onClick={() => setNovo(null)}>Cancelar</button>
           </div>
         </div>
@@ -8552,7 +8550,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
                     <td style={{ verticalAlign: "top" }}>{C(r, "eta", "date")}</td>
                     <td style={{ verticalAlign: "top" }}>{C(r, "dataRecebimento", "date")}</td>
                     <td style={{ verticalAlign: "top", whiteSpace: "normal" }}>{C(r, "obs", "area")}</td>
-                    <td style={{ verticalAlign: "top" }}>{ok ? <span className="g-btn ghost danger" title="Excluir requisição" onClick={() => remover(r)}><Trash2 size={13} /></span> : <Lock size={12} color="var(--text-faint)" title="Só o departamento dono ou o Almoxarifado edita" />}</td>
+                    <td style={{ verticalAlign: "top" }}>{ok ? <span className="g-btn ghost danger g-keep" title="Excluir requisição" onClick={() => remover(r)}><Trash2 size={13} /></span> : <Lock size={12} color="var(--text-faint)" title="Só o departamento dono ou o Almoxarifado edita" />}</td>
                   </tr>
                 );
               })}
@@ -9908,7 +9906,7 @@ function SettingsView({ currentUser, users, setUsers }) {
         </div>
         <div className="g-alert" style={{ background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
           <Lock size={14} style={{ marginTop: 1 }} />
-          Somente o administrador acessa Configurações. "Visualizador" só consulta (não edita, não importa, não exclui) e vê apenas as abas marcadas. Login local ao navegador — não é uma autenticação segura de servidor.
+          Somente o administrador acessa Configurações. "Visualizador" só consulta as abas em geral (não edita, não importa, não exclui) e vê apenas as abas marcadas. EXCEÇÃO: nas abas Materiais e TM Master › Registro de Bordo, quem tem departamentos marcados abaixo edita esses departamentos mesmo sendo Visualizador (o perfil não importa ali; o que vale é a marcação). Login local ao navegador — não é uma autenticação segura de servidor.
         </div>
         <table className="g-table">
           <thead>
