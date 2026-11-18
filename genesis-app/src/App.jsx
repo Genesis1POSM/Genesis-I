@@ -689,7 +689,7 @@ const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação rece
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
 const PRIORITY = ["Baixa", "Normal", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 /* Materiais (nova aba): departamentos, status e colunas da requisição */
-const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Elétrica", "Almoxarifado"];
+const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Elétrica", "OIM", "Subsea", "Almoxarifado"];
 /* Registro de Bordo: departamentos próprios e data de início (só vale a partir daqui) */
 const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
 const BORDO_INICIO = "2026-11-18";
