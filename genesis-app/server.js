@@ -102,6 +102,14 @@ app.put("/api/state", async (req, res) => {
   try {
     const data = { ...(req.body.data || {}) };
     let extra = {};
+    {
+      /* Visualizador (não admin) só pode gravar Materiais e Registro de Bordo; qualquer outra chave é descartada */
+      const atualU = (await getState()) || {};
+      const u0 = acharUsuario(atualU.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
+      if (u0 && u0.role === "viewer" && !(u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"))) {
+        for (const k of Object.keys(data)) if (!["matReqs", "matDeleted", "tmBordo", "bordoDeleted"].includes(k)) delete data[k];
+      }
+    }
     if (Array.isArray(data.matReqs)) {
       /* Materiais: quem salva é identificado pelo usuário/senha enviados nos cabeçalhos e só consegue
          alterar as linhas do seu departamento (Almoxarifado e administrador: todas) */
