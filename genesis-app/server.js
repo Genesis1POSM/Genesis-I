@@ -108,6 +108,26 @@ app.get("/api/bordo", async (req, res) => {
   }
 });
 
+app.put("/api/usuarios", async (req, res) => {
+  try {
+    const lista = req.body && req.body.users;
+    if (!Array.isArray(lista) || !lista.length) return res.status(400).json({ error: "Lista de usuários inválida." });
+    const atual = (await getState()) || {};
+    const ehAdm = (u) => !!u && (u.admin === true || (u.admin === undefined && String(u.username || "").toLowerCase() === "lethicia"));
+    if (Array.isArray(atual.users) && atual.users.length) {
+      const nome = req.get("x-genesis-user");
+      const quem = acharUsuario(atual.users, nome, req.get("x-genesis-pass")) || acharUsuario(atual.users, nome, req.get("x-genesis-oldpass"));
+      if (!ehAdm(quem)) return res.status(403).json({ error: "Somente o administrador (com usuário e senha válidos) pode salvar usuários. Entre de novo." });
+    }
+    if (!lista.some(ehAdm)) return res.status(400).json({ error: "A lista precisa manter pelo menos um administrador." });
+    await setState({ users: lista });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Falha ao salvar usuários no servidor." });
+  }
+});
+
 app.put("/api/state", async (req, res) => {
   try {
     const data = { ...(req.body.data || {}) };
@@ -119,7 +139,8 @@ app.put("/api/state", async (req, res) => {
       /* a lista de usuários/permissões só pode ser gravada pelo administrador: um navegador antigo de outra pessoa
          (com a lista desatualizada) não pode mais sobrescrever usuários e permissões recém-criados */
       const ehAdm0 = !!u0 && (u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"));
-      if ("users" in data && Array.isArray(atualU.users) && atualU.users.length && !ehAdm0) delete data.users;
+      /* usuários agora são gravados só por PUT /api/usuarios; aqui só entram se o servidor ainda não tiver nenhum (primeira carga) */
+      if ("users" in data && Array.isArray(atualU.users) && atualU.users.length) delete data.users;
       if (u0 && u0.role === "viewer" && !(u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"))) {
         for (const k of Object.keys(data)) if (!["matReqs", "matDeleted", "tmBordo", "bordoDeleted"].includes(k)) delete data[k];
       }
