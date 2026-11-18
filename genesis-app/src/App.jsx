@@ -1711,7 +1711,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   const [expandedWp, setExpandedWp] = useState(null);
   const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
   const [manSub, setManSub] = useState("services"); // "services" | "planejamento" | "portcall" | "reparo"
-  const [planSubTab, setPlanSubTab] = useState("mapeados"); // "mapeados" | "docagem" | "board"
+  const [planSubTab, setPlanSubTab] = useState("funil"); // "funil" | "mapeados" | "docagem" | ...
   const [tmSubTab, setTmSubTab] = useState("due"); // "due" | "history" | "metricas"
   const [alertaDias, setAlertaDias] = useState(20);
   const [alertaVencidos, setAlertaVencidos] = useState(false);
@@ -2123,14 +2123,14 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
      automaticamente uma linha correspondente em Serviços (aparece no Gantt/Port Call normalmente),
      e marca o vínculo pra não duplicar se a data for editada de novo depois */
   React.useEffect(() => {
-    const paraGraduar = planningItems.filter((p) => p.dataExecucao && !p.linkedServiceId);
+    const paraGraduar = planningItems.filter((p) => p.cronoConf && p.cronoIni && p.cronoFim && !p.linkedServiceId);
     if (paraGraduar.length === 0) return;
     const linkByPlanId = {};
     const novosServicos = paraGraduar.map((p) => {
       const serviceId = uid("PC-2026-08");
       linkByPlanId[p.id] = serviceId;
-      const start = `${p.dataExecucao}T08:00`;
-      const end = `${p.dataExecucao}T17:00`;
+      const start = p.cronoIni;
+      const end = p.cronoFim;
       return {
         id: serviceId, name: p.nome, discipline: "Marine", group: "Sem categoria",
         ganttCategory: "Manutenção", empresa: p.empresa || "", md: "Não", rc: "", obs: "",
@@ -2147,14 +2147,14 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   /* mesma lógica de graduação automática, agora pros itens de Docagem (Machinery Items DNV) — usa
      a Previsão de Execução como gatilho (não a Data de Conclusão, que só é preenchida depois) */
   React.useEffect(() => {
-    const paraGraduar = docagemItems.filter((d) => d.previsaoExecucao && !d.linkedServiceId);
+    const paraGraduar = docagemItems.filter((d) => d.cronoConf && d.cronoIni && d.cronoFim && !d.linkedServiceId);
     if (paraGraduar.length === 0) return;
     const linkByDocId = {};
     const novosServicos = paraGraduar.map((d) => {
       const serviceId = uid("PC-2026-08");
       linkByDocId[d.id] = serviceId;
-      const start = `${d.previsaoExecucao}T08:00`;
-      const end = `${d.previsaoExecucao}T17:00`;
+      const start = d.cronoIni;
+      const end = d.cronoFim;
       return {
         id: serviceId, name: d.nome, discipline: "Marine", group: "Sem categoria",
         ganttCategory: "Manutenção", empresa: d.empresa || "", md: "Não", rc: "", obs: "",
@@ -2167,6 +2167,62 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     setWorkPackages((prev) => [...prev, ...novosServicos]);
     setDocagemItems((prev) => prev.map((d) => (linkByDocId[d.id] ? { ...d, linkedServiceId: linkByDocId[d.id] } : d)));
   }, [docagemItems]);
+
+  /* Cronograma ↔ Serviços (nos dois sentidos): quem mudou por último vale. Mudou no cronograma → atualiza o Serviço;
+     mudou o horário no Serviço (ex.: arrastou no Gantt) → atualiza o cronograma. Serviço concluído/cancelado encerra o item. */
+  const funilSync = useRef({});
+  React.useEffect(() => {
+    const pares = [
+      ...planningItems.filter((p) => p.cronoConf && p.linkedServiceId).map((p) => ({ src: "M", id: p.id, wp: p.linkedServiceId, nome: p.nome, empresa: p.empresa || "", plano: p.planoAcao || "", ini: p.cronoIni, fim: p.cronoFim, status: p.status })),
+      ...docagemItems.filter((d) => d.cronoConf && d.linkedServiceId).map((d) => ({ src: "D", id: d.id, wp: d.linkedServiceId, nome: d.nome, empresa: d.empresa || "", plano: d.planoAcao || "", ini: d.cronoIni, fim: d.cronoFim, status: d.status })),
+    ];
+    if (!pares.length) return;
+    const wpById = new Map(workPackages.map((w) => [w.id, w]));
+    const push = new Map(), pull = new Map(), enc = new Map();
+    pares.forEach((x) => {
+      const w = wpById.get(x.wp); if (!w) return;
+      const sig = `${x.ini}|${x.fim}|${x.nome}|${x.empresa}|${x.plano}`;
+      const wsig = `${w.start}|${w.end}`;
+      const last = funilSync.current[x.wp];
+      if (!last) { funilSync.current[x.wp] = { sig, wsig }; if (wsig !== `${x.ini}|${x.fim}`) push.set(x.wp, x); }
+      else if (last.sig !== sig) { push.set(x.wp, x); funilSync.current[x.wp] = { sig, wsig: `${x.ini}|${x.fim}` }; }
+      else if (last.wsig !== wsig) { pull.set(x.wp, { x, w }); funilSync.current[x.wp] = { sig: `${w.start}|${w.end}|${x.nome}|${x.empresa}|${x.plano}`, wsig }; }
+      if ((w.status === "Concluído" || w.status === "Cancelado") && x.status !== w.status) enc.set(`${x.src}:${x.id}`, w.status);
+    });
+    if (push.size) setWorkPackages((prev) => prev.map((w) => { const x = push.get(w.id); return x ? { ...w, start: x.ini || w.start, end: x.fim || w.end, name: x.nome, empresa: x.empresa, planoAcao: x.plano } : w; }));
+    if (pull.size) {
+      setPlanningItems((prev) => prev.map((p) => { const q = p.linkedServiceId && pull.get(p.linkedServiceId); return q ? { ...p, cronoIni: q.w.start, cronoFim: q.w.end } : p; }));
+      setDocagemItems((prev) => prev.map((d) => { const q = d.linkedServiceId && pull.get(d.linkedServiceId); return q ? { ...d, cronoIni: q.w.start, cronoFim: q.w.end } : d; }));
+    }
+    if (enc.size) {
+      setPlanningItems((prev) => prev.map((p) => (enc.has(`M:${p.id}`) ? { ...p, status: enc.get(`M:${p.id}`) } : p)));
+      setDocagemItems((prev) => prev.map((d) => (enc.has(`D:${d.id}`) ? { ...d, status: enc.get(`D:${d.id}`) } : d)));
+    }
+  }, [planningItems, docagemItems, workPackages]);
+
+  /* Serviço Concluído → entra sozinho em Pagamentos (status "Serviço executado"), uma única vez por serviço (vínculo wpId).
+     Se já existir um pagamento com o mesmo nome de serviço, ele é apenas ligado ao serviço (e avança para "Serviço executado"
+     se ainda estiver em Orçamento/Aprovado/PO emitida). */
+  React.useEffect(() => {
+    const concl = workPackages.filter((w) => w.status === "Concluído");
+    if (!concl.length) return;
+    setPayments((prev) => {
+      const norm = (v) => String(v || "").trim().toLowerCase();
+      const ligados = new Set(prev.map((x) => x.wpId).filter(Boolean));
+      const porNome = new Map(prev.filter((x) => !x.wpId).map((x) => [norm(x.service), x]));
+      const ANTES = ["Orçamento", "Aprovado", "PO emitida"];
+      let mudou = false; const ligar = new Map(); const novos = [];
+      concl.forEach((w) => {
+        if (ligados.has(w.id)) return;
+        const ex = porNome.get(norm(w.name));
+        if (ex && !ligar.has(ex.id)) { ligar.set(ex.id, w.id); mudou = true; porNome.delete(norm(w.name)); return; }
+        novos.push({ id: uid("PAY"), wpId: w.id, service: w.name || "—", po: "", poValue: Number(w.committed) || 0, nf: "", nfValue: 0, issue: "", due: "", status: "Serviço executado", auto: true });
+        mudou = true;
+      });
+      if (!mudou) return prev;
+      return [...prev.map((x) => (ligar.has(x.id) ? { ...x, wpId: ligar.get(x.id), status: ANTES.includes(x.status) ? "Serviço executado" : x.status } : x)), ...novos];
+    });
+  }, [workPackages]);
 
   const addWp = () => {
     const id = uid("PC-2026-08");
@@ -2945,7 +3001,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
-            handleImportDocagem={handleImportDocagem} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab}
+            handleImportDocagem={handleImportDocagem} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab} setPlanningItems={setPlanningItems} setDocagemItems={setDocagemItems}
             newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
         )}
 
@@ -4866,10 +4922,265 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
    PLANEJAMENTO — mapeia manutenções em atraso: plano de ação para
    concluir, necessidade de material, e impacto de cada atraso
    ============================================================ */
+/* ============================================================
+   FUNIL DE MANUTENÇÃO — 3 etapas sobre a mesma lista (Mapeados + Itens DNV)
+   1 Mapeamento total  →  2 Análise do porto  →  3 Cronograma (confirmar cria/atualiza o Serviço)
+   ============================================================ */
+const FUNIL_ORIGENS = ["Bordo", "DNV", "TM Master", "Inspeção", "Outro"];
+const FUNIL_DECISOES = ["Faz no porto", "Precisa de parada", "Só docagem", "Aguardando material", "Descartar"];
+const FUNIL_DEC_COR = { "Faz no porto": "var(--ok)", "Precisa de parada": "var(--warn)", "Só docagem": "var(--teal)", "Aguardando material": "var(--warn)", "Descartar": "var(--text-faint)" };
+const funilAberto = (r) => r.status !== "Concluído" && r.status !== "Cancelado";
+const funilIni = (pc) => `${pc}T08:00`;
+const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.getMinutes() + Math.round((Number(h) || 9) * 60)); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setReportFn, setExportXlsxFn }) {
+  const hoje = todayISO();
+  const rows = useMemo(() => [
+    ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decisao: p.decisao || "", duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId })),
+    ...docagemItems.map((d) => ({ key: "D:" + d.id, src: "D", id: d.id, origem: "DNV", nome: d.nome, area: d.localizacao || "", empresa: d.empresa || "", plano: d.planoAcao || "", impacto: d.impacto || "—", status: d.status || "A Executar", material: !!d.necessitaMaterial, po: d.poRelacionada || "", decisao: d.decisao || "", duracaoH: d.duracaoH || "", analise: d.analise || "", pc: d.cronoPC || "", ordem: d.cronoOrdem || 0, ini: d.cronoIni || "", fim: d.cronoFim || "", conf: !!d.cronoConf, linked: d.linkedServiceId })),
+  ], [planningItems, docagemItems]);
+  const MAPA_M = { area: "departamento", plano: "planoAcao", material: "precisaMaterial", po: "poMaterial", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise", origem: "origem" };
+  const MAPA_D = { area: "localizacao", plano: "planoAcao", material: "necessitaMaterial", po: "poRelacionada", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise" };
+  const set = (r, patch) => {
+    const mapa = r.src === "M" ? MAPA_M : MAPA_D;
+    const real = Object.fromEntries(Object.entries(patch).map(([k, v]) => [mapa[k] || k, v]));
+    (r.src === "M" ? setPlanningItems : setDocagemItems)((arr) => arr.map((x) => (x.id === r.id ? { ...x, ...real } : x)));
+  };
+  const apagar = (r) => { if (!window.confirm(`Excluir "${r.nome}"?`)) return; (r.src === "M" ? setPlanningItems : setDocagemItems)((arr) => arr.filter((x) => x.id !== r.id)); };
+  const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
+  const abertos = rows.filter(funilAberto);
+  const norm = (v) => String(v || "").toLowerCase();
+
+  /* ---------- filtros comuns ---------- */
+  const [f, setF] = useState({ busca: "", origem: "Todas", dec: "Todas", area: "" });
+  const lista = abertos.filter((r) => (f.origem === "Todas" || r.origem === f.origem) && (f.dec === "Todas" || (f.dec === "Sem decisão" ? !r.decisao : r.decisao === f.dec)) && (!f.busca || norm(`${r.nome} ${r.area} ${r.empresa} ${r.plano}`).includes(norm(f.busca))));
+  const filtros = (comDec) => (
+    <div className="g-filterbar" style={{ padding: "10px 16px", marginBottom: 12, borderRadius: 6 }}>
+      <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="nome, área, empresa…" /></div>
+      <div className="g-field"><label>Origem</label><select value={f.origem} onChange={(e) => setF((p) => ({ ...p, origem: e.target.value }))}>{["Todas", ...FUNIL_ORIGENS].map((o) => <option key={o}>{o}</option>)}</select></div>
+      {comDec && <div className="g-field"><label>Decisão</label><select value={f.dec} onChange={(e) => setF((p) => ({ ...p, dec: e.target.value }))}>{["Todas", "Sem decisão", ...FUNIL_DECISOES].map((o) => <option key={o}>{o}</option>)}</select></div>}
+    </div>
+  );
+
+  /* ---------- cabeçalho com as 3 etapas ---------- */
+  const nSem = abertos.filter((r) => !r.decisao).length;
+  const nPorto = abertos.filter((r) => r.decisao === "Faz no porto").length;
+  const nCrono = abertos.filter((r) => r.pc).length;
+  const nConf = abertos.filter((r) => r.conf).length;
+  const passo = (n, k, titulo, sub) => (
+    <div onClick={() => { setReportFn && setReportFn(null); setExportXlsxFn && setExportXlsxFn(null); setStage(k); }} style={{ flex: 1, minWidth: 200, cursor: "pointer", padding: "10px 14px", borderRadius: 8, border: `2px solid ${stage === k ? "var(--teal)" : "var(--border)"}`, background: stage === k ? "rgba(43,108,176,0.08)" : "transparent" }}>
+      <div style={{ fontWeight: 700, fontSize: 13 }}><span style={{ display: "inline-block", width: 20, height: 20, lineHeight: "20px", textAlign: "center", borderRadius: 10, background: stage === k ? "var(--teal)" : "var(--border)", color: "#fff", marginRight: 6, fontSize: 12 }}>{n}</span>{titulo}</div>
+      <div className="g-muted" style={{ fontSize: 11.5, marginTop: 3 }}>{sub}</div>
+    </div>
+  );
+  const cab = (
+    <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+      {passo(1, "mapa", "Mapeamento total", `${abertos.length} itens em aberto (Mapeados + DNV)`)}
+      {passo(2, "analise", "Análise do porto", `${nSem} sem decisão · ${nPorto} fazem no porto`)}
+      {passo(3, "crono", "Cronograma", `${nCrono} no cronograma · ${nConf} confirmados em Serviços`)}
+    </div>
+  );
+
+  /* ================= ETAPA 1 ================= */
+  const [nv, setNv] = useState({ nome: "", origem: "Bordo", area: "", empresa: "", plano: "", impacto: "Médio" });
+  const [msg, setMsg] = useState("");
+  const adicionar = () => {
+    if (!nv.nome.trim()) { setMsg("Escreva o nome da manutenção."); setTimeout(() => setMsg(""), 3000); return; }
+    if (nv.origem === "DNV") {
+      setDocagemItems((r) => [...r, { id: uid("DOC"), nome: nv.nome.trim(), localizacao: nv.area, tipoPeriodo: "", empresa: nv.empresa, planoAcao: nv.plano, necessitaMaterial: false, poRelacionada: "", previsaoExecucao: "", dataConclusao: "", status: "A Executar", linkedServiceId: null }]);
+    } else {
+      setPlanningItems((r) => [...r, { id: uid("PLAN"), nome: nv.nome.trim(), departamento: nv.area, empresa: nv.empresa, descricaoProblema: "", planoAcao: nv.plano, rc: "", obs: "", status: "A Executar", precisaMaterial: false, materialNecessario: "", poMaterial: "", impacto: nv.impacto, dataExecucao: "", linkedServiceId: null, jobTipo: "", jobNo: "", justificativa: "", origem: nv.origem }]);
+    }
+    setNv((p) => ({ ...p, nome: "", plano: "" })); setMsg("Adicionado à lista."); setTimeout(() => setMsg(""), 2500);
+  };
+  const enter = (e) => { if (e.key === "Enter") adicionar(); };
+  const porOrigem = FUNIL_ORIGENS.map((o) => ({ o, n: abertos.filter((r) => r.origem === o).length })).filter((x) => x.n);
+
+  const etapa1 = (
+    <>
+      <div className="g-panel" style={{ borderLeft: "4px solid var(--teal)" }}>
+        <div className="g-panel-head"><span className="g-panel-title">Lançamento rápido — digite e aperte Enter</span></div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 2fr 1fr auto", gap: 8, alignItems: "end" }}>
+          <div className="g-field"><label>Manutenção *</label><input value={nv.nome} onChange={(e) => setNv((p) => ({ ...p, nome: e.target.value }))} onKeyDown={enter} placeholder="ex.: Troca do selo da bomba 2" /></div>
+          <div className="g-field"><label>Origem</label><select value={nv.origem} onChange={(e) => setNv((p) => ({ ...p, origem: e.target.value }))}>{FUNIL_ORIGENS.map((o) => <option key={o}>{o}</option>)}</select></div>
+          <div className="g-field"><label>Área / localização</label><input value={nv.area} onChange={(e) => setNv((p) => ({ ...p, area: e.target.value }))} onKeyDown={enter} /></div>
+          <div className="g-field"><label>Empresa</label><input value={nv.empresa} onChange={(e) => setNv((p) => ({ ...p, empresa: e.target.value }))} onKeyDown={enter} /></div>
+          <div className="g-field"><label>Plano de ação</label><input value={nv.plano} onChange={(e) => setNv((p) => ({ ...p, plano: e.target.value }))} onKeyDown={enter} /></div>
+          <div className="g-field"><label>Impacto</label><select value={nv.impacto} onChange={(e) => setNv((p) => ({ ...p, impacto: e.target.value }))} disabled={nv.origem === "DNV"}>{IMPACT_LEVELS.map((o) => <option key={o}>{o}</option>)}</select></div>
+          <button className="g-btn primary g-keep" onClick={adicionar}><Plus size={14} />Adicionar</button>
+        </div>
+        {msg && <div className="g-muted" style={{ fontSize: 12, marginTop: 6 }}>{msg}</div>}
+        <div className="g-muted" style={{ fontSize: 11, marginTop: 6 }}>Itens que já existem em “Mapeados para Execução” e “Itens DNV” aparecem aqui automaticamente — esta é a lista única de tudo o que está mapeado.</div>
+      </div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+        {bigKpi("Mapeado em aberto", abertos.length, "var(--teal)", ClipboardList)}
+        {porOrigem.map((x) => bigKpi(x.o, x.n, "var(--teal)", Wrench))}
+        {bigKpi("Sem plano de ação", abertos.filter((r) => !String(r.plano).trim()).length, abertos.some((r) => !String(r.plano).trim()) ? "var(--warn)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Sem empresa", abertos.filter((r) => !String(r.empresa).trim()).length, "var(--text-dim)", AlertTriangle)}
+      </div>
+      {filtros(false)}
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Mapeamento total ({lista.length})</span></div>
+        <div className="g-table-wrap" style={{ maxHeight: 620, overflow: "auto" }}>
+          <table className="g-table tbl-modern">
+            <thead><tr><th style={{ minWidth: 220 }}>Manutenção</th><th>Origem</th><th style={{ minWidth: 130 }}>Área / localização</th><th style={{ minWidth: 120 }}>Empresa</th><th style={{ minWidth: 240 }}>Plano de ação</th><th>Impacto</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              {lista.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nada mapeado com esse filtro.</td></tr>}
+              {lista.map((r) => (
+                <tr className="g-row tbl-row" key={r.key}>
+                  <td><input style={inp} value={r.nome} onChange={(e) => set(r, { nome: e.target.value })} /></td>
+                  <td>{r.src === "M" ? <select style={inp} value={r.origem} onChange={(e) => set(r, { origem: e.target.value })}>{FUNIL_ORIGENS.filter((o) => o !== "DNV").map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">DNV</span>}</td>
+                  <td><input style={inp} value={r.area} onChange={(e) => set(r, { area: e.target.value })} /></td>
+                  <td><input style={inp} value={r.empresa} onChange={(e) => set(r, { empresa: e.target.value })} /></td>
+                  <td><input style={{ ...inp, borderColor: String(r.plano).trim() ? undefined : "var(--warn)" }} value={r.plano} onChange={(e) => set(r, { plano: e.target.value })} placeholder="o que será feito" /></td>
+                  <td>{r.src === "M" ? <select style={inp} value={r.impacto} onChange={(e) => set(r, { impacto: e.target.value })}>{IMPACT_LEVELS.map((o) => <option key={o}>{o}</option>)}</select> : <span className="g-muted">—</span>}</td>
+                  <td><select style={inp} value={r.status} onChange={(e) => set(r, { status: e.target.value })}>{PLAN_STATUS.map((o) => <option key={o}>{o}</option>)}</select></td>
+                  <td><span className="g-btn ghost danger" title="Excluir" onClick={() => apagar(r)}><Trash2 size={13} /></span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+
+  /* ================= ETAPA 2 ================= */
+  const etapa2 = (
+    <>
+      <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
+        Para cada item mapeado, decida o que pode ser feito <strong>no porto</strong>. Os marcados como <strong>“Faz no porto”</strong> seguem para o Cronograma. Informe a duração estimada e se depende de material — isso evita agendar o que não dá para executar.
+      </div>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+        {bigKpi("Sem decisão", nSem, nSem ? "var(--warn)" : "var(--ok)", AlertTriangle)}
+        {FUNIL_DECISOES.map((d) => bigKpi(d, abertos.filter((r) => r.decisao === d).length, FUNIL_DEC_COR[d], Wrench))}
+      </div>
+      {filtros(true)}
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Análise — o que pode ser feito no porto ({lista.length})</span></div>
+        <div className="g-table-wrap" style={{ maxHeight: 620, overflow: "auto" }}>
+          <table className="g-table tbl-modern">
+            <thead><tr><th style={{ minWidth: 200 }}>Manutenção</th><th>Origem</th><th style={{ minWidth: 200 }}>Plano de ação</th><th style={{ minWidth: 140 }}>Empresa</th><th style={{ minWidth: 150 }}>Decisão</th><th style={{ minWidth: 80 }}>Duração (h)</th><th>Material?</th><th style={{ minWidth: 90 }}>PO</th><th style={{ minWidth: 200 }}>Análise / observação</th></tr></thead>
+            <tbody>
+              {lista.length === 0 && <tr><td colSpan={9} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nada para analisar com esse filtro.</td></tr>}
+              {lista.map((r) => {
+                const semPo = r.material && !String(r.po).trim();
+                return (
+                  <tr className="g-row tbl-row" key={r.key} style={{ "--c": r.decisao ? FUNIL_DEC_COR[r.decisao] : "var(--warn)" }}>
+                    <td><b>{r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.area || "—"}</div></td>
+                    <td><span className="tbl-chip">{r.origem}</span></td>
+                    <td style={{ whiteSpace: "normal", fontSize: 12 }}>{r.plano || <span className="g-muted">sem plano</span>}</td>
+                    <td><input style={inp} value={r.empresa} onChange={(e) => set(r, { empresa: e.target.value })} /></td>
+                    <td><select style={{ ...inp, borderColor: r.decisao ? undefined : "var(--warn)", color: r.decisao ? FUNIL_DEC_COR[r.decisao] : undefined, fontWeight: 600 }} value={r.decisao} onChange={(e) => set(r, { decisao: e.target.value })}><option value="">— decidir —</option>{FUNIL_DECISOES.map((o) => <option key={o}>{o}</option>)}</select></td>
+                    <td><input style={inp} type="number" min="0" step="0.5" value={r.duracaoH} onChange={(e) => set(r, { duracaoH: e.target.value })} /></td>
+                    <td style={{ textAlign: "center" }}><input type="checkbox" checked={r.material} onChange={(e) => set(r, { material: e.target.checked })} /></td>
+                    <td><input style={{ ...inp, borderColor: semPo ? "var(--crit)" : undefined }} value={r.po} onChange={(e) => set(r, { po: e.target.value })} placeholder={r.material ? "PO" : "—"} /></td>
+                    <td><input style={inp} value={r.analise} onChange={(e) => set(r, { analise: e.target.value })} />{semPo && r.decisao === "Faz no porto" && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>precisa de material e ainda não tem PO</div>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+
+  /* ================= ETAPA 3 ================= */
+  const [pc, setPc] = useState("");
+  const pcs = allPortCallDates;
+  const pcAtual = pc || pcs.find((d) => d >= hoje) || pcs[pcs.length - 1] || "";
+  const candidatos = abertos.filter((r) => r.decisao === "Faz no porto" && !r.pc);
+  const noPc = abertos.filter((r) => r.pc === pcAtual).sort((a, b) => (a.ordem - b.ordem) || String(a.ini).localeCompare(String(b.ini)));
+  const meta = portCallMeta?.[pcAtual];
+  const janelaFim = pcAtual ? funilSomaH(funilIni(pcAtual).slice(0, 10) + "T00:00", meta?.duration || 24) : "";
+  const proxOrdem = () => Math.max(0, ...rows.filter((r) => r.pc === pcAtual).map((r) => r.ordem)) + 1;
+  const fimMax = () => rows.filter((r) => r.pc === pcAtual && r.fim).map((r) => r.fim).sort().pop() || "";
+  const agendar = (r, de) => {
+    if (!pcAtual) return;
+    const ini = de || fimMax() || funilIni(pcAtual);
+    set(r, { pc: pcAtual, ordem: proxOrdem(), ini, fim: funilSomaH(ini, r.duracaoH), conf: false });
+  };
+  const agendarTodos = () => {
+    let o = proxOrdem(); let cur = fimMax() || funilIni(pcAtual);
+    candidatos.forEach((r) => { const ini = cur; const fim = funilSomaH(ini, r.duracaoH); set(r, { pc: pcAtual, ordem: o++, ini, fim, conf: false }); cur = fim; });
+  };
+  const tirar = (r) => { if (r.conf && r.linked && !window.confirm("Este item já virou Serviço. Tirar do cronograma NÃO apaga o Serviço — apague-o em Serviços se necessário. Continuar?")) return; set(r, { pc: "", conf: false }); };
+  const mover = (r, dir) => {
+    const i = noPc.findIndex((x) => x.key === r.key); const j = i + dir; if (j < 0 || j >= noPc.length) return;
+    const a = noPc[i], b = noPc[j]; const oa = a.ordem || i + 1, ob = b.ordem || j + 1;
+    set(a, { ordem: ob === oa ? ob + dir : ob }); set(b, { ordem: oa });
+  };
+  const confirmar = (r) => { if (!r.ini || !r.fim) return; set(r, { conf: true }); };
+  const confirmarTodos = () => noPc.filter((r) => r.ini && r.fim && !r.conf).forEach((r) => set(r, { conf: true }));
+  const fmtH = (s) => (s ? `${fmtDataCompleta(s.slice(0, 10))} ${s.slice(11, 16)}` : "—");
+  const pendConf = noPc.filter((r) => !r.conf).length;
+  const horasTotal = noPc.reduce((s, r) => s + (r.ini && r.fim ? Math.max(0, (new Date(r.fim) - new Date(r.ini)) / 3600000) : 0), 0);
+
+  const etapa3 = (
+    <>
+      <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
+        Escolha o Port Call, traga os itens aprovados na análise, ajuste a ordem e os horários e clique em <strong>Confirmar</strong>. Cada item confirmado <strong>vira um Serviço automaticamente</strong> (aba Serviços e Gantt) e mudanças aqui passam a valer lá. Se você mudar o horário no próprio Serviço, o cronograma acompanha; se o Serviço for concluído ou cancelado, o item é encerrado aqui também.
+      </div>
+      <div className="g-panel" style={{ display: "flex", gap: 14, alignItems: "end", flexWrap: "wrap" }}>
+        <div className="g-field" style={{ minWidth: 280 }}><label>Port Call do cronograma</label>
+          <select value={pcAtual} onChange={(e) => setPc(e.target.value)}>{pcs.length === 0 && <option value="">Nenhum Port Call cadastrado (crie em Port Call)</option>}{pcs.map((d) => <option key={d} value={d}>{portCallLabel(d)}</option>)}</select>
+        </div>
+        <div className="g-muted" style={{ fontSize: 12 }}>Janela: <b>{meta?.duration || 24}h</b> · Itens: <b>{noPc.length}</b> · Horas somadas: <b>{horasTotal.toFixed(1)}h</b> · Pendentes de confirmação: <b>{pendConf}</b></div>
+        <div style={{ marginLeft: "auto" }}><button className="g-btn primary g-keep" disabled={!pendConf} onClick={confirmarTodos}>Confirmar todos ({pendConf})</button></div>
+      </div>
+
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Candidatos aprovados na análise, ainda sem Port Call ({candidatos.length})</span>{candidatos.length > 0 && <button className="g-btn g-keep" onClick={agendarTodos}>Levar todos para {pcAtual ? portCallLabel(pcAtual).split(" · ")[0] : "o Port Call"}</button>}</div>
+        {candidatos.length === 0 ? <div className="g-muted" style={{ fontSize: 12 }}>Nenhum candidato. Na etapa 2, marque “Faz no porto” nos itens que podem ser executados.</div> : (
+          <div className="g-table-wrap"><table className="g-table"><tbody>
+            {candidatos.map((r) => <tr className="g-row" key={r.key}><td><b>{r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"} · {r.empresa || "sem empresa"}{r.duracaoH ? ` · ${r.duracaoH}h` : ""}</div></td><td style={{ width: 170 }}><button className="g-btn g-keep" onClick={() => agendar(r)} disabled={!pcAtual}>Levar ao Port Call</button></td></tr>)}
+          </tbody></table></div>
+        )}
+      </div>
+
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Cronograma — {pcAtual ? portCallLabel(pcAtual) : "—"}</span></div>
+        <div className="g-table-wrap">
+          <table className="g-table tbl-modern">
+            <thead><tr><th style={{ width: 70 }}>Ordem</th><th style={{ minWidth: 220 }}>Manutenção</th><th style={{ minWidth: 120 }}>Empresa</th><th style={{ minWidth: 190 }}>Início</th><th style={{ minWidth: 190 }}>Fim</th><th>Situação</th><th></th></tr></thead>
+            <tbody>
+              {noPc.length === 0 && <tr><td colSpan={7} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item neste Port Call ainda.</td></tr>}
+              {noPc.map((r, i) => {
+                const fora = janelaFim && r.fim && r.fim > janelaFim;
+                const invalido = r.ini && r.fim && r.fim <= r.ini;
+                return (
+                  <tr className="g-row tbl-row" key={r.key} style={{ "--c": r.conf ? "#22C55E" : "#F59E0B" }}>
+                    <td style={{ whiteSpace: "nowrap" }}><span className="g-btn ghost" title="Subir" onClick={() => mover(r, -1)}>▲</span><span className="g-btn ghost" title="Descer" onClick={() => mover(r, 1)}>▼</span></td>
+                    <td><b>{i + 1}. {r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"}</div></td>
+                    <td><input style={inp} value={r.empresa} onChange={(e) => set(r, { empresa: e.target.value })} /></td>
+                    <td><input style={inp} type="datetime-local" value={r.ini} onChange={(e) => set(r, { ini: e.target.value, conf: r.conf && !!e.target.value })} /></td>
+                    <td><input style={{ ...inp, borderColor: fora || invalido ? "var(--crit)" : undefined }} type="datetime-local" value={r.fim} onChange={(e) => set(r, { fim: e.target.value })} />{fora && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>passa da janela do Port Call</div>}{invalido && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>fim antes do início</div>}</td>
+                    <td style={{ whiteSpace: "normal" }}>{r.conf ? <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓ Em Serviços{r.linked ? "" : " (criando…)"}</span> : <button className="g-btn primary g-keep" disabled={!r.ini || !r.fim || invalido} onClick={() => confirmar(r)}>Confirmar</button>}</td>
+                    <td><span className="g-btn ghost danger" title="Tirar do cronograma" onClick={() => tirar(r)}><Trash2 size={13} /></span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      {cab}
+      {stage === "mapa" ? etapa1 : stage === "analise" ? etapa2 : etapa3}
+    </>
+  );
+}
+
 function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
-  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planosBordo, setPlanosBordo, planSubTab: planSubTabProp, setPlanSubTab, tmDue, tmHistory, tmFailures, reparoItens, portCallMeta, portcallReqs, setPortcallReqs, soDocagem }) {
+  docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planosBordo, setPlanosBordo, planSubTab: planSubTabProp, setPlanSubTab, setPlanningItems, setDocagemItems, tmDue, tmHistory, tmFailures, reparoItens, portCallMeta, portcallReqs, setPortcallReqs, soDocagem }) {
   const planSubTab = soDocagem ? "docagem" : planSubTabProp;
+  const [funilStage, setFunilStage] = useState("mapa");
   const [showPast, setShowPast] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const importFileRef = useRef(null);
@@ -4984,7 +5295,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   const docGroups = useMemo(() => groupRows(filteredDocagem, groupDoc, (d) => d.localizacao, "Sem localização"), [filteredDocagem, groupDoc]);
 
   React.useEffect(() => {
-    if (!setExportXlsxFn || planSubTab === "portcall" || planSubTab === "escopo" || planSubTab === "acao") return;
+    if (!setExportXlsxFn || planSubTab === "portcall" || planSubTab === "escopo" || planSubTab === "acao" || planSubTab === "funil") return;
     setExportXlsxFn(() => () => {
       const wb = XLSX.utils.book_new();
       if (planSubTab === "mapeados") {
@@ -5003,7 +5314,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   }, [planSubTab, filteredMapeados, filteredDocagem, colunas, setExportXlsxFn]);
 
   React.useEffect(() => {
-    if (!setReportFn || planSubTab === "portcall" || planSubTab === "escopo" || planSubTab === "acao") return;
+    if (!setReportFn || planSubTab === "portcall" || planSubTab === "escopo" || planSubTab === "acao" || planSubTab === "funil") return;
     setReportFn(() => () => {
       const doc = new jsPDF();
       if (planSubTab === "mapeados") {
@@ -5065,13 +5376,17 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
   return (
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content", display: soDocagem ? "none" : undefined }}>
+        <button className={planSubTab === "funil" ? "active" : ""} onClick={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("funil"); }}>Funil: Mapear → Analisar → Programar</button>
         <button className={planSubTab === "mapeados" ? "active" : ""} onClick={() => setPlanSubTab("mapeados")}>Mapeados para Execução</button>
         <button className={planSubTab === "acao" ? "active" : ""} onClick={() => setPlanSubTab("acao")}>Plano de Ação com Bordo</button>
         <button className={planSubTab === "escopo" ? "active" : ""} onClick={() => setPlanSubTab("escopo")}>Análise de Escopo</button>
         <button className={planSubTab === "portcall" ? "active" : ""} onClick={() => setPlanSubTab("portcall")}>Solicitação Portcall</button>
       </div>
 
-      {planSubTab === "acao" ? (
+      {planSubTab === "funil" ? (
+        <FunilManutencaoView stage={funilStage} setStage={setFunilStage} planningItems={planningItems} setPlanningItems={setPlanningItems} docagemItems={docagemItems} setDocagemItems={setDocagemItems}
+          allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} portCallMeta={portCallMeta} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+      ) : planSubTab === "acao" ? (
         <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} updPlan={updPlan} remPlan={remPlan} updDocagem={updDocagem} remDocagem={remDocagem} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "escopo" ? (
         <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
@@ -5100,8 +5415,8 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
 
           <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
             Cadastre aqui toda manutenção que você precisa mapear — mesmo sem saber ainda quando ela vai acontecer.
-            Assim que você preencher a <strong>Data de Execução</strong> de um item, ele passa a aparecer também
-            na aba Serviços e no Port Call automaticamente, como um serviço de verdade agendado.
+            O item só vira Serviço (aba Serviços e Port Call) quando for <strong>confirmado no Cronograma</strong>,
+            na aba “Funil: Mapear → Analisar → Programar”. A Data de Execução abaixo é apenas uma previsão informativa.
           </div>
 
           <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
