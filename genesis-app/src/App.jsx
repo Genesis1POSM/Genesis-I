@@ -690,6 +690,10 @@ const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado"
 const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 /* Materiais (nova aba): departamentos, status e colunas da requisição */
 const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Almoxarifado"];
+/* Registro de Bordo: departamentos próprios e data de início (só vale a partir daqui) */
+const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
+const BORDO_INICIO = "2026-11-18";
+const DEPTS_TODOS = [...MAT_DEPTS, "Elétrica"];
 const MAT_STATUS2 = ["Aguardando Entrega", "Cancelado", "Em Processo de Compras", "Recebido", "Recusado", "Stand By"];
 const MAT_PROC = ["Aberto", "Fechado"];
 const MAT_STATUS_COR = { "Aguardando Entrega": "#3B82F6", "Cancelado": "#6B7280", "Em Processo de Compras": "#F5A623", "Recebido": "#22C55E", "Recusado": "#EF4444", "Stand By": "#9499A8" };
@@ -702,7 +706,7 @@ const MAT2_COLS = [
 /* quem pode editar uma requisição: administrador e Almoxarifado em todas; os demais, só as do seu departamento
    (mesma regra aplicada pelo servidor em matmerge.js) */
 /* departamentos de Materiais de um usuário: lista nova (matDepts) ou o campo antigo de um só (matDept) */
-const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
+const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).filter((d) => DEPTS_TODOS.includes(d));
 const podeEditarMat = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
@@ -6688,7 +6692,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const hoje = todayISO();
   const admin = isAdminUser(currentUser);
   const pode = (d) => podeEditarBordo(currentUser, d);
-  const deptsEditaveis = admin ? MAT_DEPTS : deptsDoUsuario(currentUser);
+  const deptsEditaveis = admin ? BORDO_DEPTS : deptsDoUsuario(currentUser);
   const podeCriar = deptsEditaveis.length > 0;
   const [msg, setMsg] = useState("");
   const [novo, setNovo] = useState(null);
@@ -6736,7 +6740,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   };
 
   const atrasoEnvio = (r) => (r.recebido && r.data ? Math.round((new Date(r.recebido + "T00:00:00") - new Date(r.data + "T00:00:00")) / 86400000) : null);
-  const rows = useMemo(() => tmBordo.map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : conferir(r), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
+  const rows = useMemo(() => tmBordo.filter((r) => (r.data || "") >= BORDO_INICIO && BORDO_DEPTS.includes(r.departamento)).map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : conferir(r), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
   const norm = (v) => String(v || "").toLowerCase();
   const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status) && (f.dept === "Todos" || r.departamento === f.dept)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
@@ -6747,12 +6751,14 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const diasAtras = (n) => { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - n); return iso(d); };
 
   /* controle diário: quais departamentos registraram (ou informaram "sem atividade") em cada um dos últimos 7 dias */
-  const obrig = (Array.isArray(regObrig) && regObrig.length ? regObrig : MAT_DEPTS).filter((d) => MAT_DEPTS.includes(d));
-  const dias7 = Array.from({ length: 7 }, (_, i) => diasAtras(6 - i));
+  const obrig = (Array.isArray(regObrig) && regObrig.length ? regObrig : BORDO_DEPTS).filter((d) => BORDO_DEPTS.includes(d));
+  const dias7 = Array.from({ length: 7 }, (_, i) => diasAtras(6 - i)).filter((x) => x >= BORDO_INICIO);
   const cont = useMemo(() => { const m = new Map(); tmBordo.forEach((r) => { const k = `${r.departamento}|${r.data}`; m.set(k, (m.get(k) || 0) + 1); }); return m; }, [tmBordo]);
   const feitoEm = (d, dia) => cont.get(`${d}|${dia}`) || 0;
   const pendHoje = obrig.filter((d) => !feitoEm(d, hoje));
-  const faltas = obrig.map((d) => ({ d, dias: dias7.filter((x) => x !== hoje && !feitoEm(d, x)) }));
+  /* pendências em aberto: TODO dia desde o início (até ontem) sem registro continua aparecendo até ser preenchido (ou marcado "sem atividades") */
+  const diasDesdeInicio = (() => { const out = []; const d = new Date(BORDO_INICIO + "T00:00:00"); while (iso(d) < hoje && out.length < 400) { out.push(iso(d)); d.setDate(d.getDate() + 1); } return out; })();
+  const faltas = obrig.map((d) => ({ d, dias: diasDesdeInicio.filter((x) => !feitoEm(d, x)) }));
   const totalFaltas = faltas.reduce((s, x) => s + x.dias.length, 0);
 
   const reais = filtered.filter((r) => !r.semAtv);
@@ -6763,7 +6769,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
     baixas: reais.filter((r) => r.acao === "Baixa de job").length, criacoes: reais.filter((r) => r.acao === "Criação de job").length,
   };
   const porTipo = BORDO_TIPOS.map((t) => ({ nome: t, total: reais.filter((r) => r.tipo === t).length }));
-  const porDepto = MAT_DEPTS.map((d) => ({ nome: d, total: reais.filter((r) => r.departamento === d).length })).filter((x) => x.total);
+  const porDepto = BORDO_DEPTS.map((d) => ({ nome: d, total: reais.filter((r) => r.departamento === d).length })).filter((x) => x.total);
   const porDia = useMemo(() => { const m = new Map(); reais.forEach((r) => { if (r.data) m.set(r.data, (m.get(r.data) || 0) + 1); }); return [...m.entries()].sort().slice(-30).map(([d, n]) => ({ mes: d.slice(8) + "/" + d.slice(5, 7), total: n })); }, [filtered]);
 
   const NORMA = "NORMA — REGISTRO DIÁRIO DE BORDO\n\n1. Todos os dias, até as 18h (hora de bordo), cada departamento registra no portal (TM Master > Registro de Bordo) TUDO que foi feito no dia: preventiva, preditiva e corretiva.\n2. Cada atividade deve ter o Job Type e o Job No do TM Master e a Ação no TM: baixa de job ou criação de job. Dar a baixa/criar o job no TM ANTES de registrar.\n3. Corretivas devem informar o Failure Report (FAIL-...).\n4. Dia sem atividade também deve ser informado: use o botão “Sem atividades” do departamento.\n5. Atividades comunicadas por mensagem, ligação ou relatório avulso só são consideradas depois de registradas no portal.\n6. O departamento sem registro é cobrado diariamente pelo escritório.";
@@ -6788,6 +6794,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const rascunho = () => ({ data: hoje, departamento: deptsEditaveis.length === 1 ? deptsEditaveis[0] : "", tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", por: currentUser?.name || "", obs: "" });
   const salvarNovo = (manter) => {
     if (!novo.departamento) { setMsg("Escolha o departamento."); return; }
+    if (!novo.data || novo.data < BORDO_INICIO) { setMsg("O Registro de Bordo vale a partir de " + fmtDataCompleta(BORDO_INICIO) + "."); return; }
     if (!String(novo.descricao).trim()) { setMsg("Descreva a manutenção realizada."); return; }
     const r = { ...novo, id: uid("BRD"), origem: "Portal", email: "", recebido: hoje, upd: Date.now() };
     setTmBordo((arr) => [r, ...arr]);
@@ -6841,7 +6848,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         </div>
         <div className="g-table-wrap">
           <table className="g-table" style={{ minWidth: 0, width: "100%" }}>
-            <thead><tr><th>Departamento</th>{dias7.map((d) => <th key={d} style={{ textAlign: "center", ...(d === hoje ? { color: "var(--teal)" } : {}) }}>{fmt(d).slice(0, 5)}{d === hoje ? " (hoje)" : ""}</th>)}<th style={{ textAlign: "center" }}>Dias sem registro</th></tr></thead>
+            <thead><tr><th>Departamento</th>{dias7.map((d) => <th key={d} style={{ textAlign: "center", ...(d === hoje ? { color: "var(--teal)" } : {}) }}>{fmt(d).slice(0, 5)}{d === hoje ? " (hoje)" : ""}</th>)}<th style={{ textAlign: "center" }}>Pendências em aberto</th></tr></thead>
             <tbody>
               {obrig.map((d) => {
                 const f2 = faltas.find((x) => x.d === d);
@@ -6855,7 +6862,9 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
                           : <span style={{ color: dia === hoje ? "var(--warn)" : "var(--crit)", fontWeight: 700 }}>{dia === hoje ? "pendente" : "✗ falta"}{pode(d) && <div><span style={{ fontSize: 10, fontWeight: 400, textDecoration: "underline", cursor: "pointer", color: "var(--text-dim)" }} title="Informa que o departamento não teve atividades neste dia" onClick={() => semAtividade(d, dia)}>sem atividades</span></div>}</span>}
                       </td>;
                     })}
-                    <td style={{ textAlign: "center", fontWeight: 700, color: f2.dias.length ? "var(--crit)" : "var(--ok)" }}>{f2.dias.length}</td>
+                    <td style={{ textAlign: "center", fontWeight: 700, color: f2.dias.length ? "var(--crit)" : "var(--ok)", minWidth: 150 }}>{f2.dias.length}
+                      {f2.dias.length > 0 && <div style={{ fontWeight: 400, fontSize: 11, display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center", marginTop: 3 }}>{f2.dias.map((x) => <span key={x} style={{ background: "rgba(239,68,68,.12)", color: "var(--crit)", borderRadius: 4, padding: "1px 5px" }} title={dias7.includes(x) ? "Em aberto" : "Em aberto desde esta data — continua cobrando até ser preenchido"}>{fmt(x).slice(0, 5)}</span>)}</div>}
+                    </td>
                   </tr>
                 );
               })}
@@ -6863,12 +6872,12 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
           </table>
         </div>
         <div className="g-muted" style={{ fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
-          ✓ = registrou (o número é a quantidade de linhas, incluindo “sem atividades”). O dia de hoje só vira falta quando virar o dia.
+          ✓ = registrou (o número é a quantidade de linhas, incluindo “sem atividades”). O dia de hoje só vira falta quando virar o dia. Uma falta NÃO some com o tempo: fica listada em “Pendências em aberto” até o departamento lançar o registro daquele dia (use a data do dia no formulário) ou marcar “sem atividades”.
         </div>
         {admin && (
           <div style={{ marginTop: 8, fontSize: 12 }}>
             <b>Departamentos que devem registrar todo dia:</b>{" "}
-            {MAT_DEPTS.map((d) => <label key={d} style={{ marginRight: 12, cursor: "pointer", whiteSpace: "nowrap" }}><input type="checkbox" checked={obrig.includes(d)} onChange={(e) => setRegObrig(e.target.checked ? MAT_DEPTS.filter((x) => obrig.includes(x) || x === d) : MAT_DEPTS.filter((x) => obrig.includes(x) && x !== d))} /> {d}</label>)}
+            {BORDO_DEPTS.map((d) => <label key={d} style={{ marginRight: 12, cursor: "pointer", whiteSpace: "nowrap" }}><input type="checkbox" checked={obrig.includes(d)} onChange={(e) => setRegObrig(e.target.checked ? BORDO_DEPTS.filter((x) => obrig.includes(x) || x === d) : BORDO_DEPTS.filter((x) => obrig.includes(x) && x !== d))} /> {d}</label>)}
           </div>
         )}
         <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
@@ -6894,7 +6903,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         <div className="g-panel" style={{ borderLeft: "4px solid var(--teal)" }}>
           <div className="g-panel-head"><span className="g-panel-title">Novo registro de bordo</span></div>
           <div className="tbl-detail-grid">
-            {campo("Data *", nv("data", "date"))}
+            {campo("Data *", nv("data", "date", { min: BORDO_INICIO }))}
             {campo("Departamento *", deptsEditaveis.length === 1 ? <input className="g-edit" value={novo.departamento} disabled /> : <select className="g-edit" value={novo.departamento} onChange={(e) => setNovo((p) => ({ ...p, departamento: e.target.value }))}><option value="">— escolher —</option>{deptsEditaveis.map((o) => <option key={o} value={o}>{o}</option>)}</select>)}
             {campo("Tipo", nd("tipo", BORDO_TIPOS))}
             {campo("Ação no TM", nd("acao", BORDO_ACOES))}
@@ -6916,17 +6925,17 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
 
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
-        <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...MAT_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...BORDO_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
-        <div className="g-field"><label>De</label><input type="date" value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
+        <div className="g-field"><label>De</label><input type="date" min={BORDO_INICIO} value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
         <div className="g-field"><label>Até</label><input type="date" value={f.ate} onChange={(e) => setF((p) => ({ ...p, ate: e.target.value }))} /></div>
       </div>
 
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
         {bigKpi("Departamentos sem registro hoje", pendHoje.length, pendHoje.length ? "var(--crit)" : "var(--ok)", AlertTriangle)}
-        {bigKpi("Dias em atraso (7d, todos)", totalFaltas, totalFaltas ? "var(--crit)" : "var(--ok)", Clock)}
+        {bigKpi("Dias em atraso (em aberto)", totalFaltas, totalFaltas ? "var(--crit)" : "var(--ok)", Clock)}
         {bigKpi("Registros", kpi.total, "var(--teal)", ClipboardList)}
         {bigKpi("Confirmados no TM", kpi.ok, "var(--ok)", ClipboardList)}
         {bigKpi("Pendentes no TM", kpi.pend, kpi.pend ? "var(--crit)" : "var(--ok)", AlertTriangle)}
@@ -6955,7 +6964,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
                 const E = (k, el, ver) => (ok ? el : ro(ver !== undefined ? ver : r[k]));
                 return (
                   <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
-                    <td>{E("data", <input type="date" value={r.data} onChange={(e) => upd(r.id, { data: e.target.value })} style={inp} />, fmt(r.data))}</td>
+                    <td>{E("data", <input type="date" min={BORDO_INICIO} value={r.data} onChange={(e) => e.target.value >= BORDO_INICIO && upd(r.id, { data: e.target.value })} style={inp} />, fmt(r.data))}</td>
                     <td>{ok && !r.semAtv ? <select value={r.departamento || ""} onChange={(e) => upd(r.id, { departamento: e.target.value })} style={inp}>{!r.departamento && <option value="">—</option>}{(r.departamento && !deptsEditaveis.includes(r.departamento) ? [r.departamento, ...deptsEditaveis] : deptsEditaveis).map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">{r.departamento || "sem depto."}</span>}</td>
                     <td>{r.semAtv ? <span className="tbl-chip">Sem atividade</span> : E("tipo", <select value={r.tipo} onChange={(e) => upd(r.id, { tipo: e.target.value })} style={inp}>{BORDO_TIPOS.map((o) => <option key={o}>{o}</option>)}</select>)}</td>
                     <td>{E("descricao", <input value={r.descricao} onChange={(e) => upd(r.id, { descricao: e.target.value })} style={inp} />)}</td>
@@ -9932,7 +9941,7 @@ function SettingsView({ currentUser, users, setUsers }) {
                   <td style={{ minWidth: 150 }}>
                     {adm ? <span className="g-muted">Todos</span> : (
 <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Marque um ou mais departamentos de Materiais que esta pessoa pode editar. Almoxarifado edita todos.">
-                        {MAT_DEPTS.map((d) => (
+                        {DEPTS_TODOS.map((d) => (
                           <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
                             <input type="checkbox" checked={deptsDoUsuario(u).includes(d)} onChange={(e) => { const at = deptsDoUsuario(u); updUser(i, "matDepts", e.target.checked ? [...at, d] : at.filter((x) => x !== d)); }} />{d}{d === "Almoxarifado" ? " (edita todos)" : ""}
                           </label>
