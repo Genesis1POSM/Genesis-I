@@ -701,12 +701,14 @@ const MAT2_COLS = [
 ];
 /* quem pode editar uma requisição: administrador e Almoxarifado em todas; os demais, só as do seu departamento
    (mesma regra aplicada pelo servidor em matmerge.js) */
+/* departamentos de Materiais de um usuário: lista nova (matDepts) ou o campo antigo de um só (matDept) */
+const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
 const podeEditarMat = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
   if (u.role === "viewer") return false;
-  if (u.matDept === "Almoxarifado") return true;
-  return !!u.matDept && u.matDept === depto;
+  const ds = deptsDoUsuario(u);
+  return ds.includes("Almoxarifado") || ds.includes(depto);
 };
 /* junta a lista local com a do servidor, linha a linha (a edição mais recente de cada requisição vence) */
 const mesclarMatCliente = (local, localDel, srv, srvDel, u) => {
@@ -8196,10 +8198,11 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
    ============================================================ */
 function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setMatDeleted, currentUser }) {
   const admin = isAdminUser(currentUser);
-  const dept = currentUser?.matDept || "";
-  const verTodos = admin || dept === "Almoxarifado";
+  const meusDeptos = deptsDoUsuario(currentUser);
+  const almox = meusDeptos.includes("Almoxarifado");
+  const verTodos = admin || almox;
   const pode = (d) => podeEditarMat(currentUser, d);
-  const deptsEditaveis = admin || dept === "Almoxarifado" ? MAT_DEPTS : (MAT_DEPTS.includes(dept) && currentUser?.role !== "viewer" ? [dept] : []);
+  const deptsEditaveis = admin || almox ? MAT_DEPTS : (currentUser?.role !== "viewer" ? meusDeptos : []);
   const podeCriar = deptsEditaveis.length > 0;
 
   const [f, setF] = useState({ busca: "", dept: "Todos", status: "Todos", proc: "Todos", meu: false });
@@ -8228,16 +8231,109 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
     setTimeout(() => setMsg(""), 4000);
   };
 
+  /* ---------- modelo e importação em massa (Excel) ---------- */
+  const fileRef = useRef(null);
+  const [impMsg, setImpMsg] = useState(null);
+  const nrm = (x) => String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const baixarModelo = () => {
+    const wb = XLSX.utils.book_new();
+    const cols = MAT2_COLS.filter(([k]) => k !== "id");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([cols.map(([, l]) => l)]), "Materiais");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Como preencher"],
+      ["Preencha a aba Materiais, uma requisição por linha, e importe no portal. Só Departamento e Descrição são obrigatórios."],
+      [`Você só consegue importar linhas do seu departamento (${deptsEditaveis.join(", ") || "nenhum"}). Linhas de outros departamentos são ignoradas.`],
+      ["Datas: dd/mm/aaaa. Valor Total e Quantidade: números."],
+      [],
+      ["Departamento"], ...MAT_DEPTS.map((d) => [d]), [],
+      ["Status"], ...MAT_STATUS2.map((d) => [d]), [],
+      ["Status do Processo"], ...MAT_PROC.map((d) => [d]), [],
+      ["Prioridade"], ...PRIORITY.map((d) => [d]),
+    ]), "Instruções");
+    XLSX.writeFile(wb, "modelo-materiais.xlsx");
+  };
+  const aISO = (v) => {
+    if (v === "" || v == null) return "";
+    if (v instanceof Date) return new Date(v.getTime() + 12 * 3600 * 1000).toISOString().slice(0, 10);
+    const t = String(v).trim();
+    let m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+    if (m) return `${m[3].length === 2 ? "20" + m[3] : m[3]}-${pad2(m[2])}-${pad2(m[1])}`;
+    m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+  };
+  const aNum = (v) => {
+    if (v === "" || v == null) return "";
+    if (typeof v === "number") return v;
+    let t = String(v).replace(/[^0-9,.-]/g, "");
+    if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+    const n = Number(t); return Number.isFinite(n) ? n : "";
+  };
+  const importar = (e) => {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const aba = wb.SheetNames.find((n) => nrm(n) === "materiais") || wb.SheetNames[0];
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[aba], { defval: "" });
+        const ALIAS = { linhaPo: ["linha da po", "item po"], valor: ["valor", "valor total"], priority: ["priority", "prioridade"], descricao: ["descricao", "material"], dataSolicitacao: ["data da solicitacao", "data solicitacao"], dataRecebimento: ["data de recebimento", "data recebimento"], statusProcesso: ["status do processo", "processo"], tmMaster: ["tm master", "tm"], obs: ["observacao", "observacoes", "obs"] };
+        const mapa = {};
+        MAT2_COLS.forEach(([k, l]) => { [nrm(l), ...(ALIAS[k] || [])].forEach((a) => { mapa[a] = k; }); });
+        const rep = { novas: 0, atual: 0, outroDepto: 0, semDepto: 0, semDesc: 0, valorAjustado: 0 };
+        const novasLinhas = [], mudancas = new Map();
+        const existentes = [...matReqs];
+        /* casa com requisição já existente: pelo ID (planilha exportada do portal) ou, sem ID, pelo mesmo
+           departamento + SAP (+ TM Master, se informado). Se a linha traz uma PO diferente da já registrada,
+           é outro pedido e entra como nova. Cada requisição existente é atualizada no máximo uma vez. */
+        const usados = new Set();
+        const casar = (r) => {
+          let ex = r.id ? existentes.find((x) => x.id === r.id && !usados.has(x.id)) : null;
+          if (!ex && r.sap) {
+            const c = existentes.filter((x) => !usados.has(x.id) && x.departamento === r.departamento && String(x.sap) === r.sap && (!r.tmMaster || String(x.tmMaster || "") === r.tmMaster));
+            ex = c.find((x) => r.po && String(x.po || "") === r.po && String(x.linhaPo || "") === (r.linhaPo || "")) || c.find((x) => !String(x.po || "").trim() || !r.po);
+          }
+          if (ex) usados.add(ex.id);
+          return ex;
+        };
+        json.forEach((row) => {
+          const r = {};
+          Object.entries(row).forEach(([h, v]) => { const k = mapa[nrm(h)]; if (k) r[k] = v; });
+          if (Object.values(r).every((v) => v === "" || v == null)) return;
+          let depto = MAT_DEPTS.find((d) => nrm(d) === nrm(r.departamento));
+          if (!depto) { if (!String(r.departamento || "").trim() && deptsEditaveis.length === 1) depto = deptsEditaveis[0]; else { rep.semDepto++; return; } }
+          if (!pode(depto)) { rep.outroDepto++; return; }
+          const lim = { departamento: depto };
+          ["tmMaster", "sap", "descricao", "justificativa", "oe", "reserva", "rc", "po", "linhaPo", "obs", "id"].forEach((k) => { const t = String(r[k] ?? "").trim(); if (t) lim[k] = t; });
+          ["dataSolicitacao", "eta", "dataRecebimento"].forEach((k) => { const t = aISO(r[k]); if (t) lim[k] = t; });
+          ["quantidade", "valor"].forEach((k) => { const t = aNum(r[k]); if (t !== "") lim[k] = t; });
+          const pick = (k, lista, padrao) => { const t = String(r[k] ?? "").trim(); if (!t) return; const m = lista.find((o) => nrm(o) === nrm(t)); if (m) lim[k] = m; else rep.valorAjustado++; };
+          pick("status", MAT_STATUS2); pick("statusProcesso", MAT_PROC); pick("priority", PRIORITY);
+          const ex = casar({ ...lim, sap: lim.sap || "", po: lim.po || "", linhaPo: lim.linhaPo || "" });
+          if (ex) { if (pode(ex.departamento)) { mudancas.set(ex.id, { ...(mudancas.get(ex.id) || {}), ...lim, departamento: ex.departamento, id: ex.id }); rep.atual++; } else rep.outroDepto++; return; }
+          if (!lim.descricao) { rep.semDesc++; return; }
+          novasLinhas.push({ tmMaster: "", priority: "Média", sap: "", justificativa: "", status: "Em Processo de Compras", statusProcesso: "Aberto", oe: "", dataSolicitacao: todayISO(), reserva: "", rc: "", po: "", linhaPo: "", valor: "", eta: "", dataRecebimento: "", obs: "", quantidade: 1, ...lim, id: uid("MAT"), upd: Date.now() });
+          rep.novas++;
+        });
+        const agora = Date.now();
+        setMatReqs((rows) => [...novasLinhas, ...rows.map((x) => (mudancas.has(x.id) && pode(x.departamento) ? { ...x, ...mudancas.get(x.id), upd: agora } : x))]);
+        const ign = [rep.outroDepto && `${rep.outroDepto} de outro departamento`, rep.semDepto && `${rep.semDepto} sem departamento válido`, rep.semDesc && `${rep.semDesc} sem descrição`].filter(Boolean);
+        setImpMsg({ ok: rep.novas + rep.atual > 0, txt: `Importação concluída: ${rep.novas} nova(s), ${rep.atual} atualizada(s).` + (ign.length ? ` Ignoradas: ${ign.join(", ")}.` : "") + (rep.valorAjustado ? ` ${rep.valorAjustado} valor(es) de lista não reconhecido(s) (status/processo/prioridade) usaram o padrão ou foram mantidos.` : "") });
+      } catch (err) { setImpMsg({ ok: false, txt: "Não consegui ler a planilha: " + err.message }); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const filtered = useMemo(() => {
     const q = f.busca.trim().toLowerCase();
     return matReqs.filter((r) =>
-      (!f.meu || r.departamento === dept) &&
+      (!f.meu || meusDeptos.includes(r.departamento)) &&
       (f.dept === "Todos" || r.departamento === f.dept) &&
       (f.status === "Todos" || r.status === f.status) &&
       (f.proc === "Todos" || r.statusProcesso === f.proc) &&
       (!q || [r.tmMaster, r.sap, r.descricao, r.justificativa, r.oe, r.reserva, r.rc, r.po, r.obs].join(" ").toLowerCase().includes(q))
     ).sort((a, b) => ((a.statusProcesso === "Fechado") - (b.statusProcesso === "Fechado")) || String(b.dataSolicitacao || "").localeCompare(String(a.dataSolicitacao || "")));
-  }, [matReqs, f, dept]);
+  }, [matReqs, f, meusDeptos.join("|")]);
 
   const abertas = matReqs.filter((r) => r.statusProcesso !== "Fechado");
   const kpi = {
@@ -8289,8 +8385,8 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
       <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
         <Lock size={14} style={{ marginTop: 1 }} />
         {admin ? "Administrador: você edita as requisições de todos os departamentos."
-          : dept === "Almoxarifado" ? "Almoxarifado: você edita as requisições de todos os departamentos."
-          : podeCriar ? <>Você edita só as requisições do departamento <b>{dept}</b>. As dos outros departamentos aparecem para consulta.</>
+          : almox ? "Almoxarifado: você edita as requisições de todos os departamentos."
+          : podeCriar ? <>Você edita só as requisições {deptsEditaveis.length > 1 ? "dos departamentos" : "do departamento"} <b>{deptsEditaveis.join(", ")}</b>. As dos outros departamentos aparecem para consulta.</>
           : "Somente consulta. Peça ao administrador para definir o seu departamento em Configurações para poder editar."}
       </div>
 
@@ -8306,14 +8402,18 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
       <div className="g-panel">
         <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           {podeCriar && <button className="g-btn primary" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Nova requisição"}</button>}
+          {podeCriar && <><input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
+            <button className="g-btn" onClick={() => fileRef.current?.click()} title="Importa várias requisições de uma planilha Excel (só as do seu departamento)"><Upload size={14} />Importar Excel</button>
+            <button className="g-btn" onClick={baixarModelo} title="Baixa a planilha modelo com as colunas e as listas permitidas"><Download size={14} />Baixar modelo</button></>}
           <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar TM Master, SAP, descrição, PO, RC, OE..." style={{ ...sel, minWidth: 280, padding: "7px 10px" }} />
           <select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))} style={sel}>{["Todos", ...MAT_DEPTS].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os departamentos" : x}</option>)}</select>
           <select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))} style={sel}>{["Todos", ...MAT_STATUS2].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os status" : x}</option>)}</select>
           <select value={f.proc} onChange={(e) => setF((p) => ({ ...p, proc: e.target.value }))} style={sel}>{["Todos", ...MAT_PROC].map((x) => <option key={x} value={x}>{x === "Todos" ? "Qualquer processo" : `Processo ${x.toLowerCase()}`}</option>)}</select>
-          {!verTodos && MAT_DEPTS.includes(dept) && <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={f.meu} onChange={(e) => setF((p) => ({ ...p, meu: e.target.checked }))} />Só o meu departamento</label>}
+          {!verTodos && podeCriar && <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={f.meu} onChange={(e) => setF((p) => ({ ...p, meu: e.target.checked }))} />{deptsEditaveis.length > 1 ? "Só os meus departamentos" : "Só o meu departamento"}</label>}
           <span className="g-muted" style={{ fontSize: 11.5 }}>{filtered.length} de {matReqs.length}</span>
         </div>
         {msg && <div style={{ marginTop: 8, fontSize: 12, color: "var(--teal)" }}>{msg}</div>}
+        {impMsg && <div className="g-alert" style={{ marginTop: 10, marginBottom: 0, ...(impMsg.ok ? { background: "rgba(34,197,94,0.08)", borderColor: "rgba(34,197,94,0.4)", color: "var(--ok)" } : {}) }}>{impMsg.txt} <span style={{ cursor: "pointer", textDecoration: "underline", marginLeft: 8 }} onClick={() => setImpMsg(null)}>fechar</span></div>}
       </div>
 
       {novo && (
@@ -9738,7 +9838,7 @@ function SettingsView({ currentUser, users, setUsers }) {
         </div>
         <table className="g-table">
           <thead>
-            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamento (Materiais)</th><th>Abas liberadas</th><th></th></tr>
+            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamentos (Materiais)</th><th>Abas liberadas</th><th></th></tr>
           </thead>
           <tbody>
             {users.map((u, i) => {
@@ -9759,10 +9859,14 @@ function SettingsView({ currentUser, users, setUsers }) {
                   </td>
                   <td style={{ minWidth: 150 }}>
                     {adm ? <span className="g-muted">Todos</span> : (
-                      <select value={u.matDept || ""} onChange={(e) => updUser(i, "matDept", e.target.value)} title="Define quais requisições de Materiais esta pessoa edita. Almoxarifado edita todas.">
-                        <option value="">— só consulta —</option>
-                        {MAT_DEPTS.map((d) => <option key={d} value={d}>{d}{d === "Almoxarifado" ? " (edita todos)" : ""}</option>)}
-                      </select>
+<div style={{ display: "flex", flexDirection: "column", gap: 2 }} title="Marque um ou mais departamentos de Materiais que esta pessoa pode editar. Almoxarifado edita todos.">
+                        {MAT_DEPTS.map((d) => (
+                          <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+                            <input type="checkbox" checked={deptsDoUsuario(u).includes(d)} onChange={(e) => { const at = deptsDoUsuario(u); updUser(i, "matDepts", e.target.checked ? [...at, d] : at.filter((x) => x !== d)); }} />{d}{d === "Almoxarifado" ? " (edita todos)" : ""}
+                          </label>
+                        ))}
+                        {!deptsDoUsuario(u).length && <span className="g-muted" style={{ fontSize: 11 }}>só consulta</span>}
+                      </div>
                     )}
                   </td>
                   <td style={{ minWidth: 330 }}>
