@@ -8898,16 +8898,6 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
     valor: abertas.reduce((s, r) => s + (Number(r.valor) || 0), 0),
   };
 
-  const apagarTudo = () => {
-    if (!admin || !matReqs.length) return;
-    const t = window.prompt(`ATENÇÃO: isso apaga TODAS as ${matReqs.length} requisições de Materiais, de todos os departamentos, para todos os usuários. Não dá para desfazer.\n\nPara confirmar, digite APAGAR:`);
-    if (String(t || "").trim().toUpperCase() !== "APAGAR") return;
-    const ids = matReqs.map((r) => r.id);
-    setMatDeleted((d) => [...new Set([...(d || []), ...ids])]);
-    setMatReqs([]);
-    setPag(0);
-    setImpMsg({ ok: true, txt: `${ids.length} requisições apagadas. Agora é só importar a planilha de novo.` });
-  };
   const gerarRelatorio = () => {
     const resumo = [["Total", kpi.total], ["Em aberto", kpi.abertas], ["Aguardando entrega", kpi.aguard], ["Em processo de compras", kpi.compras], ["Recebidos", kpi.receb], ["Em aberto sem PO", kpi.semPo], ["Valor em aberto", kpi.valor], ["Requisições no filtro atual", filtered.length], ["Gerado em", new Date().toLocaleDateString("pt-BR")]].map(([i, v]) => ({ Indicador: i, Valor: v }));
     exportSheets("relatorio-materiais", [["Materiais", rowsToSheet(filtered, MAT2_COLS)], ["Resumo", resumo]]);
@@ -8958,7 +8948,6 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
           {podeCriar && <><input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
             <button className="g-btn" onClick={() => fileRef.current?.click()} title="Importa várias requisições de uma planilha Excel (só as do seu departamento)"><Upload size={14} />Importar Excel</button>
             <button className="g-btn" onClick={baixarModelo} title="Baixa a planilha modelo com as colunas e as listas permitidas"><Download size={14} />Baixar modelo</button></>}
-          {admin && <button className="g-btn ghost danger g-keep" onClick={apagarTudo} title="Apaga TODAS as requisições de Materiais (só administrador)"><Trash2 size={14} />Apagar todos os materiais</button>}
           <button className="g-btn g-keep" onClick={gerarRelatorio} title="Exporta em planilha (.xlsx) as requisições do filtro atual, com uma aba de resumo"><Download size={14} />Exportar relatório</button>
           <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar TM Master, SAP, descrição, PO, RC, OE..." style={{ ...sel, minWidth: 280, padding: "7px 10px" }} />
           <select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))} style={sel}>{["Todos", ...MAT_DEPTS].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os departamentos" : x}</option>)}</select>
