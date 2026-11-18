@@ -706,14 +706,18 @@ const MAT2_COLS = [
 /* quem pode editar uma requisição: administrador e Almoxarifado em todas; os demais, só as do seu departamento
    (mesma regra aplicada pelo servidor em matmerge.js) */
 /* departamentos de Materiais de um usuário: lista nova (matDepts) ou o campo antigo de um só (matDept) */
-const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
+const deptsDoUsuario = (u) => (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : []).map((d) => MAT_DEPTS.find((x) => String(x).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === String(d).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")) || d).filter((d) => MAT_DEPTS.includes(d));
 /* liberação do Registro de Bordo é separada da de Materiais (bordoDepts); contas antigas, sem essa lista, herdam as marcações de Materiais que existem no Registro de Bordo */
 const deptsBordoUsuario = (u) => (Array.isArray(u?.bordoDepts) ? u.bordoDepts : (Array.isArray(u?.matDepts) ? u.matDepts : u?.matDept ? [u.matDept] : [])).filter((d) => BORDO_DEPTS.includes(d));
+/* departamento "canônico": ignora acento, maiúscula/minúscula e espaços (ex.: "MAQUINAS" → "Máquinas") */
+const semAcentoD = (x) => String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const canonDept = (d) => MAT_DEPTS.find((x) => semAcentoD(x) === semAcentoD(d)) || BORDO_DEPTS.find((x) => semAcentoD(x) === semAcentoD(d)) || d;
+const canonMat = (rows) => (rows || []).map((r) => { const c = canonDept(r && r.departamento); return r && c !== r.departamento ? { ...r, departamento: c } : r; });
 const podeEditarMat = (u, depto) => {
   if (!u) return false;
   if (isAdminUser(u)) return true;
   const ds = deptsDoUsuario(u);
-  return ds.includes("Almoxarifado") || ds.includes(depto);
+  return ds.includes("Almoxarifado") || ds.includes(canonDept(depto));
 };
 /* Registro de Bordo: administrador edita tudo; os demais, só os departamentos que lhes foram atribuídos
    (Almoxarifado aqui é um departamento como os outros). Mesma regra no servidor (matmerge.js). */
@@ -1561,7 +1565,7 @@ export default function Root() {
           if (d.users) { setUsers(d.users); usersSalvos.current = JSON.stringify(d.users); }
           if (d.workPackages) setWorkPackages(d.workPackages);
           if (d.materials) setMaterials(d.materials);
-          if (Array.isArray(d.matReqs)) setMatReqs(d.matReqs);
+          if (Array.isArray(d.matReqs)) setMatReqs(canonMat(d.matReqs));
           if (Array.isArray(d.matDeleted)) setMatDeleted(d.matDeleted);
           if (Array.isArray(d.bordoDeleted)) setBordoDeleted(d.bordoDeleted);
           if (Array.isArray(d.regObrig)) setRegObrig(d.regObrig);
