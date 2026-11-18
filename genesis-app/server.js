@@ -106,6 +106,10 @@ app.put("/api/state", async (req, res) => {
       /* Visualizador (não admin) só pode gravar Materiais e Registro de Bordo; qualquer outra chave é descartada */
       const atualU = (await getState()) || {};
       const u0 = acharUsuario(atualU.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
+      /* a lista de usuários/permissões só pode ser gravada pelo administrador: um navegador antigo de outra pessoa
+         (com a lista desatualizada) não pode mais sobrescrever usuários e permissões recém-criados */
+      const ehAdm0 = !!u0 && (u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"));
+      if ("users" in data && Array.isArray(atualU.users) && atualU.users.length && !ehAdm0) delete data.users;
       if (u0 && u0.role === "viewer" && !(u0.admin === true || (u0.admin === undefined && String(u0.username || "").toLowerCase() === "lethicia"))) {
         for (const k of Object.keys(data)) if (!["matReqs", "matDeleted", "tmBordo", "bordoDeleted"].includes(k)) delete data[k];
       }
