@@ -23,13 +23,13 @@ export function mesclarLista(atual, atualDel, recebido, recebidoDel, pode) {
   const del = new Set(atualDel || []);
   for (const id of recebidoDel || []) {
     const e = cur.get(id);
-    if (e && pode(e.departamento)) { cur.delete(id); del.add(id); }
+    if (e && pode(e.departamento, e)) { cur.delete(id); del.add(id); }
   }
   for (const r of recebido || []) {
     if (!r || !r.id || del.has(r.id)) continue;
     const e = cur.get(r.id);
     if (!e) { if (pode(r.departamento)) cur.set(r.id, r); continue; }
-    if ((r.upd || 0) > (e.upd || 0) && pode(e.departamento) && pode(r.departamento)) cur.set(r.id, r);
+    if ((r.upd || 0) > (e.upd || 0) && pode(e.departamento, e) && (r.departamento === e.departamento || pode(r.departamento))) cur.set(r.id, r);
   }
   return { rows: [...cur.values()], deleted: [...del] };
 }
@@ -47,14 +47,16 @@ const VAL = ["valStatus", "valPor", "valEm", "valNota"];
 export function mesclarBordo(a, ad, r, rd, u) {
   const adm = ehAdmin(u);
   const antes = new Map((a || []).map((x) => [x.id, x]));
-  const rec = (r || []).map((x) => {
-    if (adm || !x) return x;
+  const rec = (r || []).map((x0) => {
+    let x = x0;
+    if (adm || !x) return x0;
     const e = antes.get(x.id);
+    if (e && e.criadoPor !== undefined && x.criadoPor !== e.criadoPor) x = { ...x, criadoPor: e.criadoPor };
     if (x.valStatus === "Validado" || x.valStatus === "Recusado") {
       if (e && e.valStatus === x.valStatus) { const y = { ...x }; for (const k of VAL) y[k] = e[k]; return y; }
       const y = { ...x, valStatus: "Em validação" }; for (const k of VAL.slice(1)) y[k] = ""; return y;
     }
     return x;
   });
-  return mesclarLista(a, ad, rec, rd, (d) => podeEditarBordo(u, d));
+  return mesclarLista(a, ad, rec, rd, (d, row) => podeEditarBordo(u, d) || !!(row && row.criadoPor && u && row.criadoPor === u.username));
 }
