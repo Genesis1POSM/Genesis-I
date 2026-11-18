@@ -14,8 +14,8 @@ export function podeEditarDepto(u, depto) {
   if (!u) return false;
   if (ehAdmin(u)) return true;
   if (u.role === "viewer") return false;
-  if (u.matDept === "Almoxarifado") return true;
-  return !!u.matDept && u.matDept === depto;
+  const ds = (Array.isArray(u.matDepts) ? u.matDepts : u.matDept ? [u.matDept] : []).filter((d) => MAT_DEPTS.includes(d));
+  return ds.includes("Almoxarifado") || ds.includes(depto);
 }
 
 export function mesclarMateriais(atual, atualDel, recebido, recebidoDel, usuario) {
