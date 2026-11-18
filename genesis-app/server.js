@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { acharUsuario, mesclarMateriais, mesclarBordo } from "./matmerge.js";
+import { acharUsuario, mesclarMateriais, mesclarBordo, canonMat } from "./matmerge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -71,6 +71,7 @@ if (DATABASE_URL) {
 app.get("/api/state", async (req, res) => {
   try {
     const data = await getState();
+    if (data && Array.isArray(data.matReqs)) data.matReqs = canonMat(data.matReqs);
     res.json({ data });
   } catch (err) {
     console.error(err);
@@ -81,7 +82,7 @@ app.get("/api/state", async (req, res) => {
 app.get("/api/materiais", async (req, res) => {
   try {
     const d = (await getState()) || {};
-    res.json({ matReqs: d.matReqs || [], matDeleted: d.matDeleted || [] });
+    res.json({ matReqs: canonMat(d.matReqs || []), matDeleted: d.matDeleted || [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Falha ao carregar materiais." });
