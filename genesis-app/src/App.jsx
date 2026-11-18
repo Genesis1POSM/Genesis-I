@@ -687,7 +687,7 @@ const WP_STATUS = ["Planejamento", "Não iniciado", "Em andamento", "Concluído"
 const WP_STATUS_DEFAULT_PROGRESS = { "Planejamento": 0, "Não iniciado": 0, "Em andamento": 50, "Concluído": 100, "Cancelado": 0 };
 const MAT_STATUS = ["Solicitado", "Em aprovação", "Cotação", "Cotação recebida", "Em aprovação comercial", "PO emitida", "Em fabricação", "Em trânsito", "Recebido", "Entregue a bordo", "Dentro do Prazo", "Fora do Prazo", "Recusado", "Devolvido"];
 const PAY_STATUS = ["Orçamento", "Aprovado", "PO emitida", "Serviço executado", "Medição aprovada", "NF recebida", "NF validada", "Pagamento programado", "Pago"];
-const PRIORITY = ["Baixa", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
+const PRIORITY = ["Baixa", "Normal", "Média", "Alta", "Crítica", "Importante", "Emergencial", "Sobressalente crítico"];
 /* Materiais (nova aba): departamentos, status e colunas da requisição */
 const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base Prio", "Almoxarifado"];
 /* Registro de Bordo: departamentos próprios e data de início (só vale a partir daqui) */
@@ -8671,6 +8671,8 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
   const [f, setF] = useState({ busca: "", dept: "Todos", status: "Todos", proc: "Todos", meu: false });
   const [novo, setNovo] = useState(null);
   const [msg, setMsg] = useState("");
+  const [pag, setPag] = useState(0);
+  const POR_PAG = 50;
   const rascunho = () => ({ departamento: deptsEditaveis.length === 1 ? deptsEditaveis[0] : "", tmMaster: "", priority: "Média", sap: "", descricao: "", quantidade: 1, justificativa: "", status: "Em Processo de Compras", statusProcesso: "Aberto", oe: "", dataSolicitacao: todayISO(), reserva: "", rc: "", po: "", linhaPo: "", valor: "", eta: "", dataRecebimento: "", obs: "" });
 
   const upd = (id, patch) => setMatReqs((rows) => rows.map((r) => (r.id === id && pode(r.departamento) ? { ...r, ...patch, upd: Date.now() } : r)));
@@ -8734,26 +8736,32 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
   const importar = (e) => {
     const file = e.target.files?.[0]; e.target.value = "";
     if (!file) return;
+    setImpMsg({ ok: true, txt: "Lendo a planilha… (arquivos grandes levam alguns segundos)" });
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = (evt) => setTimeout(() => {
       try {
-        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true, dense: true });
         const aba = wb.SheetNames.find((n) => nrm(n) === "materiais") || wb.SheetNames[0];
-        const json = XLSX.utils.sheet_to_json(wb.Sheets[aba], { defval: "" });
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[aba], { defval: "", blankrows: false });
         const ALIAS = { linhaPo: ["linha da po", "item po"], valor: ["valor", "valor total"], priority: ["priority", "prioridade"], descricao: ["descricao", "material"], dataSolicitacao: ["data da solicitacao", "data solicitacao"], dataRecebimento: ["data de recebimento", "data recebimento"], statusProcesso: ["status do processo", "processo"], tmMaster: ["tm master", "tm"], obs: ["observacao", "observacoes", "obs"] };
         const mapa = {};
         MAT2_COLS.forEach(([k, l]) => { [nrm(l), ...(ALIAS[k] || [])].forEach((a) => { mapa[a] = k; }); });
         const rep = { novas: 0, atual: 0, outroDepto: 0, semDepto: 0, semDesc: 0, valorAjustado: 0 };
         const novasLinhas = [], mudancas = new Map();
         const existentes = [...matReqs];
+        const porId = new Map(existentes.map((x) => [x.id, x]));
+        const porSap = new Map();
+        existentes.forEach((x) => { if (x.sap) { const k = x.departamento + "|" + String(x.sap); (porSap.get(k) || porSap.set(k, []).get(k)).push(x); } });
+        const deptDesconhecidos = new Map();
         /* casa com requisição já existente: pelo ID (planilha exportada do portal) ou, sem ID, pelo mesmo
            departamento + SAP (+ TM Master, se informado). Se a linha traz uma PO diferente da já registrada,
            é outro pedido e entra como nova. Cada requisição existente é atualizada no máximo uma vez. */
         const usados = new Set();
         const casar = (r) => {
-          let ex = r.id ? existentes.find((x) => x.id === r.id && !usados.has(x.id)) : null;
+          let ex = r.id ? porId.get(r.id) : null;
+          if (ex && usados.has(ex.id)) ex = null;
           if (!ex && r.sap) {
-            const c = existentes.filter((x) => !usados.has(x.id) && x.departamento === r.departamento && String(x.sap) === r.sap && (!r.tmMaster || String(x.tmMaster || "") === r.tmMaster));
+            const c = (porSap.get(r.departamento + "|" + r.sap) || []).filter((x) => !usados.has(x.id) && (!r.tmMaster || String(x.tmMaster || "") === r.tmMaster));
             ex = c.find((x) => r.po && String(x.po || "") === r.po && String(x.linhaPo || "") === (r.linhaPo || "")) || c.find((x) => !String(x.po || "").trim() || !r.po);
           }
           if (ex) usados.add(ex.id);
@@ -8764,13 +8772,13 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
           Object.entries(row).forEach(([h, v]) => { const k = mapa[nrm(h)]; if (k) r[k] = v; });
           if (Object.values(r).every((v) => v === "" || v == null)) return;
           let depto = MAT_DEPTS.find((d) => nrm(d) === nrm(r.departamento));
-          if (!depto) { if (!String(r.departamento || "").trim() && deptsEditaveis.length === 1) depto = deptsEditaveis[0]; else { rep.semDepto++; return; } }
+          if (!depto) { if (!String(r.departamento || "").trim() && deptsEditaveis.length === 1) depto = deptsEditaveis[0]; else { rep.semDepto++; const nome = String(r.departamento || "").trim() || "(em branco)"; deptDesconhecidos.set(nome, (deptDesconhecidos.get(nome) || 0) + 1); return; } }
           if (!pode(depto)) { rep.outroDepto++; return; }
           const lim = { departamento: depto };
           ["tmMaster", "sap", "descricao", "justificativa", "oe", "reserva", "rc", "po", "linhaPo", "obs", "id"].forEach((k) => { const t = String(r[k] ?? "").trim(); if (t) lim[k] = t; });
           ["dataSolicitacao", "eta", "dataRecebimento"].forEach((k) => { const t = aISO(r[k]); if (t) lim[k] = t; });
           ["quantidade", "valor"].forEach((k) => { const t = aNum(r[k]); if (t !== "") lim[k] = t; });
-          const pick = (k, lista, padrao) => { const t = String(r[k] ?? "").trim(); if (!t) return; const m = lista.find((o) => nrm(o) === nrm(t)); if (m) lim[k] = m; else rep.valorAjustado++; };
+          const pick = (k, lista, padrao) => { const t = String(r[k] ?? "").trim(); if (!t) return; const SIN = { "em aberto": "Aberto", "aberta": "Aberto", "aberto": "Aberto", "fechada": "Fechado", "encerrado": "Fechado", "standby": "Stand By", "stand by": "Stand By" }; const m = lista.find((o) => nrm(o) === nrm(SIN[nrm(t)] || t)); if (m) lim[k] = m; else rep.valorAjustado++; };
           pick("status", MAT_STATUS2); pick("statusProcesso", MAT_PROC); pick("priority", PRIORITY);
           const ex = casar({ ...lim, sap: lim.sap || "", po: lim.po || "", linhaPo: lim.linhaPo || "" });
           if (ex) { if (pode(ex.departamento)) { mudancas.set(ex.id, { ...(mudancas.get(ex.id) || {}), ...lim, departamento: ex.departamento, id: ex.id }); rep.atual++; } else rep.outroDepto++; return; }
@@ -8780,10 +8788,11 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
         });
         const agora = Date.now();
         setMatReqs((rows) => [...novasLinhas, ...rows.map((x) => (mudancas.has(x.id) && pode(x.departamento) ? { ...x, ...mudancas.get(x.id), upd: agora } : x))]);
-        const ign = [rep.outroDepto && `${rep.outroDepto} de outro departamento`, rep.semDepto && `${rep.semDepto} sem departamento válido`, rep.semDesc && `${rep.semDesc} sem descrição`].filter(Boolean);
+        setPag(0);
+        const ign = [rep.outroDepto && `${rep.outroDepto} de outro departamento`, rep.semDepto && `${rep.semDepto} com departamento que não existe na lista (${[...deptDesconhecidos].map(([n, q]) => `${n}: ${q}`).join(", ")})`, rep.semDesc && `${rep.semDesc} sem descrição`].filter(Boolean);
         setImpMsg({ ok: rep.novas + rep.atual > 0, txt: `Importação concluída: ${rep.novas} nova(s), ${rep.atual} atualizada(s).` + (ign.length ? ` Ignoradas: ${ign.join(", ")}.` : "") + (rep.valorAjustado ? ` ${rep.valorAjustado} valor(es) de lista não reconhecido(s) (status/processo/prioridade) usaram o padrão ou foram mantidos.` : "") });
       } catch (err) { setImpMsg({ ok: false, txt: "Não consegui ler a planilha: " + err.message }); }
-    };
+    }, 30);
     reader.readAsArrayBuffer(file);
   };
 
@@ -8797,6 +8806,23 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
       (!q || [r.tmMaster, r.sap, r.descricao, r.justificativa, r.oe, r.reserva, r.rc, r.po, r.obs].join(" ").toLowerCase().includes(q))
     ).sort((a, b) => ((a.statusProcesso === "Fechado") - (b.statusProcesso === "Fechado")) || String(b.dataSolicitacao || "").localeCompare(String(a.dataSolicitacao || "")));
   }, [matReqs, f, meusDeptos.join("|")]);
+
+  React.useEffect(() => { setPag(0); }, [f]);
+  const totalPag = Math.max(1, Math.ceil(filtered.length / POR_PAG));
+  const pagAtual = Math.min(pag, totalPag - 1);
+  const visiveis = filtered.slice(pagAtual * POR_PAG, pagAtual * POR_PAG + POR_PAG);
+  const navPag = (
+    <div className="g-flex" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 14px", flexWrap: "wrap", fontSize: 12 }}>
+      <span className="g-muted">Mostrando {filtered.length ? pagAtual * POR_PAG + 1 : 0}–{Math.min(filtered.length, (pagAtual + 1) * POR_PAG)} de {filtered.length} (a tela mostra {POR_PAG} por vez para não pesar; use a busca e os filtros)</span>
+      <span className="g-flex" style={{ gap: 6, alignItems: "center" }}>
+        <button className="g-btn g-keep" disabled={pagAtual === 0} onClick={() => setPag(0)}>«</button>
+        <button className="g-btn g-keep" disabled={pagAtual === 0} onClick={() => setPag(pagAtual - 1)}>‹ Anterior</button>
+        <b>Página {pagAtual + 1} de {totalPag}</b>
+        <button className="g-btn g-keep" disabled={pagAtual >= totalPag - 1} onClick={() => setPag(pagAtual + 1)}>Próxima ›</button>
+        <button className="g-btn g-keep" disabled={pagAtual >= totalPag - 1} onClick={() => setPag(totalPag - 1)}>»</button>
+      </span>
+    </div>
+  );
 
   const abertas = matReqs.filter((r) => r.statusProcesso !== "Fechado");
   const kpi = {
@@ -8911,6 +8937,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
       )}
 
       <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
+        {navPag}
         <div className="g-table-wrap">
           <table className="g-table tbl-modern" style={{ minWidth: 2700 }}>
             <thead><tr>
@@ -8918,7 +8945,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
             </tr></thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={20} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{matReqs.length ? "Nenhuma requisição nesse filtro." : "Nenhuma requisição ainda. Use “Nova requisição” para cadastrar."}</td></tr>}
-              {filtered.map((r) => {
+              {visiveis.map((r) => {
                 const ok = pode(r.departamento);
                 return (
                   <tr className="g-row tbl-row" key={r.id} style={{ "--c": MAT_STATUS_COR[r.status] || "#9499A8", opacity: ok || !podeCriar ? 1 : 0.88 }}>
@@ -8948,6 +8975,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
             </tbody>
           </table>
         </div>
+        {navPag}
       </div>
     </>
   );
