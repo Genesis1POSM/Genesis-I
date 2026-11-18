@@ -710,14 +710,24 @@ const podeEditarMat = (u, depto) => {
   const ds = deptsDoUsuario(u);
   return ds.includes("Almoxarifado") || ds.includes(depto);
 };
+/* Registro de Bordo: administrador edita tudo; os demais, só os departamentos que lhes foram atribuídos
+   (Almoxarifado aqui é um departamento como os outros). Mesma regra no servidor (matmerge.js). */
+const podeEditarBordo = (u, depto) => {
+  if (!u) return false;
+  if (isAdminUser(u)) return true;
+  if (u.role === "viewer") return false;
+  return deptsDoUsuario(u).includes(depto);
+};
 /* junta a lista local com a do servidor, linha a linha (a edição mais recente de cada requisição vence) */
-const mesclarMatCliente = (local, localDel, srv, srvDel, u) => {
+const mesclarListaCliente = (local, localDel, srv, srvDel, pode) => {
   const del = new Set([...(localDel || []), ...(srvDel || [])]);
   const m = new Map((srv || []).map((r) => [r.id, r]));
-  (local || []).forEach((r) => { const e = m.get(r.id); if (!e) { if (podeEditarMat(u, r.departamento)) m.set(r.id, r); } else if ((r.upd || 0) > (e.upd || 0) && podeEditarMat(u, e.departamento)) m.set(r.id, r); });
+  (local || []).forEach((r) => { const e = m.get(r.id); if (!e) { if (pode(r.departamento)) m.set(r.id, r); } else if ((r.upd || 0) > (e.upd || 0) && pode(e.departamento)) m.set(r.id, r); });
   del.forEach((id) => m.delete(id));
   return [...m.values()];
 };
+const mesclarMatCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d) => podeEditarMat(u, d));
+const mesclarBordoCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d) => podeEditarBordo(u, d));
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
 const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
 const PLAN_STATUS = ["A Executar", "Em Andamento", "Concluído", "Cancelado"];
@@ -1503,6 +1513,8 @@ export default function Root() {
   const [materials, setMaterials] = useState(INITIAL_MATERIALS);
   const [matReqs, setMatReqs] = useState([]);
   const [matDeleted, setMatDeleted] = useState([]);
+  const [bordoDeleted, setBordoDeleted] = useState([]);
+  const [regObrig, setRegObrig] = useState(null);
   const [payments, setPayments] = useState(INITIAL_PAYMENTS);
   const [serviceInvoices, setServiceInvoices] = useState(INITIAL_SERVICE_INVOICES);
   const [portCallMeta, setPortCallMeta] = useState(INITIAL_PORT_CALL_META);
@@ -1543,6 +1555,8 @@ export default function Root() {
           if (d.materials) setMaterials(d.materials);
           if (Array.isArray(d.matReqs)) setMatReqs(d.matReqs);
           if (Array.isArray(d.matDeleted)) setMatDeleted(d.matDeleted);
+          if (Array.isArray(d.bordoDeleted)) setBordoDeleted(d.bordoDeleted);
+          if (Array.isArray(d.regObrig)) setRegObrig(d.regObrig);
           if (d.payments) setPayments(d.payments);
           if (d.serviceInvoices) setServiceInvoices(d.serviceInvoices);
           if (d.portCallMeta) setPortCallMeta(d.portCallMeta);
@@ -1582,7 +1596,7 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "" } : {}) },
         body: JSON.stringify({
-          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted },
+          data: { users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
         }),
       }).then((r) => r.json()).then((j) => {
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
@@ -1590,10 +1604,14 @@ export default function Root() {
           setMatReqs((cur) => { const novo = mesclarMatCliente(cur, [], j.matReqs, j.matDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
           setMatDeleted((cur) => ((j.matDeleted || []).length === cur.length ? cur : j.matDeleted));
         }
+        if (j && Array.isArray(j.tmBordo)) {
+          setTmBordo((cur) => { const novo = mesclarBordoCliente(cur, [], j.tmBordo, j.bordoDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
+          setBordoDeleted((cur) => ((j.bordoDeleted || []).length === cur.length ? cur : j.bordoDeleted));
+        }
       }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted]);
+  }, [loaded, saveEnabled, roMode, users, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
 
   /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
   React.useEffect(() => {
@@ -1602,6 +1620,10 @@ export default function Root() {
       fetch("/api/materiais").then((r) => r.json()).then((j) => {
         if (!j || !Array.isArray(j.matReqs)) return;
         setMatReqs((cur) => { const novo = mesclarMatCliente(cur, [], j.matReqs, j.matDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
+      }).catch(() => {});
+      fetch("/api/bordo").then((r) => r.json()).then((j) => {
+        if (!j || !Array.isArray(j.tmBordo)) return;
+        setTmBordo((cur) => { const novo = mesclarBordoCliente(cur, [], j.tmBordo, j.bordoDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
       }).catch(() => {});
     }, 20000);
     return () => clearInterval(t);
@@ -1650,7 +1672,7 @@ export default function Root() {
       tmDue={tmDue} setTmDue={roMode ? noop : setTmDue} tmHistory={tmHistory} setTmHistory={roMode ? noop : setTmHistory}
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       tmFailures={tmFailures} setTmFailures={roMode ? noop : setTmFailures}
-      tmBordo={tmBordo} setTmBordo={roMode ? noop : setTmBordo}
+      tmBordo={tmBordo} setTmBordo={roMode ? noop : setTmBordo} setBordoDeleted={roMode ? noop : setBordoDeleted} regObrig={regObrig} setRegObrig={roMode ? noop : setRegObrig}
       portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
@@ -1665,7 +1687,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
-  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, planosBordo, setPlanosBordo, loadError }) {
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, setBordoDeleted, regObrig, setRegObrig, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, planosBordo, setPlanosBordo, loadError }) {
   const isAdmin = isAdminUser(currentUser);
   const allowedTabs = allowedTabsOf(currentUser);
   const [tabState, setTab] = useState(allowedTabs[0]);
@@ -2921,7 +2943,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         {tab === "tmmaster" && (
           <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             handleImportTmDue={handleImportTmDue} handleImportTmHistory={handleImportTmHistory}
-            tmFailures={tmFailures} handleImportFailures={handleImportFailures} tmBordo={tmBordo} setTmBordo={setTmBordo}
+            tmFailures={tmFailures} handleImportFailures={handleImportFailures} tmBordo={tmBordo} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={setRegObrig} currentUser={currentUser}
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
@@ -6664,21 +6686,16 @@ const bordoDate = (v) => {
 const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().toUpperCase();
 const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
 
-const MODELO_BORDO_B64 = "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";
-function baixarModeloBordo() {
-  const bin = atob(MODELO_BORDO_B64); const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Registro-Diario-de-Bordo-OSM.xlsx";
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
-
-const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, setReportFn, setExportXlsxFn, active }) => {
-  const fileRef = useRef(null);
+const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHistory, tmFailures, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, active }) => {
   const hoje = todayISO();
+  const admin = isAdminUser(currentUser);
+  const pode = (d) => podeEditarBordo(currentUser, d);
+  const deptsEditaveis = admin ? MAT_DEPTS : (currentUser?.role !== "viewer" ? deptsDoUsuario(currentUser) : []);
+  const podeCriar = deptsEditaveis.length > 0;
   const [msg, setMsg] = useState("");
+  const [novo, setNovo] = useState(null);
   const [emailBordo, setEmailBordo] = useState(() => { try { return localStorage.getItem("genesis_email_bordo") || ""; } catch (e) { return ""; } });
-  const [f, setF] = useState({ busca: "", tipo: "Todos", status: "Todos", fr: "Todos", de: "", ate: "" });
+  const [f, setF] = useState({ busca: "", tipo: "Todos", status: "Todos", fr: "Todos", dept: "Todos", de: "", ate: "" });
   const fmt = (iso) => (iso ? fmtDataCompleta(iso) : "—");
 
   /* índices de conferência contra o TM Master */
@@ -6721,134 +6738,187 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
   };
 
   const atrasoEnvio = (r) => (r.recebido && r.data ? Math.round((new Date(r.recebido + "T00:00:00") - new Date(r.data + "T00:00:00")) / 86400000) : null);
-  const rows = useMemo(() => tmBordo.map((r) => ({ ...r, _c: conferir(r), _f: frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
+  const rows = useMemo(() => tmBordo.map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : conferir(r), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
   const norm = (v) => String(v || "").toLowerCase();
-  const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status)
+  const filtered = rows.filter((r) => (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status) && (f.dept === "Todos" || r.departamento === f.dept)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
     && (!f.de || r.data >= f.de) && (!f.ate || r.data <= f.ate)
-    && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.email || ""} ${r.obs} ${r.fr || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  const cats = ["Todos", "Confirmado no TM", "Não baixado no TM", "Divergente", "Job não encontrado", "Sem registro no TM", "Falta informar o job"];
+    && (!f.busca || norm(`${r.descricao} ${r.componente} ${r.jobTipo} ${r.jobNo} ${r.por} ${r.obs} ${r.fr || ""} ${r.departamento || ""}`).includes(norm(f.busca)))).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const cats = ["Todos", "Confirmado no TM", "Não baixado no TM", "Divergente", "Job não encontrado", "Sem registro no TM", "Falta informar o job", "Sem atividade"];
+  const iso = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const diasAtras = (n) => { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - n); return iso(d); };
 
-  const kpi = useMemo(() => {
-    const ok = filtered.filter((r) => r._c.ok).length;
-    const dias14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
-    const com = new Set(tmBordo.map((r) => r.data));
-    return { total: filtered.length, ok, pend: filtered.length - ok, semJob: filtered.filter((r) => r.acao === "Sem job").length,
-      corrSemFr: filtered.filter((r) => r.tipo === "Corretiva" && r._f.nos.length === 0).length, comFr: filtered.filter((r) => r._f.nos.length > 0).length,
-      atrasados: filtered.filter((r) => r._a !== null && r._a > 1).length,
-      baixas: filtered.filter((r) => r.acao === "Baixa de job").length, criacoes: filtered.filter((r) => r.acao === "Criação de job").length,
-      diasSem: dias14.filter((d) => !com.has(d)).length, hojeTem: com.has(hoje) };
-  }, [filtered, tmBordo]);
-  const porTipo = BORDO_TIPOS.map((t) => ({ nome: t, total: filtered.filter((r) => r.tipo === t).length }));
-  const porDia = useMemo(() => { const m = new Map(); filtered.forEach((r) => { if (r.data) m.set(r.data, (m.get(r.data) || 0) + 1); }); return [...m.entries()].sort().slice(-30).map(([d, n]) => ({ mes: d.slice(8) + "/" + d.slice(5, 7), total: n })); }, [filtered]);
+  /* controle diário: quais departamentos registraram (ou informaram "sem atividade") em cada um dos últimos 7 dias */
+  const obrig = (Array.isArray(regObrig) && regObrig.length ? regObrig : MAT_DEPTS).filter((d) => MAT_DEPTS.includes(d));
+  const dias7 = Array.from({ length: 7 }, (_, i) => diasAtras(6 - i));
+  const cont = useMemo(() => { const m = new Map(); tmBordo.forEach((r) => { const k = `${r.departamento}|${r.data}`; m.set(k, (m.get(k) || 0) + 1); }); return m; }, [tmBordo]);
+  const feitoEm = (d, dia) => cont.get(`${d}|${dia}`) || 0;
+  const pendHoje = obrig.filter((d) => !feitoEm(d, hoje));
+  const faltas = obrig.map((d) => ({ d, dias: dias7.filter((x) => x !== hoje && !feitoEm(d, x)) }));
+  const totalFaltas = faltas.reduce((s, x) => s + x.dias.length, 0);
 
-  /* cobrança: dias dos últimos 7 (sem contar hoje) sem nenhum registro de bordo */
-  const diasSemRegistro = useMemo(() => {
-    const com = new Set(tmBordo.map((r) => r.data)); const out = [];
-    for (let i = 1; i <= 7; i++) { const d = new Date(hoje + "T00:00:00"); d.setDate(d.getDate() - i); const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; if (!com.has(iso)) out.push(iso); }
-    return out;
-  }, [tmBordo]);
-  const NORMA = "NORMA — REGISTRO DIÁRIO DE BORDO\n\n1. Todos os dias, até as 18h (hora de bordo), enviar por E-MAIL a planilha “Registro diário” preenchida com TUDO que foi feito no dia: preventiva, preditiva e corretiva.\n2. Assunto do e-mail: REGISTRO DIÁRIO BORDO – dd/mm/aaaa. Anexar a planilha atualizada (acumulada).\n3. Cada atividade deve ter o Job Type e o Job No do TM Master e a Ação no TM: baixa de job ou criação de job. Dar a baixa/criar o job no TM ANTES de registrar.\n4. Corretivas devem informar o Failure Report (FAIL-...).\n5. Dia sem atividade também deve ser informado (escrever “sem atividade” na descrição).\n6. Atividades comunicadas por mensagem, ligação ou relatório avulso só são consideradas depois de entrarem na planilha enviada por e-mail.\n7. O não envio é cobrado diariamente pelo escritório.";
+  const reais = filtered.filter((r) => !r.semAtv);
+  const kpi = {
+    total: reais.length, ok: reais.filter((r) => r._c.ok).length, pend: reais.filter((r) => !r._c.ok).length,
+    corrSemFr: reais.filter((r) => r.tipo === "Corretiva" && r._f.nos.length === 0).length, comFr: reais.filter((r) => r._f.nos.length > 0).length,
+    atrasados: reais.filter((r) => r._a !== null && r._a > 1).length,
+    baixas: reais.filter((r) => r.acao === "Baixa de job").length, criacoes: reais.filter((r) => r.acao === "Criação de job").length,
+  };
+  const porTipo = BORDO_TIPOS.map((t) => ({ nome: t, total: reais.filter((r) => r.tipo === t).length }));
+  const porDepto = MAT_DEPTS.map((d) => ({ nome: d, total: reais.filter((r) => r.departamento === d).length })).filter((x) => x.total);
+  const porDia = useMemo(() => { const m = new Map(); reais.forEach((r) => { if (r.data) m.set(r.data, (m.get(r.data) || 0) + 1); }); return [...m.entries()].sort().slice(-30).map(([d, n]) => ({ mes: d.slice(8) + "/" + d.slice(5, 7), total: n })); }, [filtered]);
+
+  const NORMA = "NORMA — REGISTRO DIÁRIO DE BORDO\n\n1. Todos os dias, até as 18h (hora de bordo), cada departamento registra no portal (TM Master > Registro de Bordo) TUDO que foi feito no dia: preventiva, preditiva e corretiva.\n2. Cada atividade deve ter o Job Type e o Job No do TM Master e a Ação no TM: baixa de job ou criação de job. Dar a baixa/criar o job no TM ANTES de registrar.\n3. Corretivas devem informar o Failure Report (FAIL-...).\n4. Dia sem atividade também deve ser informado: use o botão “Sem atividades” do departamento.\n5. Atividades comunicadas por mensagem, ligação ou relatório avulso só são consideradas depois de registradas no portal.\n6. O departamento sem registro é cobrado diariamente pelo escritório.";
   const copiarNorma = async () => { try { await navigator.clipboard.writeText(NORMA); setMsg("Norma copiada. Cole no e-mail para o bordo."); } catch (e) { window.prompt("Copie o texto:", NORMA); } setTimeout(() => setMsg(""), 5000); };
   const abrirCobranca = () => {
     try { localStorage.setItem("genesis_email_bordo", emailBordo); } catch (e) { /* ignora */ }
-    const lista = diasSemRegistro.map((d) => `- ${fmtDataCompleta(d)}`).join("\n");
-    const corpo = diasSemRegistro.length
-      ? `Prezados,\n\nNão recebemos o REGISTRO DIÁRIO DE BORDO dos seguintes dias:\n${lista}\n\nFavor enviar por e-mail HOJE a planilha preenchida com tudo que foi feito (preventiva, preditiva e corretiva), com o Job Type / Job No do TM Master, a ação (baixa ou criação de job) e o Failure Report quando houver.\n\nAtividades informadas só por mensagem ou ligação não são consideradas até entrarem na planilha.\n\nObrigado.`
-      : `Prezados,\n\nRecebemos os registros dos últimos 7 dias. Lembramos que o REGISTRO DIÁRIO DE BORDO deve ser enviado por e-mail todos os dias.\n\nObrigado.`;
+    const hojeTxt = pendHoje.length ? `HOJE (${fmtDataCompleta(hoje)}) ainda sem registro:\n${pendHoje.map((d) => `- ${d}`).join("\n")}\n\n` : "";
+    const antes = faltas.filter((x) => x.dias.length).map((x) => `- ${x.d}: ${x.dias.map((d) => fmtDataCompleta(d)).join(", ")}`).join("\n");
+    const corpo = (pendHoje.length || antes)
+      ? `Prezados,\n\nO REGISTRO DIÁRIO DE BORDO está pendente para os departamentos abaixo.\n\n${hojeTxt}${antes ? `Dias anteriores (últimos 7) sem registro:\n${antes}\n\n` : ""}Favor registrar no portal (TM Master > Registro de Bordo) tudo que foi feito, com o Job Type / Job No do TM, a ação (baixa ou criação de job) e o Failure Report quando houver. Se não houve atividade, use o botão “Sem atividades”.\n\nObrigado.`
+      : `Prezados,\n\nTodos os departamentos registraram nos últimos 7 dias. Lembramos que o REGISTRO DIÁRIO DE BORDO deve ser feito todos os dias.\n\nObrigado.`;
     window.location.href = `mailto:${emailBordo.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}?subject=${encodeURIComponent("COBRANÇA – Registro diário de bordo pendente")}&body=${encodeURIComponent(corpo)}`;
   };
 
-  const upd = (id, k, v) => setTmBordo((arr) => arr.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
-  const novo = () => setTmBordo((arr) => [{ id: uid("BRD"), data: hoje, tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", origem: "Planilha diária", por: "", email: "", obs: "", recebido: hoje }, ...arr]);
-  const rem = (id) => setTmBordo((arr) => arr.filter((r) => r.id !== id));
-
-  const importar = (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
-        const nome = wb.SheetNames.find((n) => /registro|di[aá]rio|bordo/i.test(n)) || wb.SheetNames[0];
-        const matriz = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "" });
-        const hi = matriz.findIndex((row) => row.some((c) => String(c).trim().toLowerCase() === "data") && row.some((c) => /^tipo/i.test(String(c).trim())));
-        const cab = matriz[hi >= 0 ? hi : 0].map((c) => String(c).trim());
-        const js = matriz.slice((hi >= 0 ? hi : 0) + 1).map((row) => Object.fromEntries(cab.map((c, k) => [c || `col${k}`, row[k] === undefined ? "" : row[k]])));
-        const g = (r, ...ks) => { for (const k of ks) { const kk = Object.keys(r).find((x) => x.trim().toLowerCase().startsWith(k)); if (kk && r[kk] !== "") return r[kk]; } return ""; };
-        const novos = js.map((r) => ({
-          data: bordoDate(g(r, "data")), tipo: bordoPick(g(r, "tipo"), BORDO_TIPOS, "Preventiva"), descricao: String(g(r, "manuten", "descri")).trim(), componente: String(g(r, "componente")).trim(),
-          jobTipo: String(g(r, "job type")).trim().toUpperCase(), jobNo: String(g(r, "job no")).trim(), fr: String(g(r, "failure")).trim().toUpperCase(), acao: bordoPick(g(r, "ação", "acao"), BORDO_ACOES, "Sem job"),
-          origem: bordoPick(g(r, "origem"), BORDO_ORIGENS, "Planilha diária"), por: String(g(r, "reportado")).trim(), email: String(g(r, "e-mail", "email")).trim(), obs: String(g(r, "observa")).trim(),
-        })).filter((r) => r.data && (r.descricao || r.jobNo));
-        let add = 0, dup = 0;
-        setTmBordo((prev) => {
-          const key = (r) => [r.data, r.tipo, bordoNorm(r.jobTipo), bordoNorm(r.jobNo), r.descricao.toLowerCase()].join("|");
-          const have = new Set(prev.map(key)); const next = [...prev];
-          novos.forEach((r) => { if (have.has(key(r))) dup++; else { have.add(key(r)); next.push({ id: uid("BRD"), ...r, recebido: hoje }); add++; } });
-          return next;
-        });
-        setMsg(`Registro de bordo importado: ${novos.length} linha(s) lida(s) da aba "${nome}".`);
-      } catch (err) { setMsg("Erro ao ler a planilha de registro de bordo. Use o modelo (botão Baixar modelo)."); }
-      setTimeout(() => setMsg(""), 8000);
-    };
-    reader.readAsArrayBuffer(file); e.target.value = "";
+  /* ---------- edição (só as linhas dos departamentos da pessoa; administrador edita todas) ---------- */
+  const upd = (id, patch) => setTmBordo((arr) => arr.map((r) => (r.id === id && pode(r.departamento) ? { ...r, ...patch, upd: Date.now() } : r)));
+  const rem = (r) => {
+    if (!window.confirm(`Excluir o registro "${r.descricao || r.jobNo || r.id}"?`)) return;
+    setTmBordo((arr) => arr.filter((x) => x.id !== r.id));
+    setBordoDeleted((d) => [...new Set([...(d || []), r.id])]);
+  };
+  const rascunho = () => ({ data: hoje, departamento: deptsEditaveis.length === 1 ? deptsEditaveis[0] : "", tipo: "Preventiva", descricao: "", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Baixa de job", por: currentUser?.name || "", obs: "" });
+  const salvarNovo = (manter) => {
+    if (!novo.departamento) { setMsg("Escolha o departamento."); return; }
+    if (!String(novo.descricao).trim()) { setMsg("Descreva a manutenção realizada."); return; }
+    const r = { ...novo, id: uid("BRD"), origem: "Portal", email: "", recebido: hoje, upd: Date.now() };
+    setTmBordo((arr) => [r, ...arr]);
+    setNovo(manter ? { ...rascunho(), departamento: novo.departamento, data: novo.data, por: novo.por } : null);
+    setMsg("Registro adicionado."); setTimeout(() => setMsg(""), 4000);
+  };
+  const semAtividade = (d, dia) => {
+    if (!pode(d)) return;
+    setTmBordo((arr) => [{ id: uid("BRD"), data: dia, departamento: d, tipo: "Preventiva", descricao: "Sem atividades no dia", componente: "", jobTipo: "", jobNo: "", fr: "", acao: "Sem job", origem: "Portal", por: currentUser?.name || "", email: "", obs: "", recebido: hoje, semAtv: true, upd: Date.now() }, ...arr]);
   };
 
   React.useEffect(() => {
     if (!active || !setExportXlsxFn || !setReportFn) return;
-    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Tipo: r.tipo, Manutenção: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Failure Report (origem)": r._f.auto ? "detectado automaticamente" : (r.fr ? "informado" : ""), "Ação no TM": r.acao, Origem: r.origem, "Reportado por": r.por, "E-mail de quem reportou": r.email || "", Observação: r.obs, "Recebido em": fmt(r.recebido), "Dias até o envio": r._a === null ? "" : r._a, "Conferência no TM": r._c.cat, "Detalhe da conferência": r._c.txt }));
-    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem registros" }]), "Registro de Bordo"); XLSX.writeFile(wb, `genesis-registro-de-bordo-${todayISO()}.xlsx`); });
+    const lin = () => filtered.map((r) => ({ Data: fmt(r.data), Departamento: r.departamento || "", Tipo: r.semAtv ? "Sem atividade" : r.tipo, Manutenção: r.descricao, Componente: r.componente, "Job Type": r.jobTipo, "Job No": r.jobNo, "Failure Report": r._f.nos.join(", "), "Ação no TM": r.semAtv ? "" : r.acao, "Reportado por": r.por, Observação: r.obs, "Lançado em": r.recebido ? fmt(r.recebido) : "", "Dias até o lançamento": r._a ?? "", Conferência: r._c.cat, Detalhe: r._c.txt }));
+    const matriz = () => obrig.map((d) => ({ Departamento: d, ...Object.fromEntries(dias7.map((x) => [fmt(x), feitoEm(d, x) ? `${feitoEm(d, x)} registro(s)` : "SEM REGISTRO"])) }));
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem registros" }]), "Registro de Bordo"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(matriz()), "Controle diário"); XLSX.writeFile(wb, `genesis-registro-de-bordo-${todayISO()}.xlsx`); });
     setReportFn(() => () => {
       const doc = new jsPDF({ orientation: "landscape" });
       let y = pdfHeader(doc, "TM Master — Registro de Bordo", `${filtered.length} registro(s) no filtro atual · Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
-      y = pdfKpis(doc, y, [{ label: "Registros", value: kpi.total }, { label: "Confirmados no TM", value: kpi.ok }, { label: "Pendentes no TM", value: kpi.pend }, { label: "Baixas", value: kpi.baixas }, { label: "Jobs criados", value: kpi.criacoes }, { label: "Dias sem registro (14d)", value: kpi.diasSem }]);
+      y = pdfKpis(doc, y, [{ label: "Registros", value: kpi.total }, { label: "Confirmados no TM", value: kpi.ok }, { label: "Pendentes no TM", value: kpi.pend }, { label: "Baixas", value: kpi.baixas }, { label: "Jobs criados", value: kpi.criacoes }, { label: "Deptos sem registro hoje", value: pendHoje.length }]);
+      y = pdfSectionTitle(doc, y, "Controle diário por departamento (últimos 7 dias)");
+      y = pdfTable(doc, y, ["Departamento", ...dias7.map((x) => fmt(x).slice(0, 5))], obrig.map((d) => [d, ...dias7.map((x) => (feitoEm(d, x) ? String(feitoEm(d, x)) : "—"))]));
       y = pdfSectionTitle(doc, y, "Registros e conferência no TM Master");
-      pdfTable(doc, y, ["Data", "Tipo", "Manutenção", "Componente", "Job", "Failure Report", "Ação no TM", "Reportado por", "Conferência", "Detalhe"],
-        filtered.map((r) => [fmt(r.data), r.tipo, r.descricao, r.componente, `${r.jobTipo} ${r.jobNo}`.trim() || "—", r._f.nos.join(", ") || "—", r.acao, r.por || "—", r._c.cat, r._c.txt]));
+      pdfTable(doc, y, ["Data", "Depto.", "Tipo", "Manutenção", "Job", "Failure Report", "Ação no TM", "Reportado por", "Conferência", "Detalhe"],
+        filtered.map((r) => [fmt(r.data), r.departamento || "—", r.semAtv ? "Sem atividade" : r.tipo, r.descricao, `${r.jobTipo} ${r.jobNo}`.trim() || "—", r._f.nos.join(", ") || "—", r.semAtv ? "—" : r.acao, r.por || "—", r._c.cat, r._c.txt]));
       pdfSave(doc, "relatorio-registro-de-bordo");
     });
-  }, [active, filtered, kpi]);
+  }, [active, filtered, kpi, tmBordo, regObrig]);
 
-  const cor = (c) => (c === "Confirmado no TM" ? "d1" : c === "Divergente" || c === "Falta informar o job" ? "d2" : "d3");
+  const cor = (c) => (c === "Confirmado no TM" || c === "Sem atividade" ? "d1" : c === "Divergente" || c === "Falta informar o job" ? "d2" : "d3");
   const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
+  const sel = { padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)" };
+  const ro = (v) => <span style={{ fontSize: 12 }}>{v === "" || v == null ? "—" : String(v)}</span>;
+  const campo = (rot, el, span) => <div className="g-field" style={span ? { gridColumn: "1 / -1" } : undefined}><label>{rot}</label>{el}</div>;
+  const nv = (k, tipo = "text", extra = {}) => <input className="g-edit" type={tipo} value={novo[k]} onChange={(e) => setNovo((p) => ({ ...p, [k]: e.target.value }))} {...extra} />;
+  const nd = (k, ops) => <select className="g-edit" value={novo[k]} onChange={(e) => setNovo((p) => ({ ...p, [k]: e.target.value }))}>{ops.map((o) => <option key={o} value={o}>{o}</option>)}</select>;
+  const th = (t, w) => <th style={{ minWidth: w }}>{t}</th>;
+
   return (
     <>
-      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ maxWidth: 820 }}>
-          <div className="g-panel-title" style={{ marginBottom: 4 }}>Registro de Bordo — tudo que o bordo fez, conferido no TM Master</div>
-          <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-            O bordo preenche a <b>planilha diária</b> (uma linha por atividade: preventiva, preditiva ou corretiva) dizendo se foi <b>baixa de job</b> ou <b>criação de job</b> no TM e qual o nº do job.
-            Você importa a planilha e o portal <b>confere sozinho</b> contra o History e o Due do TM Master: baixa confirmada, job ainda aberto, job não encontrado ou atividade sem job. Reimportar não duplica linhas. Se a atividade corrige uma falha, informe o <b>Failure Report</b>: o portal também detecta sozinho quando o job já está ligado a um Failure Report importado.
-          </div>
-        </div>
-        <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
-          <button className="g-btn" onClick={baixarModeloBordo}><Download size={14} />Baixar modelo de planilha</button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={importar} />
-          <button className="g-btn primary" onClick={() => fileRef.current?.click()}><Upload size={14} />Importar planilha de bordo</button>
-          <button className="g-btn primary" onClick={novo}><Plus size={14} />Novo registro</button>
-        </div>
+      <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>
+        <Lock size={14} style={{ marginTop: 1 }} />
+        {admin ? "Administrador: você edita os registros de todos os departamentos."
+          : podeCriar ? <>Você registra e edita só {deptsEditaveis.length > 1 ? "os departamentos" : "o departamento"} <b>{deptsEditaveis.join(", ")}</b>. Os registros dos outros aparecem para consulta.</>
+          : "Somente consulta. Peça ao administrador para definir o seu departamento em Configurações para poder registrar."}
       </div>
-      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
-      <div className="g-panel" style={{ borderLeft: "3px solid var(--warn)" }}>
-        <div className="g-panel-head"><span className="g-panel-title">Cobrança do envio diário por e-mail</span></div>
-        <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 8 }}>
-          O portal não consegue impedir o bordo de esquecer, mas deixa o descumprimento visível: <b>dias sem registro</b>, <b>"Recebido em"</b> de cada linha (e quantos dias depois do dia da atividade ela chegou) e o botão de cobrança abaixo.
-          Regra recomendada: <b>só vale o que está na planilha enviada por e-mail</b>; mensagem e ligação não substituem o registro.
+
+      <div className="g-panel" style={{ borderLeft: `4px solid ${pendHoje.length ? "var(--crit)" : "var(--ok)"}` }}>
+        <div className="g-panel-head" style={{ flexWrap: "wrap", gap: 8 }}>
+          <span className="g-panel-title">Controle diário — quem registrou {pendHoje.length ? <span style={{ color: "var(--crit)" }}>· hoje faltam {pendHoje.length} de {obrig.length} departamentos</span> : <span style={{ color: "var(--ok)" }}>· todos os departamentos registraram hoje</span>}</span>
         </div>
-        <div style={{ fontSize: 13, marginBottom: 8 }}>
-          {diasSemRegistro.length === 0 ? <span style={{ color: "var(--ok)" }}>✔ Todos os últimos 7 dias têm registro.</span>
-            : <><b style={{ color: "var(--crit)" }}>{diasSemRegistro.length} dia(s) sem registro nos últimos 7:</b> {diasSemRegistro.map((d) => fmtDataCompleta(d)).join(", ")}</>}
+        <div className="g-table-wrap">
+          <table className="g-table" style={{ minWidth: 0, width: "100%" }}>
+            <thead><tr><th>Departamento</th>{dias7.map((d) => <th key={d} style={{ textAlign: "center", ...(d === hoje ? { color: "var(--teal)" } : {}) }}>{fmt(d).slice(0, 5)}{d === hoje ? " (hoje)" : ""}</th>)}<th style={{ textAlign: "center" }}>Dias sem registro</th></tr></thead>
+            <tbody>
+              {obrig.map((d) => {
+                const f2 = faltas.find((x) => x.d === d);
+                return (
+                  <tr className="g-row" key={d}>
+                    <td><b>{d}</b></td>
+                    {dias7.map((dia) => {
+                      const n = feitoEm(d, dia);
+                      return <td key={dia} style={{ textAlign: "center" }}>
+                        {n ? <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓ {n}</span>
+                          : <span style={{ color: dia === hoje ? "var(--warn)" : "var(--crit)", fontWeight: 700 }}>{dia === hoje ? "pendente" : "✗ falta"}{pode(d) && <div><span style={{ fontSize: 10, fontWeight: 400, textDecoration: "underline", cursor: "pointer", color: "var(--text-dim)" }} title="Informa que o departamento não teve atividades neste dia" onClick={() => semAtividade(d, dia)}>sem atividades</span></div>}</span>}
+                      </td>;
+                    })}
+                    <td style={{ textAlign: "center", fontWeight: 700, color: f2.dias.length ? "var(--crit)" : "var(--ok)" }}>{f2.dias.length}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <input type="text" value={emailBordo} onChange={(e) => setEmailBordo(e.target.value)} placeholder="E-mail do bordo (vários separados por vírgula)" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
-          <button className="g-btn primary g-keep" onClick={abrirCobranca}>Abrir e-mail de cobrança</button>
+        <div className="g-muted" style={{ fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
+          ✓ = registrou (o número é a quantidade de linhas, incluindo “sem atividades”). O dia de hoje só vira falta quando virar o dia.
+        </div>
+        {admin && (
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            <b>Departamentos que devem registrar todo dia:</b>{" "}
+            {MAT_DEPTS.map((d) => <label key={d} style={{ marginRight: 12, cursor: "pointer", whiteSpace: "nowrap" }}><input type="checkbox" checked={obrig.includes(d)} onChange={(e) => setRegObrig(e.target.checked ? MAT_DEPTS.filter((x) => obrig.includes(x) || x === d) : MAT_DEPTS.filter((x) => obrig.includes(x) && x !== d))} /> {d}</label>)}
+          </div>
+        )}
+        <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+          <input type="text" value={emailBordo} onChange={(e) => setEmailBordo(e.target.value)} placeholder="E-mail para a cobrança (vários separados por vírgula)" style={{ flex: 1, minWidth: 280, padding: "7px 10px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }} />
+          <button className="g-btn primary g-keep" onClick={abrirCobranca}>Abrir e-mail de cobrança ({pendHoje.length} hoje · {totalFaltas} dia(s) em atraso)</button>
           <button className="g-btn" onClick={copiarNorma}>Copiar norma (mensagem padrão)</button>
         </div>
       </div>
-      {!kpi.hojeTem && tmBordo.length > 0 && <div className="g-alert" style={{ marginBottom: 12 }}><AlertTriangle size={14} style={{ marginTop: 1 }} />Nenhum registro de bordo com a data de hoje ({fmt(hoje)}). Nos últimos 14 dias, {kpi.diasSem} dia(s) ficaram sem registro.</div>}
+
+      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ maxWidth: 820 }}>
+          <div className="g-panel-title" style={{ marginBottom: 4 }}>Registro de Bordo — preenchido aqui, conferido no TM Master</div>
+          <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+            Cada departamento registra no próprio portal, no fim do dia, uma linha por atividade (preventiva, preditiva ou corretiva), dizendo se foi <b>baixa de job</b> ou <b>criação de job</b> e o nº do job.
+            O portal <b>confere sozinho</b> contra o History e o Due do TM Master. Dia sem atividade: botão “sem atividades” no controle acima. Corretiva: informe o <b>Failure Report</b>; o portal também detecta quando o job já está ligado a um.
+          </div>
+        </div>
+        {podeCriar && <button className="g-btn primary" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Novo registro"}</button>}
+      </div>
+      {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
+
+      {novo && (
+        <div className="g-panel" style={{ borderLeft: "4px solid var(--teal)" }}>
+          <div className="g-panel-head"><span className="g-panel-title">Novo registro de bordo</span></div>
+          <div className="tbl-detail-grid">
+            {campo("Data *", nv("data", "date"))}
+            {campo("Departamento *", deptsEditaveis.length === 1 ? <input className="g-edit" value={novo.departamento} disabled /> : <select className="g-edit" value={novo.departamento} onChange={(e) => setNovo((p) => ({ ...p, departamento: e.target.value }))}><option value="">— escolher —</option>{deptsEditaveis.map((o) => <option key={o} value={o}>{o}</option>)}</select>)}
+            {campo("Tipo", nd("tipo", BORDO_TIPOS))}
+            {campo("Ação no TM", nd("acao", BORDO_ACOES))}
+            {campo("Manutenção realizada *", nv("descricao"), true)}
+            {campo("Componente", nv("componente"))}
+            {campo("Job Type", nv("jobTipo", "text", { onChange: (e) => setNovo((p) => ({ ...p, jobTipo: e.target.value.toUpperCase() })), placeholder: "ex.: ONE" }))}
+            {campo("Job No", nv("jobNo"))}
+            {campo("Failure Report", nv("fr", "text", { onChange: (e) => setNovo((p) => ({ ...p, fr: e.target.value.toUpperCase() })), placeholder: "FAIL-GEN-2026-xxxx (corretivas)" }))}
+            {campo("Reportado por", nv("por"))}
+            {campo("Observação", <textarea className="g-edit-wrap" rows={2} value={novo.obs} onChange={(e) => setNovo((p) => ({ ...p, obs: e.target.value }))} />, true)}
+          </div>
+          <div className="g-flex" style={{ gap: 8, marginTop: 10 }}>
+            <button className="g-btn primary" onClick={() => salvarNovo(false)}>Adicionar registro</button>
+            <button className="g-btn" onClick={() => salvarNovo(true)} title="Adiciona e já abre outro em branco, mantendo data, departamento e quem reportou">Adicionar e lançar outro</button>
+            <button className="g-btn" onClick={() => setNovo(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
       <div className="g-filterbar" style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 6 }}>
         <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="manutenção, componente, job, quem..." style={{ minWidth: 220 }} /></div>
+        <div className="g-field"><label>Departamento</label><select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))}>{["Todos", ...MAT_DEPTS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
@@ -6857,19 +6927,20 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
       </div>
 
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+        {bigKpi("Departamentos sem registro hoje", pendHoje.length, pendHoje.length ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Dias em atraso (7d, todos)", totalFaltas, totalFaltas ? "var(--crit)" : "var(--ok)", Clock)}
         {bigKpi("Registros", kpi.total, "var(--teal)", ClipboardList)}
         {bigKpi("Confirmados no TM", kpi.ok, "var(--ok)", ClipboardList)}
         {bigKpi("Pendentes no TM", kpi.pend, kpi.pend ? "var(--crit)" : "var(--ok)", AlertTriangle)}
         {bigKpi("Baixas de job", kpi.baixas, "var(--teal)", Wrench)}
         {bigKpi("Jobs criados", kpi.criacoes, "var(--teal)", Wrench)}
-        {bigKpi("Enviados com atraso (>1 dia)", kpi.atrasados, kpi.atrasados ? "var(--warn)" : "var(--ok)", Clock)}
-        {bigKpi("Com Failure Report", kpi.comFr, "var(--teal)", ClipboardList)}
+        {bigKpi("Lançados com atraso (>1 dia)", kpi.atrasados, kpi.atrasados ? "var(--warn)" : "var(--ok)", Clock)}
         {bigKpi("Corretivas sem Failure Report", kpi.corrSemFr, kpi.corrSemFr ? "var(--crit)" : "var(--ok)", AlertTriangle)}
-        {bigKpi("Dias sem registro (14d)", kpi.diasSem, kpi.diasSem > 3 ? "var(--crit)" : "var(--warn)", Clock)}
       </div>
       {tmBordo.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 14, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, marginBottom: 14 }}>
           <MesBarChart title="Registros por dia (últimos 30 com registro)" height={200} data={porDia} bars={[{ key: "total", name: "Registros", color: "#3B82F6" }]} />
+          <MesBarChart title="Por departamento" height={200} data={porDepto} bars={[{ key: "total", name: "Registros", color: "#22C55E" }]} />
           <MesBarChart title="Por tipo de manutenção" height={200} data={porTipo} bars={[{ key: "total", name: "Registros", color: "#8B5CF6" }]} />
         </div>
       )}
@@ -6878,32 +6949,35 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
         <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
           <table className="g-table tbl-modern">
-            <thead><tr><th>Data</th><th>Tipo</th><th>Manutenção</th><th>Componente</th><th>Job Type</th><th>Job No</th><th>Failure Report</th><th>Ação no TM</th><th>Origem</th><th>Reportado por</th><th>E-mail de quem reportou</th><th>Observação</th><th>Recebido em</th><th>Conferência no TM</th><th></th></tr></thead>
+            <thead><tr>{th("Data", 118)}{th("Departamento", 130)}{th("Tipo", 112)}{th("Manutenção", 240)}{th("Componente", 150)}{th("Job Type", 70)}{th("Job No", 70)}{th("Failure Report", 190)}{th("Ação no TM", 130)}{th("Reportado por", 120)}{th("Observação", 180)}{th("Lançado em", 110)}{th("Conferência no TM", 260)}<th></th></tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={15} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Baixe o modelo, passe para o bordo preencher e importe aqui — ou use “Novo registro”."}</td></tr>}
-              {filtered.map((r) => (
-                <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
-                  <td style={{ minWidth: 118 }}><input type="date" value={r.data} onChange={(e) => upd(r.id, "data", e.target.value)} style={inp} /></td>
-                  <td style={{ minWidth: 112 }}><select value={r.tipo} onChange={(e) => upd(r.id, "tipo", e.target.value)} style={inp}>{BORDO_TIPOS.map((o) => <option key={o}>{o}</option>)}</select></td>
-                  <td style={{ minWidth: 240 }}><input value={r.descricao} onChange={(e) => upd(r.id, "descricao", e.target.value)} style={inp} /></td>
-                  <td style={{ minWidth: 150 }}><input value={r.componente} onChange={(e) => upd(r.id, "componente", e.target.value)} style={inp} /></td>
-                  <td style={{ minWidth: 70 }}><input value={r.jobTipo} onChange={(e) => upd(r.id, "jobTipo", e.target.value.toUpperCase())} style={inp} /></td>
-                  <td style={{ minWidth: 70 }}><input value={r.jobNo} onChange={(e) => upd(r.id, "jobNo", e.target.value)} style={inp} /></td>
-                  <td style={{ minWidth: 190, whiteSpace: "normal" }}>
-                    <input value={r.fr || ""} onChange={(e) => upd(r.id, "fr", e.target.value.toUpperCase())} placeholder={r._f.auto ? r._f.nos[0] : "FAIL-GEN-2026-xxxx"} style={inp} />
-                    {r._f.nos.length > 0 && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--ok)" }}>{r._f.auto ? "ligado automaticamente: " : "ligado: "}{r._f.txt.join(" · ")}</div>}
-                    {r._f.nos.length === 0 && r.tipo === "Corretiva" && frIdx.has && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--crit)" }}>Corretiva sem Failure Report ligado</div>}
-                  </td>
-                  <td style={{ minWidth: 130 }}><select value={r.acao} onChange={(e) => upd(r.id, "acao", e.target.value)} style={inp}>{BORDO_ACOES.map((o) => <option key={o}>{o}</option>)}</select></td>
-                  <td style={{ minWidth: 120 }}><select value={r.origem} onChange={(e) => upd(r.id, "origem", e.target.value)} style={inp}>{BORDO_ORIGENS.map((o) => <option key={o}>{o}</option>)}</select></td>
-                  <td style={{ minWidth: 120 }}><input value={r.por} onChange={(e) => upd(r.id, "por", e.target.value)} style={inp} /></td>
-                  <td style={{ minWidth: 190 }}><input value={r.email || ""} onChange={(e) => upd(r.id, "email", e.target.value)} placeholder="nome@empresa.com" style={inp} /></td>
-                  <td style={{ minWidth: 180 }}><input value={r.obs} onChange={(e) => upd(r.id, "obs", e.target.value)} style={inp} /></td>
-                  <td style={{ minWidth: 110, whiteSpace: "normal", fontFamily: "var(--mono)", fontSize: 12 }}>{r.recebido ? fmt(r.recebido) : "—"}{r._a !== null && r._a > 1 && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>enviado +{r._a} dias depois</div>}</td>
-                  <td style={{ minWidth: 260, whiteSpace: "normal" }}><span className={`tbl-days ${cor(r._c.cat)}`}>{r._c.cat}</span><div className="g-muted" style={{ fontSize: 11, marginTop: 3 }}>{r._c.txt}</div></td>
-                  <td><span className="g-btn ghost danger" onClick={() => rem(r.id)}><Trash2 size={13} /></span></td>
-                </tr>
-              ))}
+              {filtered.length === 0 && <tr><td colSpan={14} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Use “Novo registro” para lançar o primeiro."}</td></tr>}
+              {filtered.map((r) => {
+                const ok = pode(r.departamento);
+                const E = (k, el, ver) => (ok ? el : ro(ver !== undefined ? ver : r[k]));
+                return (
+                  <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
+                    <td>{E("data", <input type="date" value={r.data} onChange={(e) => upd(r.id, { data: e.target.value })} style={inp} />, fmt(r.data))}</td>
+                    <td>{ok && !r.semAtv ? <select value={r.departamento || ""} onChange={(e) => upd(r.id, { departamento: e.target.value })} style={inp}>{!r.departamento && <option value="">—</option>}{(r.departamento && !deptsEditaveis.includes(r.departamento) ? [r.departamento, ...deptsEditaveis] : deptsEditaveis).map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">{r.departamento || "sem depto."}</span>}</td>
+                    <td>{r.semAtv ? <span className="tbl-chip">Sem atividade</span> : E("tipo", <select value={r.tipo} onChange={(e) => upd(r.id, { tipo: e.target.value })} style={inp}>{BORDO_TIPOS.map((o) => <option key={o}>{o}</option>)}</select>)}</td>
+                    <td>{E("descricao", <input value={r.descricao} onChange={(e) => upd(r.id, { descricao: e.target.value })} style={inp} />)}</td>
+                    <td>{r.semAtv ? ro("") : E("componente", <input value={r.componente} onChange={(e) => upd(r.id, { componente: e.target.value })} style={inp} />)}</td>
+                    <td>{r.semAtv ? ro("") : E("jobTipo", <input value={r.jobTipo} onChange={(e) => upd(r.id, { jobTipo: e.target.value.toUpperCase() })} style={inp} />)}</td>
+                    <td>{r.semAtv ? ro("") : E("jobNo", <input value={r.jobNo} onChange={(e) => upd(r.id, { jobNo: e.target.value })} style={inp} />)}</td>
+                    <td style={{ whiteSpace: "normal" }}>
+                      {r.semAtv ? ro("") : E("fr", <input value={r.fr || ""} onChange={(e) => upd(r.id, { fr: e.target.value.toUpperCase() })} placeholder={r._f.auto ? r._f.nos[0] : "FAIL-GEN-2026-xxxx"} style={inp} />)}
+                      {r._f.nos.length > 0 && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--ok)" }}>{r._f.auto ? "ligado automaticamente: " : "ligado: "}{r._f.txt.join(" · ")}</div>}
+                      {r._f.nos.length === 0 && !r.semAtv && r.tipo === "Corretiva" && frIdx.has && <div style={{ fontSize: 10.5, marginTop: 3, color: "var(--crit)" }}>Corretiva sem Failure Report ligado</div>}
+                    </td>
+                    <td>{r.semAtv ? ro("") : E("acao", <select value={r.acao} onChange={(e) => upd(r.id, { acao: e.target.value })} style={inp}>{BORDO_ACOES.map((o) => <option key={o}>{o}</option>)}</select>)}</td>
+                    <td>{E("por", <input value={r.por} onChange={(e) => upd(r.id, { por: e.target.value })} style={inp} />)}</td>
+                    <td>{E("obs", <input value={r.obs} onChange={(e) => upd(r.id, { obs: e.target.value })} style={inp} />)}</td>
+                    <td style={{ whiteSpace: "normal", fontFamily: "var(--mono)", fontSize: 12 }}>{r.recebido ? fmt(r.recebido) : "—"}{r._a !== null && r._a > 1 && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>lançado +{r._a} dias depois</div>}</td>
+                    <td style={{ whiteSpace: "normal" }}><span className={`tbl-days ${cor(r._c.cat)}`}>{r._c.cat}</span><div className="g-muted" style={{ fontSize: 11, marginTop: 3 }}>{r._c.txt}</div></td>
+                    <td>{ok ? <span className="g-btn ghost danger" title="Excluir registro" onClick={() => rem(r)}><Trash2 size={13} /></span> : <Lock size={12} color="var(--text-faint)" title="Só o departamento dono (ou o administrador) edita" />}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -6916,7 +6990,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, tmDue, tmHistory, tmFailures, 
   );
 };
 
-function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImportFailures, tmBordo, setTmBordo, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
+function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImportFailures, tmBordo, setTmBordo, setBordoDeleted, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
 
@@ -7582,7 +7656,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
 
       <ResumoEmailTm tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} />
 
-      {tmSubTab === "bordo" && <BordoRegistroView tmBordo={tmBordo || []} setTmBordo={setTmBordo} tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
+      {tmSubTab === "bordo" && <BordoRegistroView tmBordo={tmBordo || []} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={setRegObrig} currentUser={currentUser} tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
       {tmSubTab === "falhas" && <FailureReportsView tmFailures={tmFailures} handleImportFailures={handleImportFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
@@ -9838,7 +9912,7 @@ function SettingsView({ currentUser, users, setUsers }) {
         </div>
         <table className="g-table">
           <thead>
-            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamentos (Materiais)</th><th>Abas liberadas</th><th></th></tr>
+            <tr><th>Nome</th><th>Usuário</th><th>Senha</th><th>Perfil</th><th>Departamentos (Materiais e Registro de Bordo)</th><th>Abas liberadas</th><th></th></tr>
           </thead>
           <tbody>
             {users.map((u, i) => {
