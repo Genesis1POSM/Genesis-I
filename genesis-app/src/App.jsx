@@ -1500,6 +1500,7 @@ const INITIAL_TM_FAILURES = { reports: [], actions: [], jobs: [], jobHistory: []
 export default function Root() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [avisoSalvar, setAvisoSalvar] = useState("");
   /* trava de segurança: só habilita o auto-save quando o GET /api/state realmente teve sucesso.
      Se a conexão falhar (backend reiniciando, erro de rede, etc.), NUNCA deixamos o app salvar —
      senão o estado local (ainda nos valores INITIAL_* vazios) seria gravado por cima dos dados
@@ -1598,6 +1599,7 @@ export default function Root() {
      (saveEnabled) — nunca com dados ainda não confirmados vindos do servidor. */
   React.useEffect(() => {
     if (!loaded || !saveEnabled) return;
+    const cargaMat = matReqs;
     const t = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
@@ -1608,6 +1610,10 @@ export default function Root() {
       }).then((r) => r.json()).then((j) => {
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
         if (j && Array.isArray(j.matReqs)) {
+          /* edição que o servidor NÃO aceitou (permissão): avisa em vez de desfazer em silêncio */
+          const srvMap = new Map(j.matReqs.map((x) => [x.id, x]));
+          const recusadas = cargaMat.filter((x) => { const e = srvMap.get(x.id); return e && (x.upd || 0) > (e.upd || 0) && podeEditarMat(currentUser, x.departamento); });
+          if (recusadas.length) setAvisoSalvar(`O servidor não aceitou ${recusadas.length} alteração(ões) de Materiais (ex.: ${recusadas[0].departamento}). Confira se o seu usuário tem o departamento marcado em Configurações e se o server.js e o matmerge.js do Render estão atualizados.`);
           setMatReqs((cur) => { const novo = mesclarMatCliente(cur, [], j.matReqs, j.matDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
           setMatDeleted((cur) => ((j.matDeleted || []).length === cur.length ? cur : j.matDeleted));
         }
@@ -1615,7 +1621,7 @@ export default function Root() {
           setTmBordo((cur) => { const novo = mesclarBordoCliente(cur, [], j.tmBordo, j.bordoDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
           setBordoDeleted((cur) => ((j.bordoDeleted || []).length === cur.length ? cur : j.bordoDeleted));
         }
-      }).catch(() => setLoadError("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
+      }).catch(() => setAvisoSalvar("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
     }, 700);
     return () => clearTimeout(t);
   }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
@@ -1702,6 +1708,7 @@ export default function Root() {
   if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
 
   return (
+    <>
     <Genesis
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
@@ -1724,6 +1731,13 @@ export default function Root() {
       portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
+      {avisoSalvar && (
+        <div role="alert" style={{ position: "fixed", left: 16, right: 16, bottom: 16, zIndex: 9999, maxWidth: 720, margin: "0 auto", background: "#7f1d1d", color: "#fff", padding: "12px 16px", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.35)", fontSize: 13, lineHeight: 1.45, display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span style={{ flex: 1 }}>{avisoSalvar}</span>
+          <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => setAvisoSalvar("")}>✕</span>
+        </div>
+      )}
+    </>
   );
 }
 
