@@ -4219,7 +4219,7 @@ function ReparoRetornoView({ reparoItens, setReparoItens, setReportFn, setExport
 const ESC_CLASSES = ["Executar neste Port Call", "Resolver pendência antes", "Planejar próximo Port Call", "Acompanhar"];
 const ESC_COR = { "Executar neste Port Call": "#22C55E", "Resolver pendência antes": "#EF4444", "Planejar próximo Port Call": "#F5A623", "Acompanhar": "#94A3B8" };
 
-function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparoItens, allPortCallDates, portCallMeta, portCallLabel, setPortcallReqs, irSolicitacao, setReportFn, setExportXlsxFn }) {
+function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparoItens, allPortCallDates, portCallMeta, portCallLabel, portcallReqs, setPortcallReqs, irSolicitacao, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
   const futuros = useMemo(() => allPortCallDates.filter((d) => d >= hoje), [allPortCallDates]);
   const [pcSel, setPcSel] = useState("");
@@ -4311,6 +4311,18 @@ function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparo
     return S;
   }, [lista, exec.length, duracao, pc]);
 
+  const itemDe = (x) => ({ id: uid("PCI"), escId: x.id, descricao: x.item, componente: x.componente || "", tipo: x.tipo, justificativa: x.motivos.join("; "), linkado: x.linkado ? "sim" : "nao", jobTipo: x.jobTipo, jobNo: x.jobNo, oneNo: "", planId: x.planId });
+  const jaNoPc = (x) => (portcallReqs || []).some((q) => q.portCall === pc && (q.itens || []).some((i) => i.escId === x.id || (x.planId && i.planId === x.planId) || (x.jobNo && i.jobNo === x.jobNo && i.jobTipo === x.jobTipo)));
+  const addAoPortCall = (x) => {
+    if (!pc) { setMsg("Escolha antes o Port Call (ou a data) analisado."); setTimeout(() => setMsg(""), 4000); return; }
+    if (jaNoPc(x)) { setMsg(`“${x.item}” já está na solicitação do Port Call de ${portCallLabel(pc)}.`); setTimeout(() => setMsg(""), 4000); return; }
+    setPortcallReqs((a) => {
+      const lst = a || []; const i = lst.findIndex((q) => q.portCall === pc && !q.enviado);
+      if (i >= 0) return lst.map((q, k) => (k === i ? { ...q, itens: [...(q.itens || []), itemDe(x)] } : q));
+      return [{ id: uid("PCR"), portCall: pc, itens: [itemDe(x)], criado: hoje, enviado: "" }, ...lst];
+    });
+    setMsg(`“${x.item}” adicionado à solicitação do Port Call de ${portCallLabel(pc)}.`); setTimeout(() => setMsg(""), 4000);
+  };
   const criarSolicitacao = () => {
     const itens = exec.slice(0, 40).map((x) => ({ id: uid("PCI"), descricao: x.item, componente: x.componente || "", tipo: x.tipo, justificativa: x.motivos.join("; "), linkado: x.linkado ? "sim" : "nao", jobTipo: x.jobTipo, jobNo: x.jobNo, oneNo: "", planId: x.planId }));
     setPortcallReqs((a) => [{ id: uid("PCR"), portCall: pc, itens, criado: hoje, enviado: "" }, ...(a || [])]);
@@ -4369,9 +4381,9 @@ function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparo
         </div>
         <div className="g-table-wrap" style={{ maxHeight: 560, overflowY: "auto" }}>
           <table className="g-table tbl-modern">
-            <thead><tr><th>#</th><th>Origem</th><th style={{ minWidth: 240 }}>Item</th><th>Ref.</th><th>Dept.</th><th style={{ textAlign: "right" }}>Score</th><th>Classificação</th><th style={{ minWidth: 220 }}>Por quê</th><th style={{ minWidth: 180 }}>Pendências</th><th style={{ minWidth: 260 }}>Sugestão</th></tr></thead>
+            <thead><tr><th>#</th><th>Origem</th><th style={{ minWidth: 240 }}>Item</th><th>Ref.</th><th>Dept.</th><th style={{ textAlign: "right" }}>Score</th><th>Classificação</th><th style={{ minWidth: 220 }}>Por quê</th><th style={{ minWidth: 180 }}>Pendências</th><th style={{ minWidth: 260 }}>Sugestão</th><th style={{ minWidth: 150 }}>Port Call</th></tr></thead>
             <tbody>
-              {vis.length === 0 && <tr><td colSpan={10} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item nessa seleção.</td></tr>}
+              {vis.length === 0 && <tr><td colSpan={11} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhum item nessa seleção.</td></tr>}
               {vis.map((x, i) => (
                 <tr className="g-row tbl-row" key={x.id} style={{ "--c": ESC_COR[x.classe] }}>
                   <td>{i + 1}</td><td><span className="tbl-chip">{x.origem}</span></td>
@@ -4382,6 +4394,8 @@ function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparo
                   <td style={{ whiteSpace: "normal", fontSize: 11.5 }}>{x.motivos.join(" · ") || "—"}</td>
                   <td style={{ whiteSpace: "normal", fontSize: 11.5, color: x.pend.length ? "var(--crit)" : "var(--ok)" }}>{x.pend.join(" · ") || "✔ sem pendência"}</td>
                   <td style={{ whiteSpace: "normal", fontSize: 11.5 }}>{x.sug}</td>
+                  <td>{jaNoPc(x) ? <span className="tbl-chip" style={{ color: "var(--ok)" }}>✔ no Port Call {pc ? portCallLabel(pc) : ""}</span>
+                    : <button className="g-btn primary" disabled={!pc} onClick={() => addAoPortCall(x)} title="A análise está correta: adiciona este item à solicitação do Port Call da data informada acima"><Plus size={13} />Adicionar ao Port Call</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -5084,17 +5098,17 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Mapeamento total ({lista.length})</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 620, overflow: "auto" }}>
-          <table className="g-table tbl-modern">
+          <table className="g-table tbl-modern g-editavel">
             <thead><tr><th style={{ minWidth: 220 }}>Manutenção</th><th>Origem</th><th style={{ minWidth: 130 }}>Área / localização</th><th style={{ minWidth: 120 }}>Empresa</th><th style={{ minWidth: 240 }}>Plano de ação</th><th>Impacto</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {lista.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nada mapeado com esse filtro.</td></tr>}
               {lista.map((r) => (
                 <tr className="g-row tbl-row" key={r.key}>
-                  <td><input style={inp} value={r.nome} onChange={(e) => set(r, { nome: e.target.value })} /></td>
+                  <td><TextoAuto style={inp} value={r.nome} onChange={(v) => set(r, { nome: v })} /></td>
                   <td>{r.src === "M" ? <select style={inp} value={r.origem} onChange={(e) => set(r, { origem: e.target.value })}>{FUNIL_ORIGENS.filter((o) => o !== "DNV").map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">DNV</span>}</td>
-                  <td><input style={inp} value={r.area} onChange={(e) => set(r, { area: e.target.value })} /></td>
-                  <td><input style={inp} value={r.empresa} onChange={(e) => set(r, { empresa: e.target.value })} /></td>
-                  <td><input style={{ ...inp, borderColor: String(r.plano).trim() ? undefined : "var(--warn)" }} value={r.plano} onChange={(e) => set(r, { plano: e.target.value })} placeholder="o que será feito" /></td>
+                  <td><TextoAuto style={inp} value={r.area} onChange={(v) => set(r, { area: v })} /></td>
+                  <td><TextoAuto style={inp} value={r.empresa} onChange={(v) => set(r, { empresa: v })} /></td>
+                  <td><TextoAuto style={{ ...inp, borderColor: String(r.plano).trim() ? undefined : "var(--warn)" }} value={r.plano} onChange={(v) => set(r, { plano: v })} placeholder="o que será feito" /></td>
                   <td>{r.src === "M" ? <select style={inp} value={r.impacto} onChange={(e) => set(r, { impacto: e.target.value })}>{IMPACT_LEVELS.map((o) => <option key={o}>{o}</option>)}</select> : <span className="g-muted">—</span>}</td>
                   <td><select style={inp} value={r.status} onChange={(e) => set(r, { status: e.target.value })}>{PLAN_STATUS.map((o) => <option key={o}>{o}</option>)}</select></td>
                   <td><span className="g-btn ghost danger" title="Excluir" onClick={() => apagar(r)}><Trash2 size={13} /></span></td>
@@ -5450,7 +5464,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
         <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} updPlan={updPlan} remPlan={remPlan} updDocagem={updDocagem} remDocagem={remDocagem} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "escopo" ? (
         <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
-          allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} setPortcallReqs={setPortcallReqs}
+          allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs}
           irSolicitacao={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("portcall"); }} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "portcall" ? (
         <PortcallRequestView portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} planningItems={planningItems} tmDue={tmDue} tmHistory={tmHistory}
@@ -7832,6 +7846,12 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
     const sm = (f) => rows.reduce((a, r) => a + r[f], 0);
     return { rows, total: sm("total"), realizados: sm("realizados"), emAberto: sm("emAberto"), vencidos: sm("vencidos") };
   }, [tmHistory, tmDue, metricasFiltro.ano, hojeLocal]);
+  /* backlog de jobs overdue (situação de hoje): em aberto no Due com vencimento passado, por mês de vencimento */
+  const backlogOverdueMes = useMemo(() => {
+    const m = {};
+    tmDue.filter((d) => isVencidoPlano(d) && d.dueDate).forEach((d) => { const k = ymOf(d.dueDate); m[k] = (m[k] || 0) + 1; });
+    return Object.keys(m).sort().map((k) => ({ mes: ymLabel(k), mesKey: k, total: m[k] }));
+  }, [tmDue, hojeLocal]);
   const postergadosPorTipo = useMemo(() => {
     const map = {};
     tmHistoryForMetrics.filter(isPostergada).forEach((h) => { const k = jtOf(h) || "—"; map[k] = (map[k] || 0) + 1; });
@@ -8439,6 +8459,10 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
 
           <PostergadosAnalise analise={postergadosAnalise} porTipo={postergadosPorTipo} />
 
+          <MesBarChart title="Backlog de Jobs em Overdue por Mês" height={240} data={backlogOverdueMes}
+            subtitle="Jobs em aberto no Due com vencimento já passado, agrupados pelo mês de vencimento (situação de hoje; não segue o filtro de mês/ano)."
+            bars={[{ key: "total", name: "Overdue em aberto", color: "#EF4444" }]} />
+
           <div className="g-grid-2">
             <MesBarChart title="Jobs de Inspeção" data={inspecaoMensal}
               subtitle="Job Type INS: previstos no mês (pelo Due date), executados e postergados."
@@ -8724,6 +8748,52 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
 /* ============================================================
    MATERIALS — fully editable, including ID
    ============================================================ */
+
+/* campo de texto que cresce em altura e quebra linha, para mostrar tudo que está escrito */
+function TextoAuto({ value, onChange, style, placeholder }) {
+  const ref = React.useRef(null);
+  const ajusta = () => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; } };
+  React.useLayoutEffect(ajusta, [value]);
+  return <textarea ref={ref} rows={1} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...style, resize: "none", overflow: "hidden", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.35, fontFamily: "inherit", display: "block" }} />;
+}
+
+/* filtro em "bloquinho": clica, digita e a lista de opções vai sendo filtrada */
+function FiltroBusca({ value, onChange, options, todos, style }) {
+  const [aberto, setAberto] = React.useState(false);
+  const [q, setQ] = React.useState("");
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!aberto) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false); };
+    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+  }, [aberto]);
+  const ops = [["Todos", todos], ...options.map((o) => [o, o])];
+  const norm = (t) => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const lista = ops.filter(([, l]) => !q || norm(l).includes(norm(q)));
+  const atual = (ops.find(([v]) => v === value) || ops[0])[1];
+  const escolher = (v) => { onChange(v); setAberto(false); setQ(""); };
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button type="button" className="g-keep" onClick={() => setAberto((a) => !a)} style={{ ...style, cursor: "pointer", minWidth: 150, textAlign: "left", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", ...(value !== "Todos" ? { borderColor: "var(--teal)", fontWeight: 600 } : {}) }}>
+        <span>{atual}</span><span style={{ opacity: .6, fontSize: 10 }}>▾</span>
+      </button>
+      {aberto && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50, minWidth: 220, background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.25)", padding: 6 }}>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="digite para filtrar..." style={{ ...style, width: "100%", boxSizing: "border-box", marginBottom: 6 }}
+            onKeyDown={(e) => { if (e.key === "Enter" && lista[0]) escolher(lista[0][0]); if (e.key === "Escape") setAberto(false); }} />
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {lista.length === 0 && <div className="g-muted" style={{ fontSize: 12, padding: 6 }}>Nada encontrado</div>}
+            {lista.map(([v, l]) => (
+              <div key={v} onClick={() => escolher(v)} style={{ padding: "6px 8px", fontSize: 12.5, cursor: "pointer", borderRadius: 5, background: v === value ? "rgba(20,184,166,.15)" : "transparent", fontWeight: v === value ? 600 : 400 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(128,128,128,.18)")} onMouseLeave={(e) => (e.currentTarget.style.background = v === value ? "rgba(20,184,166,.15)" : "transparent")}>{l}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setMatDeleted, currentUser }) {
   const admin = isAdminUser(currentUser);
   const meusDeptos = deptsDoUsuario(currentUser);
@@ -8733,7 +8803,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
   const deptsEditaveis = admin || almox ? MAT_DEPTS : meusDeptos;
   const podeCriar = deptsEditaveis.length > 0;
 
-  const [f, setF] = useState({ busca: "", dept: "Todos", status: "Todos", proc: "Todos", meu: false });
+  const [f, setF] = useState({ busca: "", dept: "Todos", status: "Todos", proc: "Todos", prio: "Todos", meu: false });
   const [novo, setNovo] = useState(null);
   const [msg, setMsg] = useState("");
   const [pag, setPag] = useState(0);
@@ -8874,6 +8944,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
       (f.dept === "Todos" || r.departamento === f.dept) &&
       (f.status === "Todos" || r.status === f.status) &&
       (f.proc === "Todos" || r.statusProcesso === f.proc) &&
+      (f.prio === "Todos" || r.priority === f.prio) &&
       (!q || [r.tmMaster, r.sap, r.descricao, r.justificativa, r.oe, r.reserva, r.rc, r.po, r.obs].join(" ").toLowerCase().includes(q))
     ).sort((a, b) => ((a.statusProcesso === "Fechado") - (b.statusProcesso === "Fechado")) || String(b.dataSolicitacao || "").localeCompare(String(a.dataSolicitacao || "")));
   }, [matReqs, f, meusDeptos.join("|")]);
@@ -8957,9 +9028,10 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
             <button className="g-btn" onClick={baixarModelo} title="Baixa a planilha modelo com as colunas e as listas permitidas"><Download size={14} />Baixar modelo</button></>}
           <button className="g-btn g-keep" onClick={gerarRelatorio} title="Exporta em planilha (.xlsx) as requisições do filtro atual, com uma aba de resumo"><Download size={14} />Exportar relatório</button>
           <input value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="buscar TM Master, SAP, descrição, PO, RC, OE..." style={{ ...sel, minWidth: 280, padding: "7px 10px" }} />
-          <select value={f.dept} onChange={(e) => setF((p) => ({ ...p, dept: e.target.value }))} style={sel}>{["Todos", ...MAT_DEPTS].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os departamentos" : x}</option>)}</select>
-          <select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))} style={sel}>{["Todos", ...MAT_STATUS2].map((x) => <option key={x} value={x}>{x === "Todos" ? "Todos os status" : x}</option>)}</select>
-          <select value={f.proc} onChange={(e) => setF((p) => ({ ...p, proc: e.target.value }))} style={sel}>{["Todos", ...MAT_PROC].map((x) => <option key={x} value={x}>{x === "Todos" ? "Qualquer processo" : `Processo ${x.toLowerCase()}`}</option>)}</select>
+          <FiltroBusca value={f.dept} onChange={(v) => setF((p) => ({ ...p, dept: v }))} options={MAT_DEPTS} todos="Todos os departamentos" style={sel} />
+          <FiltroBusca value={f.prio} onChange={(v) => setF((p) => ({ ...p, prio: v }))} options={PRIORITY} todos="Todas as prioridades" style={sel} />
+          <FiltroBusca value={f.status} onChange={(v) => setF((p) => ({ ...p, status: v }))} options={MAT_STATUS2} todos="Todos os status" style={sel} />
+          <FiltroBusca value={f.proc} onChange={(v) => setF((p) => ({ ...p, proc: v }))} options={MAT_PROC} todos="Qualquer processo" style={sel} />
           {!verTodos && podeCriar && <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={f.meu} onChange={(e) => setF((p) => ({ ...p, meu: e.target.checked }))} />{deptsEditaveis.length > 1 ? "Só os meus departamentos" : "Só o meu departamento"}</label>}
           <span className="g-muted" style={{ fontSize: 11.5 }}>{filtered.length} de {matReqs.length}</span>
         </div>
