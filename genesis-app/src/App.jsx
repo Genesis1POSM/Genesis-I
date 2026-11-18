@@ -98,7 +98,7 @@ const Theme = () => (
     .g-bell-days { white-space: nowrap; font-weight: 700; text-align: center; padding: 4px 6px; border-radius: 6px; font-size: 11.5px; }
     .g-bell-days.d1 { background: #FEE2E2; color: #B91C1C; } .g-bell-days.d2 { background: #FEF3C7; color: #B45309; } .g-bell-days.d3 { background: #E0E7FF; color: #3730A3; }
     .g-ro .g-btn.primary:not(.g-keep), .g-ro .g-btn.ghost.danger:not(.g-keep), .g-ro .g-edit-only { display: none !important; }
-    .g-ro .g-table tbody input, .g-ro .g-table tbody select, .g-ro .g-table tbody textarea { pointer-events: none; }
+    .g-ro .g-table:not(.g-editavel) tbody input, .g-ro .g-table:not(.g-editavel) tbody select, .g-ro .g-table:not(.g-editavel) tbody textarea { pointer-events: none; }
     .g-alert-banner { margin: 10px 22px 0 22px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: #FFF7E6; border: 1px solid #F5C77A; color: #8A5300; font-size: 13px; }
     .g-nav-item { border-radius: 8px !important; }
     .g-nav-item.active { border-bottom-color: transparent !important; background: var(--accent-dim) !important; font-weight: 600; }
@@ -7388,7 +7388,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Registros ({filtered.length}) — e o que o portal achou no TM Master</span></div>
         <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
-          <table className="g-table tbl-modern">
+          <table className="g-table tbl-modern g-editavel">
             <thead><tr>{th("Data", 118)}{th("Departamento", 130)}{th("Tipo", 112)}{th("Manutenção", 240)}{th("Componente", 150)}{th("Job Type", 70)}{th("Job No", 70)}{th("Failure Report", 190)}{th("Ação no TM", 130)}{th("Justificativa / validação", 230)}{th("Reportado por", 120)}{th("Observação", 180)}{th("Lançado em", 110)}{th("Conferência no TM", 260)}<th></th></tr></thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={15} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Use “Novo registro” para lançar o primeiro."}</td></tr>}
@@ -8998,7 +8998,7 @@ function MaterialsView({ setExportXlsxFn, setReportFn, matReqs, setMatReqs, setM
       <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
         {navPag}
         <div className="g-table-wrap">
-          <table className="g-table tbl-modern" style={{ minWidth: 2700 }}>
+          <table className="g-table tbl-modern g-editavel" style={{ minWidth: 2700 }}>
             <thead><tr>
               {th("TM Master", 110)}{th("Departamento", 130)}{th("Prioridade", 120)}{th("SAP", 100)}{th("Descrição", 240)}{th("Qtd", 70)}{th("Justificativa", 240)}{th("Status", 210)}{th("Status do Processo", 120)}{th("OE", 90)}{th("Data da Solicitação", 130)}{th("Reserva", 100)}{th("RC", 100)}{th("PO", 110)}{th("Item da PO", 80)}{th("Valor Total", 110)}{th("ETA", 130)}{th("Data de Recebimento", 130)}{th("Observação", 260)}<th></th>
             </tr></thead>
