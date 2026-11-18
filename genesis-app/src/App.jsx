@@ -726,12 +726,12 @@ const podeEditarBordo = (u, depto) => {
 const mesclarListaCliente = (local, localDel, srv, srvDel, pode) => {
   const del = new Set([...(localDel || []), ...(srvDel || [])]);
   const m = new Map((srv || []).map((r) => [r.id, r]));
-  (local || []).forEach((r) => { const e = m.get(r.id); if (!e) { if (pode(r.departamento)) m.set(r.id, r); } else if ((r.upd || 0) > (e.upd || 0) && pode(e.departamento)) m.set(r.id, r); });
+  (local || []).forEach((r) => { const e = m.get(r.id); if (!e) { if (pode(r.departamento)) m.set(r.id, r); } else if ((r.upd || 0) > (e.upd || 0) && pode(e.departamento, e)) m.set(r.id, r); });
   del.forEach((id) => m.delete(id));
   return [...m.values()];
 };
 const mesclarMatCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d) => podeEditarMat(u, d));
-const mesclarBordoCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d) => podeEditarBordo(u, d));
+const mesclarBordoCliente = (local, localDel, srv, srvDel, u) => mesclarListaCliente(local, localDel, srv, srvDel, (d, row) => podeEditarBordo(u, d) || !!(row && row.criadoPor && u && row.criadoPor === u.username));
 const IMPACT_LEVELS = ["Baixo", "Médio", "Alto", "Crítico"];
 const IMPACT_COLOR = { "Baixo": "#8D9BB5", "Médio": "#F2C94C", "Alto": "#F2A93B", "Crítico": "#E0483E" };
 const PLAN_STATUS = ["A Executar", "Em Andamento", "Concluído", "Cancelado"];
@@ -6695,12 +6695,14 @@ const bordoDate = (v) => {
 const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().toUpperCase();
 const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
 
-/* registro "sem Job" (ação "Sem job" ou sem Job Type/Job No): exige justificativa e fica EM VALIDAÇÃO até o administrador validar */
-const bordoSemJob = (r) => !!r && !r.semAtv && (r.acao === "Sem job" || !(String(r.jobTipo || "").trim() && String(r.jobNo || "").trim()));
+/* registro "sem Job" (ação no TM = "Sem job"): exige justificativa e fica EM VALIDAÇÃO até o administrador validar */
+const bordoSemJob = (r) => !!r && !r.semAtv && r.acao === "Sem job";
 const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHistory, tmFailures, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, active }) => {
   const hoje = todayISO();
   const admin = isAdminUser(currentUser);
   const pode = (d) => podeEditarBordo(currentUser, d);
+  /* quem lançou o registro continua podendo editá-lo (além de quem tem o departamento liberado) */
+  const podeRow = (r) => pode(r.departamento) || !!(r.criadoPor && currentUser?.username && r.criadoPor === currentUser.username);
   const deptsEditaveis = admin ? BORDO_DEPTS : deptsBordoUsuario(currentUser);
   const podeCriar = deptsEditaveis.length > 0;
   const [msg, setMsg] = useState("");
@@ -6802,7 +6804,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
 
   /* ---------- edição (só as linhas dos departamentos da pessoa; administrador edita todas) ---------- */
   const upd = (id, patch) => setTmBordo((arr) => arr.map((r) => {
-    if (!(r.id === id && pode(r.departamento))) return r;
+    if (!(r.id === id && podeRow(r))) return r;
     const n = { ...r, ...patch, upd: Date.now() };
     /* qualquer mudança do departamento em um registro sem Job devolve para "Em validação"; se o job foi informado, a validação deixa de valer */
     if (bordoSemJob(n)) { if (!("valStatus" in patch)) { n.valStatus = "Em validação"; n.valPor = ""; n.valEm = ""; n.valNota = ""; } }
@@ -6826,7 +6828,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
     if (!novo.data || novo.data < BORDO_INICIO) { setMsg("O Registro de Bordo vale a partir de " + fmtDataCompleta(BORDO_INICIO) + "."); return; }
     if (!String(novo.descricao).trim()) { setMsg("Descreva a manutenção realizada."); return; }
     if (bordoSemJob(novo) && !String(novo.justificativa || "").trim()) { setMsg("Registro sem Job: a justificativa é obrigatória."); return; }
-    const r = { ...novo, ...(bordoSemJob(novo) ? { valStatus: "Em validação" } : { justificativa: "" }), id: uid("BRD"), origem: "Portal", email: "", recebido: hoje, upd: Date.now() };
+    const r = { ...novo, ...(bordoSemJob(novo) ? { valStatus: "Em validação" } : { justificativa: "" }), id: uid("BRD"), origem: "Portal", criadoPor: currentUser?.username || "", email: "", recebido: hoje, upd: Date.now() };
     setTmBordo((arr) => [r, ...arr]);
     setNovo(manter ? { ...rascunho(), departamento: novo.departamento, data: novo.data, por: novo.por } : null);
     setMsg("Registro adicionado."); setTimeout(() => setMsg(""), 4000);
@@ -6992,7 +6994,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={15} className="g-muted" style={{ textAlign: "center", padding: 18 }}>{tmBordo.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda. Use “Novo registro” para lançar o primeiro."}</td></tr>}
               {filtered.map((r) => {
-                const ok = pode(r.departamento);
+                const ok = podeRow(r);
                 const E = (k, el, ver) => (ok ? el : ro(ver !== undefined ? ver : r[k]));
                 return (
                   <tr className="g-row tbl-row" key={r.id} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
