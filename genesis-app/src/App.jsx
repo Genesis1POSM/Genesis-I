@@ -1510,6 +1510,9 @@ export default function Root() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [avisoSalvar, setAvisoSalvar] = useState("");
+  const lastSentRef = React.useRef(null); /* JSON por chave do que o servidor já tem */
+  const retryRef = React.useRef(null);
+  const [saveRetry, setSaveRetry] = useState(0);
   /* trava de segurança: só habilita o auto-save quando o GET /api/state realmente teve sucesso.
      Se a conexão falhar (backend reiniciando, erro de rede, etc.), NUNCA deixamos o app salvar —
      senão o estado local (ainda nos valores INITIAL_* vazios) seria gravado por cima dos dados
@@ -1609,14 +1612,29 @@ export default function Root() {
   React.useEffect(() => {
     if (!loaded || !saveEnabled) return;
     const cargaMat = matReqs;
+    const cheio = () => (roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined });
+    /* primeira rodada após o carregamento: só memoriza o que já está no servidor (não reenvia tudo) */
+    if (lastSentRef.current === null) { const f0 = cheio(); const b0 = {}; Object.keys(f0).forEach((k) => { b0[k] = JSON.stringify(f0[k] === undefined ? null : f0[k]); }); lastSentRef.current = b0; return; }
     const t = setTimeout(() => {
+      /* envia SÓ o que mudou (o servidor mescla por chave): payload pequeno, bem mais rápido e confiável */
+      const full = cheio(); const strs = {};
+      Object.keys(full).forEach((k) => { strs[k] = JSON.stringify(full[k] === undefined ? null : full[k]); });
+      const ult = lastSentRef.current || {};
+      const mud = new Set(Object.keys(strs).filter((k) => strs[k] !== ult[k]));
+      if (mud.has("matReqs") || mud.has("matDeleted")) { mud.add("matReqs"); mud.add("matDeleted"); }
+      if (mud.has("tmBordo") || mud.has("bordoDeleted")) { mud.add("tmBordo"); mud.add("bordoDeleted"); }
+      if (!mud.size) return;
+      const parcial = {}; mud.forEach((k) => { if (full[k] !== undefined) parcial[k] = full[k]; });
       fetch("/api/state", {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "", "x-genesis-oldpass": currentUserRaw.password || "" } : {}) },
-        body: JSON.stringify({
-          data: roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined },
-        }),
-      }).then((r) => r.json()).then((j) => {
+        body: JSON.stringify({ data: parcial }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(r.status === 413 ? "dados grandes demais (413)" : `servidor respondeu ${r.status}`);
+        return r.json();
+      }).then((j) => {
+        const nu = { ...(lastSentRef.current || {}) }; mud.forEach((k) => { nu[k] = strs[k]; }); lastSentRef.current = nu;
+        setAvisoSalvar((a) => (a && a.startsWith("Não foi possível salvar") ? "" : a));
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
         if (j && Array.isArray(j.matReqs)) {
           /* edição que o servidor NÃO aceitou (permissão): avisa em vez de desfazer em silêncio */
@@ -1630,10 +1648,10 @@ export default function Root() {
           setTmBordo((cur) => { const novo = mesclarBordoCliente(cur, [], j.tmBordo, j.bordoDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
           setBordoDeleted((cur) => ((j.bordoDeleted || []).length === cur.length ? cur : j.bordoDeleted));
         }
-      }).catch(() => setAvisoSalvar("Não foi possível salvar no servidor agora. Suas alterações ficam só neste navegador até a conexão voltar."));
+      }).catch((e) => { setAvisoSalvar(`Não foi possível salvar no servidor agora (${(e && e.message) || "sem conexão"}). Suas alterações ficam neste navegador e o portal tenta de novo sozinho.`); clearTimeout(retryRef.current); retryRef.current = setTimeout(() => setSaveRetry((n) => n + 1), 8000); });
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig]);
+  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig, saveRetry]);
 
   /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
   const salvarUsuariosAgora = React.useCallback(async () => {
