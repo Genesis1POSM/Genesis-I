@@ -5,7 +5,7 @@ import { acharUsuario, mesclarMateriais, mesclarBordo, canonMat } from "./matmer
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "60mb" }));
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -132,10 +132,10 @@ app.put("/api/usuarios", async (req, res) => {
 app.put("/api/state", async (req, res) => {
   try {
     const data = { ...(req.body.data || {}) };
-    let extra = {};
+    let extra = {}; let atualCache = null;
     {
       /* Visualizador (não admin) só pode gravar Materiais e Registro de Bordo; qualquer outra chave é descartada */
-      const atualU = (await getState()) || {};
+      const atualU = (await getState()) || {}; atualCache = atualU;
       const u0 = acharUsuario(atualU.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
       /* a lista de usuários/permissões só pode ser gravada pelo administrador: um navegador antigo de outra pessoa
          (com a lista desatualizada) não pode mais sobrescrever usuários e permissões recém-criados */
@@ -149,7 +149,7 @@ app.put("/api/state", async (req, res) => {
     if (Array.isArray(data.matReqs)) {
       /* Materiais: quem salva é identificado pelo usuário/senha enviados nos cabeçalhos e só consegue
          alterar as linhas do seu departamento (Almoxarifado e administrador: todas) */
-      const atual = (await getState()) || {};
+      const atual = atualCache || (await getState()) || {};
       const usuario = acharUsuario(atual.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
       const r = mesclarMateriais(atual.matReqs, atual.matDeleted, data.matReqs, data.matDeleted, usuario);
       data.matReqs = r.rows; data.matDeleted = r.deleted;
@@ -157,7 +157,7 @@ app.put("/api/state", async (req, res) => {
     }
     if (Array.isArray(data.tmBordo)) {
       /* Registro de Bordo: mesma regra por departamento (administrador edita tudo) */
-      const atual = (await getState()) || {};
+      const atual = atualCache || (await getState()) || {};
       const usuario = acharUsuario(atual.users, req.get("x-genesis-user"), req.get("x-genesis-pass"));
       const r = mesclarBordo(atual.tmBordo, atual.bordoDeleted, data.tmBordo, data.bordoDeleted, usuario);
       data.tmBordo = r.rows; data.bordoDeleted = r.deleted;
@@ -174,6 +174,9 @@ app.put("/api/state", async (req, res) => {
 /* ============================================================
    STATIC FRONTEND (Vite build output)
    ============================================================ */
+/* erros (ex.: corpo grande demais) voltam em JSON, para o portal mostrar o motivo certo */
+app.use("/api", (err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: err.message || "erro" }); });
+
 app.use(express.static(path.join(__dirname, "dist")));
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
