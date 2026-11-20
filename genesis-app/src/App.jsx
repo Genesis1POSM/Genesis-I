@@ -7099,6 +7099,15 @@ const bordoDate = (v) => {
   const s = String(v).trim(); let m = s.match(/^(\d{2})[./-](\d{2})[./-](\d{4})/); if (m) return `${m[3]}-${m[2]}-${m[1]}`;
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
 };
+/* data -> AAAA-MM-DD, aceitando ISO com hora, dd/mm/aaaa, dd.mm.aaaa e objetos Date (a conferência não pode falhar por formato) */
+const isoDia = (v) => {
+  if (!v) return "";
+  if (v instanceof Date) return isNaN(v) ? "" : `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+  const t = String(v).trim(); let m;
+  if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
+  if ((m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/))) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return "";
+};
 const bordoNorm = (v) => String(v === undefined || v === null ? "" : v).trim().toUpperCase();
 const bordoPick = (v, list, fallback) => { const t = String(v || "").trim().toLowerCase(); return list.find((x) => x.toLowerCase() === t) || list.find((x) => t && x.toLowerCase().startsWith(t.slice(0, 4))) || fallback; };
 
@@ -7144,14 +7153,14 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   };
   const conferir = (r) => {
     const tem = r.jobTipo && r.jobNo; const k = `${bordoNorm(r.jobTipo)}|${bordoNorm(r.jobNo)}`;
-    const dias = (a, b) => Math.round((new Date(a + "T00:00:00") - new Date(b + "T00:00:00")) / 86400000);
+    const dias = (a, b) => Math.round((new Date(isoDia(a) + "T12:00:00") - new Date(isoDia(b) + "T12:00:00")) / 86400000);
     if (r.acao === "Sem job") return { ok: false, cat: "Sem registro no TM", txt: "Atividade sem job no TM — criar o job (ou dar baixa) e informar o nº" };
     if (!tem) return { ok: false, cat: "Falta informar o job", txt: "Informe Job Type e Job No para conferir no TM" };
     const hs = idx.hist.get(k) || []; const ds = idx.due.get(k) || [];
     if (r.acao === "Baixa de job") {
-      const dentro = hs.filter((h) => h.dateDone && r.data && dias(h.dateDone, r.data) >= -1 && dias(h.dateDone, r.data) <= 14).sort((a, b) => a.dateDone.localeCompare(b.dateDone))[0];
+      const dentro = hs.filter((h) => isoDia(h.dateDone) && isoDia(r.data) && dias(h.dateDone, r.data) >= -1 && dias(h.dateDone, r.data) <= 14).sort((a, b) => isoDia(a.dateDone).localeCompare(isoDia(b.dateDone)))[0];
       if (dentro) return { ok: true, cat: "Confirmado no TM", txt: `Baixa confirmada no History em ${fmt(dentro.dateDone)}${dentro.jobHistoryNumber ? ` (${dentro.jobHistoryNumber})` : ""}` };
-      if (hs.length) { const u = [...hs].sort((a, b) => (b.dateDone || "").localeCompare(a.dateDone || ""))[0]; return { ok: false, cat: "Divergente", txt: `Existe baixa deste job em ${fmt(u.dateDone)}, mas não na data informada` }; }
+      if (hs.length) { const datas = [...new Set(hs.map((h) => isoDia(h.dateDone)).filter(Boolean))].sort().reverse(); return { ok: false, cat: "Divergente", txt: `Baixa(s) deste job no History em: ${datas.slice(0, 5).map(fmt).join(", ") || "sem data"}${datas.length > 5 ? "…" : ""} — nenhuma entre 1 dia antes e 14 dias depois da data informada (${fmt(isoDia(r.data))})` }; }
       if (ds.length) return { ok: false, cat: "Não baixado no TM", txt: `Job ainda EM ABERTO no Due${ds[0].dueDate ? ` (vence ${fmt(ds[0].dueDate)})` : ""} — baixa não feita` };
       return { ok: false, cat: "Job não encontrado", txt: "Job não encontrado no Due nem no History importados (nº errado ou planilha do TM desatualizada)" };
     }
