@@ -698,6 +698,7 @@ const MAT_DEPTS = ["Máquinas", "Guindaste", "Marinha", "SMS", "Convés", "Base 
 /* Registro de Bordo: departamentos próprios e data de início (só vale a partir daqui) */
 const BORDO_DEPTS = ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"];
 const BORDO_INICIO = "2026-11-18";
+const BORDO_IMPORT_MIN = "2025-01-01"; /* a importação por planilha aceita datas retroativas desde aqui */
 const DEPTS_TODOS = [...new Set([...MAT_DEPTS, ...BORDO_DEPTS])];
 const MAT_STATUS2 = ["Aguardando Entrega", "Cancelado", "Em Processo de Compras", "Recebido", "Recusado", "Stand By"];
 const MAT_PROC = ["Aberto", "Fechado"];
@@ -1506,10 +1507,24 @@ const INITIAL_TM_DUE_SNAPSHOTS = [];
 const INITIAL_TM_BORDO = [];
 const INITIAL_TM_FAILURES = { reports: [], actions: [], jobs: [], jobHistory: [], orders: [], importedAt: "" };
 
+const SaveCtx = React.createContext("ok");
+function SaveBadge() {
+  const st = React.useContext(SaveCtx);
+  const m = { ok: ["✔ Salvo no servidor", "#15803d", "rgba(34,197,94,.12)"], saving: ["⏳ Salvando…", "#92400e", "rgba(245,166,35,.15)"], pend: ["⏳ Salvando…", "#92400e", "rgba(245,166,35,.15)"], erro: ["⚠ NÃO SALVO — não feche nem atualize a página; o portal tenta de novo sozinho", "#fff", "#b91c1c"] }[st] || [];
+  return <span title="Situação do salvamento no servidor" style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 999, color: m[1], background: m[2] }}>{m[0]}</span>;
+}
+
 export default function Root() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [avisoSalvar, setAvisoSalvar] = useState("");
+  const [saveStatus, setSaveStatus] = useState("ok");
+  const seqSaveRef = React.useRef(0);
+  React.useEffect(() => {
+    if (saveStatus === "ok") { window.onbeforeunload = null; return; }
+    window.onbeforeunload = (e) => { e.preventDefault(); e.returnValue = ""; return ""; };
+    return () => { window.onbeforeunload = null; };
+  }, [saveStatus]);
   const lastSentRef = React.useRef(null); /* JSON por chave do que o servidor já tem */
   const retryRef = React.useRef(null);
   const [saveRetry, setSaveRetry] = useState(0);
@@ -1615,6 +1630,8 @@ export default function Root() {
     const cheio = () => (roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined });
     /* primeira rodada após o carregamento: só memoriza o que já está no servidor (não reenvia tudo) */
     if (lastSentRef.current === null) { const f0 = cheio(); const b0 = {}; Object.keys(f0).forEach((k) => { b0[k] = JSON.stringify(f0[k] === undefined ? null : f0[k]); }); lastSentRef.current = b0; return; }
+    const seq = ++seqSaveRef.current;
+    setSaveStatus((x) => (x === "erro" ? x : "pend"));
     const t = setTimeout(() => {
       /* envia SÓ o que mudou (o servidor mescla por chave): payload pequeno, bem mais rápido e confiável */
       const full = cheio(); const strs = {};
@@ -1623,7 +1640,8 @@ export default function Root() {
       const mud = new Set(Object.keys(strs).filter((k) => strs[k] !== ult[k]));
       if (mud.has("matReqs") || mud.has("matDeleted")) { mud.add("matReqs"); mud.add("matDeleted"); }
       if (mud.has("tmBordo") || mud.has("bordoDeleted")) { mud.add("tmBordo"); mud.add("bordoDeleted"); }
-      if (!mud.size) return;
+      if (!mud.size) { if (seq === seqSaveRef.current) setSaveStatus("ok"); return; }
+      setSaveStatus((x) => (x === "erro" ? x : "saving"));
       const parcial = {}; mud.forEach((k) => { if (full[k] !== undefined) parcial[k] = full[k]; });
       fetch("/api/state", {
         method: "PUT",
@@ -1635,6 +1653,7 @@ export default function Root() {
       }).then((j) => {
         const nu = { ...(lastSentRef.current || {}) }; mud.forEach((k) => { nu[k] = strs[k]; }); lastSentRef.current = nu;
         setAvisoSalvar((a) => (a && a.startsWith("Não foi possível salvar") ? "" : a));
+        if (seq === seqSaveRef.current) setSaveStatus("ok"); else setSaveStatus("pend");
         /* o servidor devolve a lista de Materiais já mesclada e filtrada pela permissão: adota na tela */
         if (j && Array.isArray(j.matReqs)) {
           /* edição que o servidor NÃO aceitou (permissão): avisa em vez de desfazer em silêncio */
@@ -1648,7 +1667,7 @@ export default function Root() {
           setTmBordo((cur) => { const novo = mesclarBordoCliente(cur, [], j.tmBordo, j.bordoDeleted, currentUser); return JSON.stringify(novo) === JSON.stringify(cur) ? cur : novo; });
           setBordoDeleted((cur) => ((j.bordoDeleted || []).length === cur.length ? cur : j.bordoDeleted));
         }
-      }).catch((e) => { setAvisoSalvar(`Não foi possível salvar no servidor agora (${(e && e.message) || "sem conexão"}). Suas alterações ficam neste navegador e o portal tenta de novo sozinho.`); clearTimeout(retryRef.current); retryRef.current = setTimeout(() => setSaveRetry((n) => n + 1), 8000); });
+      }).catch((e) => { setSaveStatus("erro"); setAvisoSalvar(`Não foi possível salvar no servidor agora (${(e && e.message) || "sem conexão"}). Suas alterações ficam neste navegador e o portal tenta de novo sozinho.`); clearTimeout(retryRef.current); retryRef.current = setTimeout(() => setSaveRetry((n) => n + 1), 8000); });
     }, 700);
     return () => clearTimeout(t);
   }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig, saveRetry]);
@@ -1735,7 +1754,7 @@ export default function Root() {
   if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
 
   return (
-    <>
+    <SaveCtx.Provider value={saveStatus}>
     <Genesis
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
@@ -1764,7 +1783,7 @@ export default function Root() {
           <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => setAvisoSalvar("")}>✕</span>
         </div>
       )}
-    </>
+    </SaveCtx.Provider>
   );
 }
 
@@ -7178,7 +7197,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
     return { ok: false, cat: "Em validação", txt: "Registro sem Job aguardando validação do administrador" };
   };
   const atrasoEnvio = (r) => (r.recebido && r.data ? Math.round((new Date(r.recebido + "T00:00:00") - new Date(r.data + "T00:00:00")) / 86400000) : null);
-  const rows = useMemo(() => tmBordo.filter((r) => (r.data || "") >= BORDO_INICIO && BORDO_DEPTS.includes(r.departamento)).map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : validarSemJob(r, conferir(r)), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
+  const rows = useMemo(() => tmBordo.filter((r) => (r.data || "") >= BORDO_IMPORT_MIN && BORDO_DEPTS.includes(r.departamento)).map((r) => ({ ...r, _c: r.semAtv ? { ok: true, cat: "Sem atividade", txt: "Departamento informou que não houve atividades neste dia" } : validarSemJob(r, conferir(r)), _f: r.semAtv ? { nos: [], txt: [], auto: false } : frInfo(r), _a: atrasoEnvio(r) })), [tmBordo, idx, frIdx]);
   const norm = (v) => String(v || "").toLowerCase();
   const filtered = rows.filter((r) => (!f.meus || podeRow(r)) && (f.tipo === "Todos" || r.tipo === f.tipo) && (f.status === "Todos" || r._c.cat === f.status) && (f.dept === "Todos" || r.departamento === f.dept)
     && (f.fr === "Todos" || (f.fr === "Com Failure Report" ? r._f.nos.length > 0 : r._f.nos.length === 0))
@@ -7252,6 +7271,61 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
     setTmBordo((arr) => [r, ...arr]);
     setNovo(manter ? { ...rascunho(), departamento: novo.departamento, data: novo.data, por: novo.por } : null);
     setMsg("Registro adicionado."); setTimeout(() => setMsg(""), 4000);
+  };
+  /* ---------- planilha: modelo + importação de vários registros de uma vez ---------- */
+  const [imp, setImp] = useState(null);
+  const impRef = React.useRef(null);
+  const sa = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const baixarModelo = () => {
+    const dep = deptsEditaveis[0] || "Máquinas";
+    const ex = [
+      { Data: fmtDataCompleta(hoje), Departamento: dep, Tipo: "Preventiva", "Manutenção realizada": "Troca de filtro do motor de popa BB", Componente: "Motor de popa BB", "Ação no TM": "Baixa de job", "Job Type": "PMS", "Job No": "1234", "Failure Report": "", Observações: "", Justificativa: "" },
+      { Data: fmtDataCompleta(hoje), Departamento: dep, Tipo: "Corretiva", "Manutenção realizada": "Reparo de vazamento na linha de óleo", Componente: "Linha de óleo", "Ação no TM": "Criação de job", "Job Type": "COR", "Job No": "5678", "Failure Report": "FR-001", Observações: "", Justificativa: "" },
+      { Data: fmtDataCompleta(hoje), Departamento: dep, Tipo: "Preditiva", "Manutenção realizada": "Análise de vibração", Componente: "", "Ação no TM": "Sem job", "Job Type": "", "Job No": "", "Failure Report": "", Observações: "", Justificativa: "Atividade sem job no TM porque ..." },
+    ];
+    const guia = [["COMO PREENCHER (apague as 3 linhas de exemplo antes de importar)"], [""], ["Data", "dd/mm/aaaa — aceita datas retroativas (a partir de " + fmtDataCompleta(BORDO_IMPORT_MIN) + ") e até hoje"], ["Departamento", (admin ? BORDO_DEPTS : deptsEditaveis).join(" · ")], ["Tipo", BORDO_TIPOS.join(" · ")], ["Ação no TM", BORDO_ACOES.join(" · ")], ["Job Type / Job No", "obrigatórios quando a ação é Baixa ou Criação de job"], ["Justificativa", "obrigatória quando a ação é Sem job (o registro entra em validação)"], ["Várias linhas", "uma linha por atividade; pode ter vários dias e vários jobs na mesma planilha"]];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ex), "Registros"); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guia), "Instruções");
+    XLSX.writeFile(wb, "modelo-registro-de-bordo.xlsx");
+  };
+  const lerPlanilha = (file) => {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames.find((n) => sa(n).startsWith("registro")) || wb.SheetNames[0]];
+        const lin = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+        const col = (o, ...nomes) => { for (const k of Object.keys(o)) if (nomes.some((n) => sa(k).startsWith(sa(n)))) return o[k]; return ""; };
+        const dataDe = (v) => { if (typeof v === "number" && v > 20000) return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000).toISOString().slice(0, 10); if (v instanceof Date) return isoDia(v); return isoDia(v); };
+        const chave = (x) => `${x.departamento}|${x.data}|${sa(x.descricao)}|${bordoNorm(x.jobTipo)}|${bordoNorm(x.jobNo)}`;
+        const existentes = new Set(tmBordo.map(chave)); const novas = []; const erros = []; let dup = 0; const vistos = new Set();
+        lin.forEach((o, i) => {
+          const n = i + 2; const vazio = Object.values(o).every((v) => String(v).trim() === ""); if (vazio) return;
+          const desc = String(col(o, "manuten", "descri", "atividade")).trim();
+          if (/^(exemplo|apague)/i.test(desc)) return;
+          const data = dataDe(col(o, "data")); const dep = canonDept(String(col(o, "depart")).trim() || (deptsEditaveis.length === 1 ? deptsEditaveis[0] : ""));
+          const tp = BORDO_TIPOS.find((t) => sa(t) === sa(col(o, "tipo"))) ; const ac = (() => { const a = sa(col(o, "acao", "ação")); return BORDO_ACOES.find((x) => sa(x) === a) || (a.startsWith("baixa") ? "Baixa de job" : a.startsWith("cria") ? "Criação de job" : a.startsWith("sem") ? "Sem job" : null); })();
+          const reg = { data, departamento: dep, tipo: tp || "", descricao: desc, componente: String(col(o, "componente")).trim(), jobTipo: String(col(o, "job type", "tipo do job", "jobtype")).trim().toUpperCase(), jobNo: String(col(o, "job no", "job n", "numero do job", "jobno")).trim().replace(/\.0+$/, ""), fr: String(col(o, "failure")).trim(), acao: ac || "", por: currentUser?.name || "", obs: String(col(o, "observ")).trim(), justificativa: String(col(o, "justific")).trim() };
+          const err = [];
+          if (!data) err.push("data inválida ou vazia"); else if (data < BORDO_IMPORT_MIN) err.push("data anterior a " + fmtDataCompleta(BORDO_IMPORT_MIN)); else if (data > hoje) err.push("data no futuro");
+          if (!BORDO_DEPTS.includes(dep)) err.push(`departamento “${dep || "vazio"}” inválido`); else if (!pode(dep)) err.push(`você não tem permissão para registrar em ${dep}`);
+          if (!tp) err.push("tipo deve ser Preventiva, Preditiva ou Corretiva"); if (!desc) err.push("falta a manutenção realizada"); if (!ac) err.push("ação deve ser Baixa de job, Criação de job ou Sem job");
+          if (ac && ac !== "Sem job" && (!reg.jobTipo || !reg.jobNo)) err.push("faltam Job Type e Job No");
+          if (ac === "Sem job" && !reg.justificativa) err.push("ação Sem job exige justificativa");
+          if (err.length) { erros.push({ n, motivo: err.join("; "), desc: desc || "(sem descrição)" }); return; }
+          const k = chave(reg); if (existentes.has(k) || vistos.has(k)) { dup++; return; } vistos.add(k); novas.push(reg);
+        });
+        setImp({ nome: file.name, novas, erros, dup });
+      } catch (e) { setMsg("Não consegui ler a planilha: " + (e?.message || e)); setTimeout(() => setMsg(""), 7000); }
+    };
+    rd.readAsArrayBuffer(file);
+  };
+  const confirmarImport = () => {
+    if (!imp || !imp.novas.length) { setImp(null); return; }
+    const agora = Date.now();
+    const regs = imp.novas.map((x, i) => ({ ...x, ...(x.acao === "Sem job" ? { valStatus: "Em validação" } : { justificativa: "" }), id: uid("BRD"), origem: "Planilha", criadoPor: currentUser?.username || "", email: "", recebido: x.data < BORDO_INICIO ? x.data : hoje, retro: x.data < BORDO_INICIO ? true : undefined, upd: agora + i }));
+    setTmBordo((arr) => [...regs, ...arr]);
+    setMsg(`${regs.length} registro(s) importado(s) da planilha.`); setTimeout(() => setMsg(""), 6000); setImp(null);
   };
   const semAtividade = (d, dia) => {
     if (!pode(d)) return;
@@ -7352,8 +7426,34 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
             O portal <b>confere sozinho</b> contra o History e o Due do TM Master. Dia sem atividade: botão “sem atividades” no controle acima. Corretiva: informe o <b>Failure Report</b>; o portal também detecta quando o job já está ligado a um.
           </div>
         </div>
-        {podeCriar && <button className="g-btn primary g-keep" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Novo registro"}</button>}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <SaveBadge />
+          {podeCriar && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button className="g-btn g-keep" onClick={baixarModelo}><Download size={14} />Baixar modelo</button>
+            <input ref={impRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { lerPlanilha(e.target.files?.[0]); e.target.value = ""; }} />
+            <button className="g-btn g-keep" onClick={() => impRef.current?.click()}><Upload size={14} />Importar planilha</button>
+            <button className="g-btn primary g-keep" onClick={() => setNovo(novo ? null : rascunho())}><Plus size={14} />{novo ? "Fechar formulário" : "Novo registro"}</button>
+          </div>}
+        </div>
       </div>
+      {imp && (
+        <div className="g-panel" style={{ marginBottom: 12, borderColor: imp.erros.length ? "var(--warn)" : "var(--ok)" }}>
+          <div className="g-panel-title" style={{ marginBottom: 6 }}>Importar “{imp.nome}”</div>
+          <div style={{ fontSize: 13, marginBottom: 8 }}>
+            <b style={{ color: "var(--ok)" }}>{imp.novas.length} linha(s) prontas para importar</b>
+            {imp.dup > 0 && <> · {imp.dup} já existiam (ignoradas, sem duplicar)</>}
+            {imp.erros.length > 0 && <> · <b style={{ color: "var(--crit)" }}>{imp.erros.length} com erro (não serão importadas)</b></>}
+          </div>
+          {imp.erros.length > 0 && <div style={{ maxHeight: 160, overflow: "auto", fontSize: 12, background: "rgba(220,38,38,.06)", borderRadius: 6, padding: "6px 10px", marginBottom: 8 }}>
+            {imp.erros.slice(0, 50).map((e, i) => <div key={i}>Linha {e.n} — {e.desc}: {e.motivo}</div>)}
+            {imp.erros.length > 50 && <div>… e mais {imp.erros.length - 50}</div>}
+          </div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="g-btn primary g-keep" disabled={!imp.novas.length} onClick={confirmarImport}><Upload size={14} />Importar {imp.novas.length} registro(s)</button>
+            <button className="g-btn g-keep" onClick={() => setImp(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
       {msg && <div className="g-alert" style={{ marginBottom: 12, background: "rgba(43,108,176,0.08)", borderColor: "rgba(43,108,176,0.35)", color: "var(--teal)" }}>{msg}</div>}
 
       {novo && (
@@ -7390,7 +7490,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
-        <div className="g-field"><label>De</label><input type="date" min={BORDO_INICIO} value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
+        <div className="g-field"><label>De</label><input type="date" min={BORDO_IMPORT_MIN} value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
         <div className="g-field"><label>Até</label><input type="date" value={f.ate} onChange={(e) => setF((p) => ({ ...p, ate: e.target.value }))} /></div>
       </div>
 
@@ -7403,7 +7503,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...BORDO_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Conferência no TM</label><select value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{cats.map((o) => <option key={o}>{o}</option>)}</select></div>
         <div className="g-field"><label>Failure Report</label><select value={f.fr} onChange={(e) => setF((p) => ({ ...p, fr: e.target.value }))}>{["Todos", "Com Failure Report", "Sem Failure Report"].map((o) => <option key={o}>{o}</option>)}</select></div>
-        <div className="g-field"><label>De</label><input type="date" min={BORDO_INICIO} value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
+        <div className="g-field"><label>De</label><input type="date" min={BORDO_IMPORT_MIN} value={f.de} onChange={(e) => setF((p) => ({ ...p, de: e.target.value }))} /></div>
         <div className="g-field"><label>Até</label><input type="date" value={f.ate} onChange={(e) => setF((p) => ({ ...p, ate: e.target.value }))} /></div>
       </div>
 
@@ -7441,7 +7541,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
                 const E = (k, el, ver) => (ok ? el : ro(ver !== undefined ? ver : r[k]));
                 return (
                   <tr className="g-row tbl-row" key={r.id} title={ok ? undefined : "Somente leitura: você edita registros dos seus departamentos liberados ou que você mesmo lançou."} style={{ "--c": r._c.ok ? "#22C55E" : "#EF4444" }}>
-                    <td>{E("data", <input type="date" min={BORDO_INICIO} value={r.data} onChange={(e) => e.target.value >= BORDO_INICIO && upd(r.id, { data: e.target.value })} style={inp} />, fmt(r.data))}</td>
+                    <td>{E("data", <input type="date" min={BORDO_IMPORT_MIN} value={r.data} onChange={(e) => e.target.value >= BORDO_IMPORT_MIN && upd(r.id, { data: e.target.value })} style={inp} />, fmt(r.data))}</td>
                     <td>{ok && !r.semAtv ? <select value={r.departamento || ""} onChange={(e) => upd(r.id, { departamento: e.target.value })} style={inp}>{!r.departamento && <option value="">—</option>}{(r.departamento && !deptsEditaveis.includes(r.departamento) ? [r.departamento, ...deptsEditaveis] : deptsEditaveis).map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">{r.departamento || "sem depto."}</span>}</td>
                     <td>{r.semAtv ? <span className="tbl-chip">Sem atividade</span> : E("tipo", <select value={r.tipo} onChange={(e) => upd(r.id, { tipo: e.target.value })} style={inp}>{BORDO_TIPOS.map((o) => <option key={o}>{o}</option>)}</select>)}</td>
                     <td>{E("descricao", <input value={r.descricao} onChange={(e) => upd(r.id, { descricao: e.target.value })} style={inp} />)}</td>
