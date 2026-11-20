@@ -1629,8 +1629,8 @@ export default function Root() {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(currentUserRaw ? { "x-genesis-user": currentUserRaw.username || "", "x-genesis-pass": currentUser?.password || "", "x-genesis-oldpass": currentUserRaw.password || "" } : {}) },
         body: JSON.stringify({ data: parcial }),
-      }).then((r) => {
-        if (!r.ok) throw new Error(r.status === 413 ? "dados grandes demais (413)" : `servidor respondeu ${r.status}`);
+      }).then(async (r) => {
+        if (!r.ok) { let det = ""; try { const j = await r.json(); det = j.detalhe || j.error || ""; } catch (_) {} throw new Error(r.status === 413 ? "dados grandes demais (413)" : `servidor respondeu ${r.status}${det ? ": " + det : ""}`); }
         return r.json();
       }).then((j) => {
         const nu = { ...(lastSentRef.current || {}) }; mud.forEach((k) => { nu[k] = strs[k]; }); lastSentRef.current = nu;
