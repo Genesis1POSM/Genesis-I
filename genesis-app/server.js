@@ -28,6 +28,14 @@ if (DATABASE_URL) {
     ssl: DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
   });
 
+  pool.on("error", (e) => console.error("[genesis] erro no pool do banco:", e.message));
+  const consulta = async (...a) => {
+    try { return await pool.query(...a); }
+    catch (e) {
+      if (/terminated|ECONNRESET|EPIPE|timeout|Connection/i.test(String(e && e.message))) { await new Promise((ok) => setTimeout(ok, 600)); return pool.query(...a); }
+      throw e;
+    }
+  };
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_state (
       id INT PRIMARY KEY DEFAULT 1,
@@ -37,7 +45,7 @@ if (DATABASE_URL) {
   `);
 
   getState = async () => {
-    const { rows } = await pool.query("SELECT data FROM app_state WHERE id = 1");
+    const { rows } = await consulta("SELECT data FROM app_state WHERE id = 1");
     return rows[0]?.data ?? null;
   };
   /* MESCLA em vez de substituir o objeto inteiro: se algum cliente salvar com uma versão do
@@ -47,13 +55,15 @@ if (DATABASE_URL) {
      próxima gravação, mesmo sem ninguém ter mexido nele. Fazendo merge por chave de topo, um campo
      ausente no payload preserva o valor já salvo; só é sobrescrito quando o cliente realmente o envia. */
   setState = async (partial) => {
-    const { rows } = await pool.query("SELECT data FROM app_state WHERE id = 1");
+    const { rows } = await consulta("SELECT data FROM app_state WHERE id = 1");
     const current = rows[0]?.data || {};
     const merged = { ...current, ...partial };
-    await pool.query(
-      `INSERT INTO app_state (id, data, updated_at) VALUES (1, $1, now())
-       ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = now()`,
-      [merged]
+    /* o caractere nulo (\u0000), que às vezes vem de planilhas importadas, o PostgreSQL recusa em JSONB: remove */
+    const txt = JSON.stringify(merged).replace(/\\u0000/g, "");
+    await consulta(
+      `INSERT INTO app_state (id, data, updated_at) VALUES (1, $1::jsonb, now())
+       ON CONFLICT (id) DO UPDATE SET data = $1::jsonb, updated_at = now()`,
+      [txt]
     );
     return merged;
   };
@@ -129,7 +139,9 @@ app.put("/api/usuarios", async (req, res) => {
   }
 });
 
-app.put("/api/state", async (req, res) => {
+let filaSalvar = Promise.resolve();
+app.put("/api/state", (req, res) => { filaSalvar = filaSalvar.then(() => salvarEstado(req, res)).catch(() => {}); });
+async function salvarEstado(req, res) {
   try {
     const data = { ...(req.body.data || {}) };
     let extra = {}; let atualCache = null;
@@ -167,9 +179,9 @@ app.put("/api/state", async (req, res) => {
     res.json({ ok: true, ...extra });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Falha ao salvar o estado." });
+    res.status(500).json({ error: "Falha ao salvar o estado.", detalhe: String((err && err.message) || err).slice(0, 300) });
   }
-});
+}
 
 /* ============================================================
    STATIC FRONTEND (Vite build output)
