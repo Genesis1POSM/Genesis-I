@@ -109,6 +109,22 @@ app.get("/api/usuarios", async (req, res) => {
   }
 });
 
+/* modelo profissional (Excel) do Registro de Bordo; se o ExcelJS faltar, o portal usa o modelo simples */
+app.get("/api/bordo/modelo", async (req, res) => {
+  try {
+    const { gerarModeloBordo } = await import("./modelo-bordo.js");
+    const lista = (v) => String(v || "").split("|").map((x) => x.trim()).filter(Boolean);
+    const buf = await gerarModeloBordo({
+      depts: lista(req.query.depts), deptsTodos: ["Marinha", "Convés", "Máquinas", "Elétrica", "Guindaste"],
+      tipos: ["Preventiva", "Preditiva", "Corretiva"], acoes: ["Baixa de job", "Criação de job", "Sem job"],
+      inicio: "2026-11-18", nome: String(req.query.nome || "").slice(0, 60),
+    });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="modelo-registro-de-bordo-OSM.xlsx"');
+    res.send(Buffer.from(buf));
+  } catch (e) { console.error("[genesis] modelo bordo:", e.message); res.status(500).json({ error: "modelo indisponível" }); }
+});
+
 app.get("/api/bordo", async (req, res) => {
   try {
     const d = (await getState()) || {};
