@@ -7530,11 +7530,16 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
   }, [tmDue, duef]);
 
   /* ---------- filtros: History ---------- */
-  const [histf, setHistf] = useState({ busca: "", jobType: "Todos", department: "Todos", usuario: "Todos", soPostergadas: false });
+  const [histf, setHistf] = useState({ busca: "", jobType: "Todos", department: "Todos", usuario: "Todos", soPostergadas: false, meses: [] });
+  const [histPag, setHistPag] = useState(1);
+  const [histPorPag, setHistPorPag] = useState(50);
+  React.useEffect(() => { setHistPag(1); }, [histf, histPorPag]);
   const histJobTypes = useMemo(() => [...new Set(tmHistory.map((h) => h.jobType).filter(Boolean))].sort(), [tmHistory]);
   const histDepartments = useMemo(() => [...new Set(tmHistory.map((h) => deptOfHistory(h)).filter(Boolean))].sort(), [tmHistory, codeToDept]);
   const histUsuarios = useMemo(() => [...new Set(tmHistory.map((h) => h.doneByName).filter(Boolean))].sort(), [tmHistory]);
-  const hasActiveFilterHist = histf.busca || histf.jobType !== "Todos" || histf.department !== "Todos" || histf.usuario !== "Todos" || histf.soPostergadas;
+  const hasActiveFilterHist = histf.busca || histf.jobType !== "Todos" || histf.department !== "Todos" || histf.usuario !== "Todos" || histf.soPostergadas || (histf.meses || []).length > 0;
+  const histMeses = useMemo(() => [...new Set(tmHistory.map((h) => (h.dateDone || "").slice(0, 7)).filter((k) => /^\d{4}-\d{2}$/.test(k)))].sort().reverse(), [tmHistory]);
+  const histMesLabel = (k) => `${MONTH_NAMES[Number(k.slice(5, 7)) - 1]} / ${k.slice(0, 4)}`;
   const filteredHistory = useMemo(() => {
     const norm = (s) => (s || "").toString().toLowerCase();
     return tmHistory.filter((h) => {
@@ -7543,9 +7548,13 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
       const inDep = histf.department === "Todos" || deptOfHistory(h) === histf.department;
       const inUsuario = histf.usuario === "Todos" || h.doneByName === histf.usuario;
       const inPost = !histf.soPostergadas || isPostergada(h);
-      return inBusca && inJobType && inDep && inUsuario && inPost;
-    });
+      const inMes = !(histf.meses || []).length || histf.meses.includes((h.dateDone || "").slice(0, 7));
+      return inBusca && inJobType && inDep && inUsuario && inPost && inMes;
+    }).sort((a, b) => (b.dateDone || "").localeCompare(a.dateDone || ""));
   }, [tmHistory, histf, codeToDept]);
+  const histTotalPag = Math.max(1, Math.ceil(filteredHistory.length / histPorPag));
+  const histPagAtual = Math.min(histPag, histTotalPag);
+  const histPagina = useMemo(() => filteredHistory.slice((histPagAtual - 1) * histPorPag, histPagAtual * histPorPag), [filteredHistory, histPagAtual, histPorPag]);
 
   const [groupDue, setGroupDue] = useState(true);
   const [collapsedDue, setCollapsedDue] = useState(new Set());
@@ -7560,7 +7569,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
     return [...map.entries()].sort((x, y) => x[0].localeCompare(y[0], "pt-BR")).map(([key, rows]) => ({ key, rows: rows.sort((p, q) => urg(p) - urg(q)) }));
   }, [filteredDue, groupDue]);
   const histGroups = useMemo(() => {
-    const vis = filteredHistory.slice(0, 500);
+    const vis = histPagina;
     if (!groupHist) return [{ key: "todos", label: "Todos", rows: vis }];
     const map = new Map();
     vis.forEach((h) => { const k = h.dateDone ? h.dateDone.slice(0, 7) : "sem-data"; if (!map.has(k)) map.set(k, []); map.get(k).push(h); });
@@ -7568,7 +7577,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
       key, rows: rows.sort((p, q) => (q.dateDone || "").localeCompare(p.dateDone || "")),
       label: key === "sem-data" ? "Sem data de fechamento" : `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} / ${key.slice(0, 4)}`,
     }));
-  }, [filteredHistory, groupHist]);
+  }, [histPagina, groupHist]);
 
   /* ---------- filtro de Mês/Ano específico da subaba Métricas — escopa todas as métricas abaixo
      (Due pela data de vencimento, History pela data de fechamento) ---------- */
@@ -8352,6 +8361,10 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
               </select>
             </div>
             <div className="g-field">
+              <label>Mês de fechamento</label>
+              <FiltroMeses meses={histMeses} sel={histf.meses || []} onChange={(v) => setHistf((p) => ({ ...p, meses: v }))} label={histMesLabel} />
+            </div>
+            <div className="g-field">
               <label>&nbsp;</label>
               <label className="g-flex" style={{ gap: 6, fontSize: 12, cursor: "pointer", padding: "9px 0" }}>
                 <input type="checkbox" checked={histf.soPostergadas} onChange={(e) => setHistf((p) => ({ ...p, soPostergadas: e.target.checked }))} />
@@ -8360,7 +8373,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
             </div>
             <div className="g-field">
               <label>&nbsp;</label>
-              <button className="g-btn" onClick={() => setHistf({ busca: "", jobType: "Todos", department: "Todos", usuario: "Todos", soPostergadas: false })}
+              <button className="g-btn" onClick={() => setHistf({ busca: "", jobType: "Todos", department: "Todos", usuario: "Todos", soPostergadas: false, meses: [] })}
                 disabled={!hasActiveFilterHist} style={{ opacity: hasActiveFilterHist ? 1 : 0.5 }}>
                 <X size={13} />Limpar filtro
               </button>
@@ -8429,7 +8442,23 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
             </table>
             </div>
             {filteredHistory.length === 0 && <div className="g-muted" style={{ marginTop: 10 }}>Nenhum item encontrado — importe a planilha History acima.</div>}
-            {filteredHistory.length > 500 && <div className="g-muted" style={{ marginTop: 10 }}>Mostrando os primeiros 500 de {filteredHistory.length} — refine o filtro pra ver outros.</div>}
+            {filteredHistory.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+                <span className="g-muted" style={{ fontSize: 12 }}>
+                  Mostrando {(histPagAtual - 1) * histPorPag + 1}–{Math.min(histPagAtual * histPorPag, filteredHistory.length)} de {filteredHistory.length}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <button className="g-btn g-keep" disabled={histPagAtual <= 1} onClick={() => setHistPag(1)}>«</button>
+                  <button className="g-btn g-keep" disabled={histPagAtual <= 1} onClick={() => setHistPag(histPagAtual - 1)}>‹ Anterior</button>
+                  <span style={{ fontSize: 12.5, padding: "0 6px" }}>Página <strong>{histPagAtual}</strong> de {histTotalPag}</span>
+                  <button className="g-btn g-keep" disabled={histPagAtual >= histTotalPag} onClick={() => setHistPag(histPagAtual + 1)}>Próxima ›</button>
+                  <button className="g-btn g-keep" disabled={histPagAtual >= histTotalPag} onClick={() => setHistPag(histTotalPag)}>»</button>
+                  <select value={histPorPag} onChange={(e) => setHistPorPag(Number(e.target.value))} style={{ marginLeft: 8 }}>
+                    {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} por página</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
