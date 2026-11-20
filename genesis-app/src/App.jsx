@@ -7276,7 +7276,18 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   const [imp, setImp] = useState(null);
   const impRef = React.useRef(null);
   const sa = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  const baixarModelo = () => {
+  const baixarModelo = async () => {
+    try {
+      const qs = new URLSearchParams({ depts: (admin ? BORDO_DEPTS : deptsEditaveis).join("|"), nome: currentUser?.name || "" });
+      const r = await fetch("/api/bordo/modelo?" + qs.toString());
+      if (!r.ok) throw new Error("indisponível");
+      const blob = await r.blob(); const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "modelo-registro-de-bordo-OSM.xlsx"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+      return;
+    } catch (e) { /* sem o modelo profissional: baixa o simples abaixo */ }
+    baixarModeloSimples();
+  };
+  const baixarModeloSimples = () => {
     const dep = deptsEditaveis[0] || "Máquinas";
     const ex = [
       { Data: fmtDataCompleta(hoje), Departamento: dep, Tipo: "Preventiva", "Manutenção realizada": "Troca de filtro do motor de popa BB", Componente: "Motor de popa BB", "Ação no TM": "Baixa de job", "Job Type": "PMS", "Job No": "1234", "Failure Report": "", Observações: "", Justificativa: "" },
@@ -7294,13 +7305,16 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
       try {
         const wb = XLSX.read(evt.target.result, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames.find((n) => sa(n).startsWith("registro")) || wb.SheetNames[0]];
-        const lin = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+        const mat = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+        const hi = mat.findIndex((row) => row.some((c) => sa(c).startsWith("data")) && row.some((c) => sa(c).startsWith("depart")));
+        if (hi < 0) throw new Error("não achei a linha de cabeçalho (Data, Departamento…). Use o modelo baixado no portal.");
+        const lin = mat.slice(hi + 1).map((row) => { const o = {}; mat[hi].forEach((h, j) => { if (String(h).trim()) o[String(h).trim()] = row[j] === undefined ? "" : row[j]; }); o.__n = 0; return o; }).map((o, k) => { o.__n = hi + 2 + k; return o; });
         const col = (o, ...nomes) => { for (const k of Object.keys(o)) if (nomes.some((n) => sa(k).startsWith(sa(n)))) return o[k]; return ""; };
         const dataDe = (v) => { if (typeof v === "number" && v > 20000) return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000).toISOString().slice(0, 10); if (v instanceof Date) return isoDia(v); return isoDia(v); };
         const chave = (x) => `${x.departamento}|${x.data}|${sa(x.descricao)}|${bordoNorm(x.jobTipo)}|${bordoNorm(x.jobNo)}`;
         const existentes = new Set(tmBordo.map(chave)); const novas = []; const erros = []; let dup = 0; const vistos = new Set();
         lin.forEach((o, i) => {
-          const n = i + 2; const vazio = Object.values(o).every((v) => String(v).trim() === ""); if (vazio) return;
+          const n = o.__n || i + 2; const vazio = Object.entries(o).every(([k, v]) => k === "__n" || String(v).trim() === ""); if (vazio) return;
           const desc = String(col(o, "manuten", "descri", "atividade")).trim();
           if (/^(exemplo|apague)/i.test(desc)) return;
           const data = dataDe(col(o, "data")); const dep = canonDept(String(col(o, "depart")).trim() || (deptsEditaveis.length === 1 ? deptsEditaveis[0] : ""));
