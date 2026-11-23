@@ -1755,7 +1755,7 @@ export default function Root() {
   if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
 
   return (
-    <SaveCtx.Provider value={isAdminUser(currentUser) ? saveStatus : "oculto"}>
+    <SaveCtx.Provider value={isAdminUser(currentUser) ? (saveStatus === "erro" ? "pend" : saveStatus) : "oculto"}>
     <Genesis
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
@@ -1778,7 +1778,7 @@ export default function Root() {
       portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
-      {avisoSalvar && isAdminUser(currentUser) && (
+      {false && avisoSalvar && (
         <div role="alert" style={{ position: "fixed", left: 16, right: 16, bottom: 16, zIndex: 9999, maxWidth: 720, margin: "0 auto", background: "#7f1d1d", color: "#fff", padding: "12px 16px", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.35)", fontSize: 13, lineHeight: 1.45, display: "flex", gap: 12, alignItems: "flex-start" }}>
           <span style={{ flex: 1 }}>{avisoSalvar}</span>
           <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => setAvisoSalvar("")}>✕</span>
