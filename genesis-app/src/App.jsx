@@ -1510,6 +1510,7 @@ const INITIAL_TM_FAILURES = { reports: [], actions: [], jobs: [], jobHistory: []
 const SaveCtx = React.createContext("ok");
 function SaveBadge() {
   const st = React.useContext(SaveCtx);
+  if (st === "oculto") return null;
   const m = { ok: ["✔ Salvo no servidor", "#15803d", "rgba(34,197,94,.12)"], saving: ["⏳ Salvando…", "#92400e", "rgba(245,166,35,.15)"], pend: ["⏳ Salvando…", "#92400e", "rgba(245,166,35,.15)"], erro: ["⚠ NÃO SALVO — não feche nem atualize a página; o portal tenta de novo sozinho", "#fff", "#b91c1c"] }[st] || [];
   return <span title="Situação do salvamento no servidor" style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 999, color: m[1], background: m[2] }}>{m[0]}</span>;
 }
@@ -1754,7 +1755,7 @@ export default function Root() {
   if (!currentUser) return <LoginScreen users={users} onLogin={(u) => setCurrentUser(u)} />;
 
   return (
-    <SaveCtx.Provider value={saveStatus}>
+    <SaveCtx.Provider value={isAdminUser(currentUser) ? saveStatus : "oculto"}>
     <Genesis
       currentUser={currentUser}
       onLogout={() => setCurrentUser(null)}
@@ -1777,7 +1778,7 @@ export default function Root() {
       portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
-      {avisoSalvar && (
+      {avisoSalvar && isAdminUser(currentUser) && (
         <div role="alert" style={{ position: "fixed", left: 16, right: 16, bottom: 16, zIndex: 9999, maxWidth: 720, margin: "0 auto", background: "#7f1d1d", color: "#fff", padding: "12px 16px", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.35)", fontSize: 13, lineHeight: 1.45, display: "flex", gap: 12, alignItems: "flex-start" }}>
           <span style={{ flex: 1 }}>{avisoSalvar}</span>
           <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => setAvisoSalvar("")}>✕</span>
