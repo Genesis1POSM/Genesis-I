@@ -684,7 +684,7 @@ const pdfMiniGantt = (doc, y, span, activities) => {
   return y + activities.length * rowH + 8;
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
@@ -2251,7 +2251,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   React.useEffect(() => {
     const novos = []; const vinc = {};
     const coleta = (items, src) => items.forEach((it) => execsDe(it).forEach((e) => {
-      if (!(e.pc && !e.serviceId)) return;
+      if (!e.pc || (e.serviceId && workPackages.some((w) => w.id === e.serviceId))) return;
       const ini0 = e.ini || funilIni(e.pc); const fim0 = e.fim || funilSomaH(ini0, it.duracaoH);
       const sid = uid("PC-2026-08"); vinc[`${src}:${it.id}:${e.id}`] = sid;
       const M = src === "M";
@@ -2269,7 +2269,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`], ini: e.ini || funilIni(e.pc), fim: e.fim || funilSomaH(e.ini || funilIni(e.pc), it.duracaoH) } : e)) } : it));
     setWorkPackages((prev) => [...prev, ...novos]);
     setPlanningItems(ligar("M")); setDocagemItems(ligar("D"));
-  }, [planningItems, docagemItems]);
+  }, [planningItems, docagemItems, workPackages]);
 
   /* Cronograma ↔ Serviços nos dois sentidos (horário e % executado): quem mudou por último vale.
      Também atualiza o status do item: 100% acumulado = Concluído; algum % = Em Andamento. */
@@ -4803,7 +4803,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
     const fim = {};
     workPackages.forEach((w) => { const dk = dateKeyOf(w.start); if (!dk) return; const e = w.end || w.start; if (!fim[dk] || e > fim[dk]) fim[dk] = e; });
     const agora = Date.now(); const r = {};
-    Object.keys(fim).forEach((dk) => { r[dk] = new Date(fim[dk]).getTime() < agora; });
+    Object.keys(fim).forEach((dk) => { r[dk] = dk < todayISO() && new Date(fim[dk]).getTime() < agora; });
     return r;
   }, [workPackages]);
   const visiveis = useMemo(() => (mostrarPassadosSv || sf.portCall || sf.dataInicio || sf.dataFim ? filtered : filtered.filter((w) => !pcPassado[dateKeyOf(w.start)])), [filtered, mostrarPassadosSv, pcPassado, sf]);
