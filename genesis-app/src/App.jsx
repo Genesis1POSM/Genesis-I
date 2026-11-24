@@ -2252,7 +2252,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     const novos = []; const vinc = {};
     const coleta = (items, src) => items.forEach((it) => execsDe(it).forEach((e) => {
       if (!e.pc || (e.serviceId && workPackages.some((w) => w.id === e.serviceId))) return;
-      const ini0 = e.ini || funilIni(e.pc); const fim0 = e.fim || funilSomaH(ini0, it.duracaoH);
+      const ini0 = e.ini || funilIni(e.pc); const fim0 = e.fim || funilSomaH(ini0, durEfH(normDecs(it.decisao), it.duracaoH));
       const sid = uid("PC-2026-08"); vinc[`${src}:${it.id}:${e.id}`] = sid;
       const M = src === "M";
       novos.push({
@@ -2266,7 +2266,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     }));
     coleta(planningItems, "M"); coleta(docagemItems, "D");
     if (!novos.length) return;
-    const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`], ini: e.ini || funilIni(e.pc), fim: e.fim || funilSomaH(e.ini || funilIni(e.pc), it.duracaoH) } : e)) } : it));
+    const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`], ini: e.ini || funilIni(e.pc), fim: e.fim || funilSomaH(e.ini || funilIni(e.pc), durEfH(normDecs(it.decisao), it.duracaoH)) } : e)) } : it));
     setWorkPackages((prev) => [...prev, ...novos]);
     setPlanningItems(ligar("M")); setDocagemItems(ligar("D"));
   }, [planningItems, docagemItems, workPackages]);
@@ -5076,6 +5076,9 @@ const mesLabelPt = (ym) => { const [y, m] = String(ym).split("-"); const n = ["j
 const FUNIL_ORIGENS = ["Bordo", "DNV", "TM Master", "Inspeção", "Outro"];
 const FUNIL_DECISOES = ["Porto", "Em Operação", "Parada Técnica", "Docagem", "Aguardando Material"];
 const FUNIL_DEC_LEGADO = { "Faz no porto": "Porto", "Precisa de parada": "Parada Técnica", "Só docagem": "Docagem", "Aguardando material": "Aguardando Material", "Descartar": "" };
+const normDecs = (v) => [...new Set((Array.isArray(v) ? v : [v]).map((x) => normDec(x)).filter(Boolean))];
+const durEfH = (decs, h) => (decs.includes("Em Operação") ? (Number(h) > 0 ? Number(h) : 336) : h);
+const temDec = (r, sel) => (r.decs.length ? r.decs.some((d) => sel.includes(d)) : sel.includes(""));
 const normDec = (v) => (Object.prototype.hasOwnProperty.call(FUNIL_DEC_LEGADO, v) ? FUNIL_DEC_LEGADO[v] : (v || ""));
 const FUNIL_DEC_COR = { "Porto": "var(--ok)", "Em Operação": "var(--teal)", "Parada Técnica": "var(--warn)", "Docagem": "#8B5CF6", "Aguardando Material": "var(--crit)" };
 const funilAberto = (r) => r.status !== "Concluído" && r.status !== "Cancelado";
@@ -5085,8 +5088,8 @@ const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.g
 function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
   const rows = useMemo(() => [
-    ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decisao: normDec(p.decisao), duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId, execs: execsDe(p) })),
-    ...docagemItems.map((d) => ({ key: "D:" + d.id, src: "D", id: d.id, origem: "DNV", nome: d.nome, area: d.localizacao || "", empresa: d.empresa || "", plano: d.planoAcao || "", impacto: d.impacto || "—", status: d.status || "A Executar", material: !!d.necessitaMaterial, po: d.poRelacionada || "", decisao: normDec(d.decisao), duracaoH: d.duracaoH || "", analise: d.analise || "", pc: d.cronoPC || "", ordem: d.cronoOrdem || 0, ini: d.cronoIni || "", fim: d.cronoFim || "", conf: !!d.cronoConf, linked: d.linkedServiceId, execs: execsDe(d) })),
+    ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decs: normDecs(p.decisao), decisao: normDecs(p.decisao)[0] || "", duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId, execs: execsDe(p) })),
+    ...docagemItems.map((d) => ({ key: "D:" + d.id, src: "D", id: d.id, origem: "DNV", nome: d.nome, area: d.localizacao || "", empresa: d.empresa || "", plano: d.planoAcao || "", impacto: d.impacto || "—", status: d.status || "A Executar", material: !!d.necessitaMaterial, po: d.poRelacionada || "", decs: normDecs(d.decisao), decisao: normDecs(d.decisao)[0] || "", duracaoH: d.duracaoH || "", analise: d.analise || "", pc: d.cronoPC || "", ordem: d.cronoOrdem || 0, ini: d.cronoIni || "", fim: d.cronoFim || "", conf: !!d.cronoConf, linked: d.linkedServiceId, execs: execsDe(d) })),
   ], [planningItems, docagemItems]);
   const MAPA_M = { area: "departamento", plano: "planoAcao", material: "precisaMaterial", po: "poMaterial", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise", origem: "origem" };
   const MAPA_D = { area: "localizacao", plano: "planoAcao", material: "necessitaMaterial", po: "poRelacionada", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise" };
@@ -5103,7 +5106,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   /* ---------- filtros comuns ---------- */
   const [f, setF] = useState({ busca: "", origem: "Todas", dec: "Todas", area: "", sit: "Em aberto" });
   const sitOk = (r) => f.sit === "Todos" || (f.sit === "Concluídos" ? r.status === "Concluído" : f.sit === "Cancelados" ? r.status === "Cancelado" : funilAberto(r));
-  const lista = rows.filter((r) => sitOk(r) && (f.origem === "Todas" || r.origem === f.origem) && (f.dec === "Todas" || (f.dec === "Sem decisão" ? !r.decisao : r.decisao === f.dec)) && (!f.busca || norm(`${r.nome} ${r.area} ${r.empresa} ${r.plano}`).includes(norm(f.busca))));
+  const lista = rows.filter((r) => sitOk(r) && (f.origem === "Todas" || r.origem === f.origem) && (f.dec === "Todas" || (f.dec === "Sem decisão" ? !r.decs.length : r.decs.includes(f.dec))) && (!f.busca || norm(`${r.nome} ${r.area} ${r.empresa} ${r.plano}`).includes(norm(f.busca))));
   const filtros = (comDec) => (
     <div className="g-filterbar" style={{ padding: "10px 16px", marginBottom: 12, borderRadius: 6 }}>
       <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="nome, área, empresa…" /></div>
@@ -5114,8 +5117,8 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   );
 
   /* ---------- cabeçalho com as 3 etapas ---------- */
-  const nSem = abertos.filter((r) => !r.decisao).length;
-  const nPorto = abertos.filter((r) => r.decisao === "Porto").length;
+  const nSem = abertos.filter((r) => !r.decs.length).length;
+  const nPorto = abertos.filter((r) => r.decs.includes("Porto")).length;
   const nCrono = rows.filter((r) => r.execs.length > 0).length;
   const nConf = rows.reduce((t, r) => t + r.execs.filter((e) => e.conf).length, 0);
   const passo = (n, k, titulo, sub) => (
@@ -5158,8 +5161,8 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
       ["Origem", FUNIL_ORIGENS.join(" / ") + " (vazio = Bordo). DNV vai para a lista de docagem."],
       ["Área / Localização", "Texto livre"], ["Empresa", "Texto livre"], ["Plano de ação", "Texto livre"],
       ["Impacto", IMPACT_LEVELS.join(" / ")], ["Status", PLAN_STATUS.join(" / ")],
-      ["Decisão", FUNIL_DECISOES.join(" / ") + " (vazio = sem decisão)"],
-      ["Duração (h)", "Número de horas previstas"], ["RC", "Texto livre"], ["Observação", "Texto livre"],
+      ["Decisão", FUNIL_DECISOES.join(" / ") + " (pode colocar mais de uma, separadas por vírgula; vazio = sem decisão)"],
+      ["Duração (h)", "Número de horas previstas. Itens com decisão Em Operação usam 14 dias (336 h) se ficar vazio."], ["RC", "Texto livre"], ["Observação", "Texto livre"],
       ["Precisa de material", "Sim / Não"], ["Material necessário", "Texto livre"],
     ]), "Instruções");
     XLSX.writeFile(wb, "Modelo-Importacao-Mapeamento.xlsx");
@@ -5182,7 +5185,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
           vistos.add(nn(nome));
           const origem = achar(FUNIL_ORIGENS, g(row, "Origem"), "Bordo");
           const status = achar(PLAN_STATUS, g(row, "Status"), "A Executar");
-          const decisao = achar(FUNIL_DECISOES, g(row, "Decisão"), "");
+          const decisao = g(row, "Decisão").split(/[,;/]/).map((x) => achar(FUNIL_DECISOES, x.trim(), "")).filter(Boolean);
           const dur = Number(String(g(row, "Duração (h)")).replace(",", ".")); const mat = nn(g(row, "Precisa de material")) === "sim";
           const base = { nome, empresa: g(row, "Empresa"), planoAcao: g(row, "Plano de ação"), status, decisao, ...(dur > 0 ? { duracaoH: dur } : {}) };
           if (origem === "DNV") novosD.push({ id: uid("DOC"), ...base, localizacao: g(row, "Área / Localização"), tipoPeriodo: "", necessitaMaterial: mat, poRelacionada: "", previsaoExecucao: "", dataConclusao: "", linkedServiceId: null });
@@ -5258,12 +5261,12 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   /* ================= ETAPA 2 ================= */
   const etapa2 = (
     <>
-      <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
-        Para cada item mapeado, decida <strong>onde</strong> cada item será feito: <strong>Porto, Em Operação, Parada Técnica, Docagem</strong> ou <strong>Aguardando Material</strong>. No Cronograma você monta um cronograma para cada decisão (ou várias juntas). Informe a duração estimada e se depende de material — isso evita agendar o que não dá para executar.
-      </div>
+      <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}><div>
+        Para cada item mapeado, decida <strong>onde</strong> será feito (pode marcar <strong>mais de uma</strong> decisão): <strong>Porto, Em Operação, Parada Técnica, Docagem</strong> ou <strong>Aguardando Material</strong>. No Cronograma você monta um cronograma para cada decisão (ou várias juntas). Informe a duração estimada e se depende de material — isso evita agendar o que não dá para executar.
+      </div></div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
         {bigKpi("Sem decisão", nSem, nSem ? "var(--warn)" : "var(--ok)", AlertTriangle)}
-        {FUNIL_DECISOES.map((d) => bigKpi(d, abertos.filter((r) => r.decisao === d).length, FUNIL_DEC_COR[d], Wrench))}
+        {FUNIL_DECISOES.map((d) => bigKpi(d, abertos.filter((r) => r.decs.includes(d)).length, FUNIL_DEC_COR[d], Wrench))}
       </div>
       {filtros(true)}
       <div className="g-panel">
@@ -5281,11 +5284,13 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
                     <td><span className="tbl-chip">{r.origem}</span></td>
                     <td style={{ whiteSpace: "normal", fontSize: 12 }}>{r.plano || <span className="g-muted">sem plano</span>}</td>
                     <td><input style={inp} value={r.empresa} onChange={(e) => set(r, { empresa: e.target.value })} /></td>
-                    <td><select style={{ ...inp, borderColor: r.decisao ? undefined : "var(--warn)", color: r.decisao ? FUNIL_DEC_COR[r.decisao] : undefined, fontWeight: 600 }} value={r.decisao} onChange={(e) => set(r, { decisao: e.target.value })}><option value="">— decidir —</option>{FUNIL_DECISOES.map((o) => <option key={o}>{o}</option>)}</select></td>
-                    <td><input style={inp} type="number" min="0" step="0.5" value={r.duracaoH} onChange={(e) => set(r, { duracaoH: e.target.value })} /></td>
+                    <td><div style={{ display: "flex", flexWrap: "wrap", gap: 4, minWidth: 150 }}>{FUNIL_DECISOES.map((o) => { const on = r.decs.includes(o); return <button key={o} type="button" onClick={() => set(r, { decisao: on ? r.decs.filter((x) => x !== o) : [...r.decs, o] })} style={{ cursor: "pointer", fontSize: 10.5, fontWeight: 600, padding: "2px 7px", borderRadius: 10, border: `1px solid ${FUNIL_DEC_COR[o]}`, background: on ? FUNIL_DEC_COR[o] : "transparent", color: on ? "#fff" : FUNIL_DEC_COR[o] }}>{o}</button>; })}{!r.decs.length && <span style={{ color: "var(--warn)", fontSize: 10.5 }}>— decidir —</span>}</div></td>
+                    <td>{r.decs.includes("Em Operação")
+                      ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}><input style={inp} type="number" min="1" step="1" title="Em Operação: duração em dias (padrão 14)" value={Number(r.duracaoH) > 0 ? Math.round(Number(r.duracaoH) / 24 * 100) / 100 : 14} onChange={(e) => set(r, { duracaoH: e.target.value === "" ? "" : Number(e.target.value) * 24 })} /><span style={{ fontSize: 10.5 }}>dias</span></div>
+                      : <input style={inp} type="number" min="0" step="0.5" value={r.duracaoH} onChange={(e) => set(r, { duracaoH: e.target.value })} />}</td>
                     <td style={{ textAlign: "center" }}><input type="checkbox" checked={r.material} onChange={(e) => set(r, { material: e.target.checked })} /></td>
                     <td><input style={{ ...inp, borderColor: semPo ? "var(--crit)" : undefined }} value={r.po} onChange={(e) => set(r, { po: e.target.value })} placeholder={r.material ? "PO" : "—"} /></td>
-                    <td><input style={inp} value={r.analise} onChange={(e) => set(r, { analise: e.target.value })} />{semPo && r.decisao === "Porto" && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>precisa de material e ainda não tem PO</div>}</td>
+                    <td><input style={inp} value={r.analise} onChange={(e) => set(r, { analise: e.target.value })} />{semPo && r.decs.includes("Porto") && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>precisa de material e ainda não tem PO</div>}</td>
                   </tr>
                 );
               })}
@@ -5309,12 +5314,12 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const pcsTodos = useMemo(() => [...new Set([...allPortCallDates, ...rows.flatMap((r) => r.execs.map((e) => e.pc))].filter(Boolean))].sort(), [allPortCallDates, rows]);
   const destPc = destData || dest || pcsTodos.find((d) => d >= hoje) || pcsTodos[pcsTodos.length - 1] || "";
   const flatTodos = rows.flatMap((r) => r.execs.filter((e) => e.pc).map((e) => ({ r, e })));
-  const flat = flatTodos.filter((x) => decSel.includes(x.r.decisao));
+  const flat = flatTodos.filter((x) => temDec(x.r, decSel));
   const ocultasDec = flatTodos.length - flat.length;
   const mesesDisp = [...new Set(flat.map((x) => x.e.pc.slice(0, 7)))].sort();
   const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || new Date(`${d}T00:00:00`).getTime() + (portCallMeta?.[d]?.duration || 24) * 3600000 >= Date.now()) && (visMes === "Todos" || d.slice(0, 7) === visMes));
   const toggleDec = (d) => setDecSel((a) => (a.includes(d) ? a.filter((x) => x !== d) : [...a, d]));
-  const candid = abertos.filter((r) => decSel.includes(r.decisao));
+  const candid = abertos.filter((r) => temDec(r, decSel));
   const acumDe = (r) => r.execs.reduce((t, e) => t + (Number(e.pct) || 0), 0);
 
   const addExec = (r, pcDia) => {
@@ -5323,7 +5328,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
     const ordem = Math.max(0, ...doDia.map((x) => Number(x.e.ordem) || 0)) + 1;
     const fimMax = doDia.map((x) => x.e.fim).filter(Boolean).sort().pop();
     const ini = fimMax || funilIni(pcDia);
-    setExecs(r, (list) => [...list, { id: uid("EX"), pc: pcDia, ini, fim: funilSomaH(ini, r.duracaoH), ordem, pct: 0, conf: false, serviceId: null }]);
+    setExecs(r, (list) => [...list, { id: uid("EX"), pc: pcDia, ini, fim: funilSomaH(ini, durEfH(r.decs, r.duracaoH)), ordem, pct: 0, conf: false, serviceId: null }]);
   };
   const levarTodos = () => {
     if (!destPc) return;
@@ -5331,7 +5336,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
     let o = Math.max(0, ...doDia.map((x) => Number(x.e.ordem) || 0)) + 1;
     let cur = doDia.map((x) => x.e.fim).filter(Boolean).sort().pop() || funilIni(destPc);
     candid.filter((r) => r.execs.length === 0).forEach((r) => {
-      const ini = cur; const fim = funilSomaH(ini, r.duracaoH);
+      const ini = cur; const fim = funilSomaH(ini, durEfH(r.decs, r.duracaoH));
       setExecs(r, (list) => [...list, { id: uid("EX"), pc: destPc, ini, fim, ordem: o++, pct: 0, conf: false, serviceId: null }]);
       cur = fim;
     });
@@ -5414,7 +5419,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
                 return (
                   <tr className="g-row tbl-row" key={e.id} style={{ "--c": corExec(e) }}>
                     <td style={{ whiteSpace: "nowrap" }}><span className="g-btn ghost" title="Subir" onClick={() => moverExec(itens, i, -1)}>▲</span><span className="g-btn ghost" title="Descer" onClick={() => moverExec(itens, i, 1)}>▼</span></td>
-                    <td><b>{i + 1}. {r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"}{r.execs.length > 1 ? ` · ${r.execs.length} Port Calls` : ""}{r.decisao ? <> · <b style={{ color: FUNIL_DEC_COR[r.decisao] }}>{r.decisao}</b></> : ""}</div></td>
+                    <td><b>{i + 1}. {r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"}{r.execs.length > 1 ? ` · ${r.execs.length} Port Calls` : ""}{r.decs.map((d) => <span key={d}> · <b style={{ color: FUNIL_DEC_COR[d] }}>{d}</b></span>)}</div></td>
                     <td><input style={inp} value={r.empresa} onChange={(ev) => set(r, { empresa: ev.target.value })} /></td>
                     <td><BufInput style={inp} type="datetime-local" value={e.ini || ""} onChange={(ev) => patchExec(r, e.id, { ini: ev.target.value })} /></td>
                     <td><BufInput style={{ ...inp, borderColor: fora || invalido ? "var(--crit)" : undefined }} type="datetime-local" value={e.fim || ""} onChange={(ev) => patchExec(r, e.id, { fim: ev.target.value })} />{fora && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>passa da janela do Port Call</div>}{invalido && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>fim antes do início</div>}</td>
@@ -5460,7 +5465,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
               const ac = acumDe(r); const falta = Math.max(0, 100 - ac); const ja = r.execs.some((e) => e.pc === destPc);
               return (
                 <tr className="g-row" key={r.key}>
-                  <td><b>{r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"} · {r.empresa || "sem empresa"}{r.duracaoH ? ` · ${r.duracaoH}h` : ""}</div></td>
+                  <td><b>{r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"} · {r.empresa || "sem empresa"}{r.decs.includes("Em Operação") ? ` · ${Math.round((Number(r.duracaoH) > 0 ? Number(r.duracaoH) : 336) / 24 * 100) / 100} dias` : (r.duracaoH ? ` · ${r.duracaoH}h` : "")}</div></td>
                   <td style={{ width: 190, whiteSpace: "normal" }}>
                     <div style={{ height: 8, background: "rgba(0,0,0,.08)", borderRadius: 99, overflow: "hidden" }}><div style={{ width: `${Math.min(100, ac)}%`, height: "100%", background: "linear-gradient(90deg,#3B82F6,#22C55E)" }} /></div>
                     <div style={{ fontSize: 11, marginTop: 2 }}>{ac}% feito · falta {falta}%</div>
