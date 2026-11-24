@@ -2230,8 +2230,10 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
       const pc = it.cronoPC || String(ini).slice(0, 10);
       return { ...it, execucoes: (pc || it.linkedServiceId) ? [{ id: uid("EX"), pc, ini, fim: it.cronoFim || (w && w.end) || "", ordem: Number(it.cronoOrdem) || 1, pct: w && Number(w.progress) > 0 ? Number(w.progress) : (it.status === "Concluído" ? 100 : 0), conf: !!(it.cronoConf || it.linkedServiceId), serviceId: it.linkedServiceId || null }] : [] };
     };
-    if (planningItems.some((x) => !Array.isArray(x.execucoes))) setPlanningItems((prev) => prev.map(mig));
-    if (docagemItems.some((x) => !Array.isArray(x.execucoes))) setDocagemItems((prev) => prev.map(mig));
+    const migDec = (it) => (Object.prototype.hasOwnProperty.call(FUNIL_DEC_LEGADO, it.decisao) ? { ...it, decisao: FUNIL_DEC_LEGADO[it.decisao] } : it);
+    const precisa = (x) => !Array.isArray(x.execucoes) || Object.prototype.hasOwnProperty.call(FUNIL_DEC_LEGADO, x.decisao);
+    if (planningItems.some(precisa)) setPlanningItems((prev) => prev.map((x) => migDec(mig(x))));
+    if (docagemItems.some(precisa)) setDocagemItems((prev) => prev.map((x) => migDec(mig(x))));
   }, [planningItems, docagemItems]);
 
   /* Execução confirmada → vira Serviço (já com o que está preenchido em Mapear) */
@@ -2319,6 +2321,15 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     });
   }, [workPackages]);
 
+  const ajustarAno2026 = () => {
+    const fix = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) && v.slice(0, 4) !== "2026" ? `2026${v.slice(4, 5) === "-" ? v.slice(4).replace(/^-02-29/, "-02-28") : v.slice(4)}` : v);
+    const afetados = workPackages.filter((w) => fix(w.start) !== w.start || fix(w.end) !== w.end).length;
+    if (!afetados) { window.alert("Todos os serviços já estão em 2026."); return; }
+    if (!window.confirm(`Mudar para 2026 o ano de ${afetados} serviço(s) (início e fim)? Dia e mês não mudam.`)) return;
+    setWorkPackages((prev) => prev.map((w) => ({ ...w, start: fix(w.start), end: fix(w.end) })));
+    const fx = (arr) => arr.map((it) => (Array.isArray(it.execucoes) ? { ...it, execucoes: it.execucoes.map((e) => ({ ...e, pc: fix(e.pc), ini: fix(e.ini), fim: fix(e.fim) })) } : it));
+    setPlanningItems(fx); setDocagemItems(fx);
+  };
   const addWp = () => {
     const id = uid("PC-2026-08");
     setWorkPackages((r) => [...r, {
@@ -3021,6 +3032,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
           {tab !== "materials" && <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>}
           {tab !== "materials" && <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>}
+          {tab === "manutencao" && manSub === "services" && isAdmin && <button className="g-btn" onClick={ajustarAno2026} title="Muda para 2026 o ano de todos os serviços que estão em outro ano (dia e mês não mudam)">Ajustar ano para 2026</button>}
           {tab === "manutencao" && manSub === "services" && <button className="g-btn primary" onClick={addWp}><Plus size={14} />Novo serviço</button>}
           {tab === "manutencao" && manSub === "planejamento" && planSubTab === "mapeados" && <button className="g-btn primary" onClick={addPlanningItem}><Plus size={14} />Novo mapeamento</button>}
           {tab === "payments" && <button className="g-btn primary" onClick={addInv}><Plus size={14} />Novo registro</button>}
@@ -4774,7 +4786,17 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
       );
     });
   }, [workPackages, sf]);
-  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
+  const [mostrarPassadosSv, setMostrarPassadosSv] = useState(false);
+  const pcPassado = useMemo(() => {
+    const fim = {};
+    workPackages.forEach((w) => { const dk = dateKeyOf(w.start); if (!dk) return; const e = w.end || w.start; if (!fim[dk] || e > fim[dk]) fim[dk] = e; });
+    const agora = Date.now(); const r = {};
+    Object.keys(fim).forEach((dk) => { r[dk] = new Date(fim[dk]).getTime() < agora; });
+    return r;
+  }, [workPackages]);
+  const visiveis = useMemo(() => (mostrarPassadosSv || sf.portCall || sf.dataInicio || sf.dataFim ? filtered : filtered.filter((w) => !pcPassado[dateKeyOf(w.start)])), [filtered, mostrarPassadosSv, pcPassado, sf]);
+  const nPassadosOcultos = filtered.length - visiveis.length;
+  const sorted = useMemo(() => sortRows(visiveis, sort), [visiveis, sort]);
   const [groupByPc, setGroupByPc] = useState(true);
   const [collapsedWp, setCollapsedWp] = useState(new Set());
   const toggleWpGroup = (k) => setCollapsedWp((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
@@ -4885,15 +4907,16 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
         {bigKpi("Taxa de Conclusão", `${taxaConclusao}%`, "var(--warn)", LayoutGrid)}
       </div>
 
-      {filtered.length === 0 ? (
+      {visiveis.length === 0 ? (
         <div className="g-panel">
-          <div className="g-muted">Nenhum serviço encontrado com esses filtros.</div>
+          <div className="g-muted">Nenhum serviço em andamento ou futuro com esses filtros.{nPassadosOcultos > 0 && <> {nPassadosOcultos} serviço(s) de Port Calls passados estão ocultos — <a href="#" onClick={(e) => { e.preventDefault(); setMostrarPassadosSv(true); }}>mostrar Port Calls passados</a>.</>}</div>
         </div>
       ) : (
       <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
         <div className="tbl-toolbar">
           <label className="tbl-check"><input type="checkbox" checked={groupByPc} onChange={(e) => setGroupByPc(e.target.checked)} />Agrupar por Port Call</label>
-          <span className="g-muted" style={{ fontSize: 11 }}>{filtered.length} serviço(s) · clique na seta de uma linha para editar data, categoria, MD, RC e observação</span>
+          <label className="tbl-check"><input type="checkbox" checked={mostrarPassadosSv} onChange={(e) => setMostrarPassadosSv(e.target.checked)} />Mostrar Port Calls passados{!mostrarPassadosSv && nPassadosOcultos > 0 ? ` (${nPassadosOcultos} oculto(s))` : ""}</label>
+          <span className="g-muted" style={{ fontSize: 11 }}>{visiveis.length} serviço(s) · clique na seta de uma linha para editar data, categoria, MD, RC e observação</span>
         </div>
         <div className="g-table-wrap">
         <table className="g-table tbl-modern">
@@ -5039,8 +5062,10 @@ const execsDe = (it) => (it && Array.isArray(it.execucoes) ? it.execucoes : []);
 const pctAcumDe = (it) => execsDe(it).reduce((t, e) => t + (Number(e.pct) || 0), 0);
 const mesLabelPt = (ym) => { const [y, m] = String(ym).split("-"); const n = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][Number(m) - 1] || ym; return `${n.charAt(0).toUpperCase()}${n.slice(1)} de ${y}`; };
 const FUNIL_ORIGENS = ["Bordo", "DNV", "TM Master", "Inspeção", "Outro"];
-const FUNIL_DECISOES = ["Faz no porto", "Precisa de parada", "Só docagem", "Aguardando material", "Descartar"];
-const FUNIL_DEC_COR = { "Faz no porto": "var(--ok)", "Precisa de parada": "var(--warn)", "Só docagem": "var(--teal)", "Aguardando material": "var(--warn)", "Descartar": "var(--text-faint)" };
+const FUNIL_DECISOES = ["Porto", "Em Operação", "Parada Técnica", "Docagem", "Aguardando Material"];
+const FUNIL_DEC_LEGADO = { "Faz no porto": "Porto", "Precisa de parada": "Parada Técnica", "Só docagem": "Docagem", "Aguardando material": "Aguardando Material", "Descartar": "" };
+const normDec = (v) => (Object.prototype.hasOwnProperty.call(FUNIL_DEC_LEGADO, v) ? FUNIL_DEC_LEGADO[v] : (v || ""));
+const FUNIL_DEC_COR = { "Porto": "var(--ok)", "Em Operação": "var(--teal)", "Parada Técnica": "var(--warn)", "Docagem": "#8B5CF6", "Aguardando Material": "var(--crit)" };
 const funilAberto = (r) => r.status !== "Concluído" && r.status !== "Cancelado";
 const funilIni = (pc) => `${pc}T08:00`;
 const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.getMinutes() + Math.round((Number(h) || 9) * 60)); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -5048,8 +5073,8 @@ const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.g
 function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
   const rows = useMemo(() => [
-    ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decisao: p.decisao || "", duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId, execs: execsDe(p) })),
-    ...docagemItems.map((d) => ({ key: "D:" + d.id, src: "D", id: d.id, origem: "DNV", nome: d.nome, area: d.localizacao || "", empresa: d.empresa || "", plano: d.planoAcao || "", impacto: d.impacto || "—", status: d.status || "A Executar", material: !!d.necessitaMaterial, po: d.poRelacionada || "", decisao: d.decisao || "", duracaoH: d.duracaoH || "", analise: d.analise || "", pc: d.cronoPC || "", ordem: d.cronoOrdem || 0, ini: d.cronoIni || "", fim: d.cronoFim || "", conf: !!d.cronoConf, linked: d.linkedServiceId, execs: execsDe(d) })),
+    ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decisao: normDec(p.decisao), duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId, execs: execsDe(p) })),
+    ...docagemItems.map((d) => ({ key: "D:" + d.id, src: "D", id: d.id, origem: "DNV", nome: d.nome, area: d.localizacao || "", empresa: d.empresa || "", plano: d.planoAcao || "", impacto: d.impacto || "—", status: d.status || "A Executar", material: !!d.necessitaMaterial, po: d.poRelacionada || "", decisao: normDec(d.decisao), duracaoH: d.duracaoH || "", analise: d.analise || "", pc: d.cronoPC || "", ordem: d.cronoOrdem || 0, ini: d.cronoIni || "", fim: d.cronoFim || "", conf: !!d.cronoConf, linked: d.linkedServiceId, execs: execsDe(d) })),
   ], [planningItems, docagemItems]);
   const MAPA_M = { area: "departamento", plano: "planoAcao", material: "precisaMaterial", po: "poMaterial", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise", origem: "origem" };
   const MAPA_D = { area: "localizacao", plano: "planoAcao", material: "necessitaMaterial", po: "poRelacionada", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise" };
@@ -5078,7 +5103,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
 
   /* ---------- cabeçalho com as 3 etapas ---------- */
   const nSem = abertos.filter((r) => !r.decisao).length;
-  const nPorto = abertos.filter((r) => r.decisao === "Faz no porto").length;
+  const nPorto = abertos.filter((r) => r.decisao === "Porto").length;
   const nCrono = rows.filter((r) => r.execs.length > 0).length;
   const nConf = rows.reduce((t, r) => t + r.execs.filter((e) => e.conf).length, 0);
   const passo = (n, k, titulo, sub) => (
@@ -5090,7 +5115,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const cab = (
     <div className="g-flex" style={{ gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
       {passo(1, "mapa", "Mapeamento total", `${abertos.length} itens em aberto (Mapeados + DNV)`)}
-      {passo(2, "analise", "Análise do porto", `${nSem} sem decisão · ${nPorto} fazem no porto`)}
+      {passo(2, "analise", "Análise do porto", `${nSem} sem decisão · ${nPorto} no Porto`)}
       {passo(3, "crono", "Cronograma", `${nCrono} item(ns) programados · ${nConf} execução(ões) em Serviços`)}
     </div>
   );
@@ -5164,7 +5189,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const etapa2 = (
     <>
       <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}>
-        Para cada item mapeado, decida o que pode ser feito <strong>no porto</strong>. Os marcados como <strong>“Faz no porto”</strong> seguem para o Cronograma. Informe a duração estimada e se depende de material — isso evita agendar o que não dá para executar.
+        Para cada item mapeado, decida <strong>onde</strong> cada item será feito: <strong>Porto, Em Operação, Parada Técnica, Docagem</strong> ou <strong>Aguardando Material</strong>. No Cronograma você monta um cronograma para cada decisão (ou várias juntas). Informe a duração estimada e se depende de material — isso evita agendar o que não dá para executar.
       </div>
       <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
         {bigKpi("Sem decisão", nSem, nSem ? "var(--warn)" : "var(--ok)", AlertTriangle)}
@@ -5190,7 +5215,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
                     <td><input style={inp} type="number" min="0" step="0.5" value={r.duracaoH} onChange={(e) => set(r, { duracaoH: e.target.value })} /></td>
                     <td style={{ textAlign: "center" }}><input type="checkbox" checked={r.material} onChange={(e) => set(r, { material: e.target.checked })} /></td>
                     <td><input style={{ ...inp, borderColor: semPo ? "var(--crit)" : undefined }} value={r.po} onChange={(e) => set(r, { po: e.target.value })} placeholder={r.material ? "PO" : "—"} /></td>
-                    <td><input style={inp} value={r.analise} onChange={(e) => set(r, { analise: e.target.value })} />{semPo && r.decisao === "Faz no porto" && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>precisa de material e ainda não tem PO</div>}</td>
+                    <td><input style={inp} value={r.analise} onChange={(e) => set(r, { analise: e.target.value })} />{semPo && r.decisao === "Porto" && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>precisa de material e ainda não tem PO</div>}</td>
                   </tr>
                 );
               })}
@@ -5209,13 +5234,17 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const [dest, setDest] = useState("");
   const [destData, setDestData] = useState("");
   const [visMes, setVisMes] = useState("Todos");
-  const [mostrarPassados, setMostrarPassados] = useState(true);
+  const [mostrarPassados, setMostrarPassados] = useState(false);
   const pcsTodos = useMemo(() => [...new Set([...allPortCallDates, ...rows.flatMap((r) => r.execs.map((e) => e.pc))].filter(Boolean))].sort(), [allPortCallDates, rows]);
   const destPc = destData || dest || pcsTodos.find((d) => d >= hoje) || pcsTodos[pcsTodos.length - 1] || "";
-  const flat = rows.flatMap((r) => r.execs.filter((e) => e.pc).map((e) => ({ r, e })));
+  const flatTodos = rows.flatMap((r) => r.execs.filter((e) => e.pc).map((e) => ({ r, e })));
+  const flat = flatTodos.filter((x) => decSel.includes(x.r.decisao));
+  const ocultasDec = flatTodos.length - flat.length;
   const mesesDisp = [...new Set(flat.map((x) => x.e.pc.slice(0, 7)))].sort();
-  const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || d >= hoje) && (visMes === "Todos" || d.slice(0, 7) === visMes));
-  const candid = abertos.filter((r) => r.decisao === "Faz no porto");
+  const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || new Date(`${d}T00:00:00`).getTime() + (portCallMeta?.[d]?.duration || 24) * 3600000 >= Date.now()) && (visMes === "Todos" || d.slice(0, 7) === visMes));
+  const [decSel, setDecSel] = useState(["Porto", ""]);
+  const toggleDec = (d) => setDecSel((a) => (a.includes(d) ? a.filter((x) => x !== d) : [...a, d]));
+  const candid = abertos.filter((r) => decSel.includes(r.decisao));
   const acumDe = (r) => r.execs.reduce((t, e) => t + (Number(e.pct) || 0), 0);
 
   const addExec = (r, pcDia) => {
@@ -5315,7 +5344,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
                 return (
                   <tr className="g-row tbl-row" key={e.id} style={{ "--c": corExec(e) }}>
                     <td style={{ whiteSpace: "nowrap" }}><span className="g-btn ghost" title="Subir" onClick={() => moverExec(itens, i, -1)}>▲</span><span className="g-btn ghost" title="Descer" onClick={() => moverExec(itens, i, 1)}>▼</span></td>
-                    <td><b>{i + 1}. {r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"}{r.execs.length > 1 ? ` · ${r.execs.length} Port Calls` : ""}</div></td>
+                    <td><b>{i + 1}. {r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"}{r.execs.length > 1 ? ` · ${r.execs.length} Port Calls` : ""}{r.decisao ? <> · <b style={{ color: FUNIL_DEC_COR[r.decisao] }}>{r.decisao}</b></> : ""}</div></td>
                     <td><input style={inp} value={r.empresa} onChange={(ev) => set(r, { empresa: ev.target.value })} /></td>
                     <td><input style={inp} type="datetime-local" value={e.ini || ""} onChange={(ev) => patchExec(r, e.id, { ini: ev.target.value })} /></td>
                     <td><input style={{ ...inp, borderColor: fora || invalido ? "var(--crit)" : undefined }} type="datetime-local" value={e.fim || ""} onChange={(ev) => patchExec(r, e.id, { fim: ev.target.value })} />{fora && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>passa da janela do Port Call</div>}{invalido && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>fim antes do início</div>}</td>
@@ -5347,14 +5376,15 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
           <select value={destData ? "" : destPc} onChange={(e) => { setDest(e.target.value); setDestData(""); }}>{pcsTodos.length === 0 && <option value="">Nenhum Port Call — use a data ao lado</option>}{destData && <option value="">— data digitada —</option>}{pcsTodos.map((d) => <option key={d} value={d}>{portCallLabel(d)}</option>)}</select>
         </div>
         <div className="g-field"><label>ou digite a data</label><input type="date" value={destData} onChange={(e) => setDestData(e.target.value)} /></div>
+        <div className="g-field" style={{ minWidth: 300 }}><label>Cronograma de (marque uma ou mais decisões)</label><div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>{[...FUNIL_DECISOES, ""].map((d) => <label key={d || "sem"} style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: 600, color: d ? FUNIL_DEC_COR[d] : "var(--text-dim)" }}><input type="checkbox" checked={decSel.includes(d)} onChange={() => toggleDec(d)} />{d || "Sem decisão"}</label>)}</div></div>
         <div className="g-field"><label>Mês</label><select value={visMes} onChange={(e) => setVisMes(e.target.value)}><option value="Todos">Todos</option>{mesesDisp.map((m) => <option key={m} value={m}>{mesLabelPt(m)}</option>)}</select></div>
         <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center", paddingBottom: 8 }}><input type="checkbox" checked={mostrarPassados} onChange={(e) => setMostrarPassados(e.target.checked)} />Mostrar Port Calls passados</label>
-        <div className="g-muted" style={{ fontSize: 12, paddingBottom: 8 }}>Port Calls com serviços: <b>{[...new Set(flat.map((x) => x.e.pc))].length}</b> · Execuções: <b>{flat.length}</b></div>
+        <div className="g-muted" style={{ fontSize: 12, paddingBottom: 8 }}>Port Calls com serviços: <b>{[...new Set(flat.map((x) => x.e.pc))].length}</b> · Execuções: <b>{flat.length}</b>{ocultasDec > 0 && <> · <span title="Execuções de itens com outra decisão, ocultas pelo filtro acima">{ocultasDec} oculta(s) por decisão</span></>}</div>
       </div>
 
       <div className="g-panel">
-        <div className="g-panel-head"><span className="g-panel-title">Itens que fazem no porto ({candid.length}) — adicione ao Port Call de destino{destPc ? `: ${portCallLabel(destPc)}` : ""}</span>{candid.some((r) => r.execs.length === 0) && <button className="g-btn g-keep" disabled={!destPc} onClick={levarTodos}>Levar todos os sem Port Call</button>}</div>
-        {candid.length === 0 ? <div className="g-muted" style={{ fontSize: 12 }}>Nenhum item. Na etapa 2, marque “Faz no porto” nos itens que podem ser executados.</div> : (
+        <div className="g-panel-head"><span className="g-panel-title">Itens das decisões marcadas ({candid.length}) — adicione ao Port Call de destino{destPc ? `: ${portCallLabel(destPc)}` : ""}</span>{candid.some((r) => r.execs.length === 0) && <button className="g-btn g-keep" disabled={!destPc} onClick={levarTodos}>Levar todos os sem Port Call</button>}</div>
+        {candid.length === 0 ? <div className="g-muted" style={{ fontSize: 12 }}>Nenhum item. Na etapa 2, defina a decisão dos itens (ou marque outras decisões acima).</div> : (
           <div className="g-table-wrap"><table className="g-table"><tbody>
             {candid.map((r) => {
               const ac = acumDe(r); const falta = Math.max(0, 100 - ac); const ja = r.execs.some((e) => e.pc === destPc);
