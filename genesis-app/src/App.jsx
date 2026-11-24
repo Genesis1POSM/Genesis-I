@@ -2251,7 +2251,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   React.useEffect(() => {
     const novos = []; const vinc = {};
     const coleta = (items, src) => items.forEach((it) => execsDe(it).forEach((e) => {
-      if (!(e.conf && e.ini && e.fim && !e.serviceId)) return;
+      if (!(e.pc && e.ini && e.fim && !e.serviceId)) return;
       const sid = uid("PC-2026-08"); vinc[`${src}:${it.id}:${e.id}`] = sid;
       const M = src === "M";
       novos.push({
@@ -2275,7 +2275,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   const funilSync = useRef({});
   React.useEffect(() => {
     const pares = [];
-    const add = (items) => items.forEach((it) => execsDe(it).forEach((e) => { if (e.conf && e.serviceId) pares.push({ it, e }); }));
+    const add = (items) => items.forEach((it) => execsDe(it).forEach((e) => { if (e.serviceId) pares.push({ it, e }); }));
     add(planningItems); add(docagemItems);
     const wpById = new Map(workPackages.map((w) => [w.id, w]));
     const push = new Map(), pull = new Map();
@@ -5146,8 +5146,66 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const enter = (e) => { if (e.key === "Enter") adicionar(); };
   const porOrigem = FUNIL_ORIGENS.map((o) => ({ o, n: abertos.filter((r) => r.origem === o).length })).filter((x) => x.n);
 
+  const MAPA_COLS = ["Manutenção", "Origem", "Área / Localização", "Empresa", "Plano de ação", "Impacto", "Status", "Decisão", "Duração (h)", "RC", "Observação", "Precisa de material", "Material necessário"];
+  const baixarModeloMapa = () => {
+    const wb = XLSX.utils.book_new();
+    const ex = { "Manutenção": "Troca do selo da bomba 2", "Origem": "Bordo", "Área / Localização": "Praça de máquinas", "Empresa": "Empresa X", "Plano de ação": "Substituir selo mecânico", "Impacto": "Médio", "Status": "A Executar", "Decisão": "Porto", "Duração (h)": 8, "RC": "", "Observação": "", "Precisa de material": "Sim", "Material necessário": "Selo mecânico" };
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([ex], { header: MAPA_COLS }), "Mapeamento");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Coluna", "Valores aceitos"],
+      ["Manutenção", "Obrigatório. Itens com nome já existente no mapeamento são ignorados (sem duplicar)."],
+      ["Origem", FUNIL_ORIGENS.join(" / ") + " (vazio = Bordo). DNV vai para a lista de docagem."],
+      ["Área / Localização", "Texto livre"], ["Empresa", "Texto livre"], ["Plano de ação", "Texto livre"],
+      ["Impacto", IMPACT_LEVELS.join(" / ")], ["Status", PLAN_STATUS.join(" / ")],
+      ["Decisão", FUNIL_DECISOES.join(" / ") + " (vazio = sem decisão)"],
+      ["Duração (h)", "Número de horas previstas"], ["RC", "Texto livre"], ["Observação", "Texto livre"],
+      ["Precisa de material", "Sim / Não"], ["Material necessário", "Texto livre"],
+    ]), "Instruções");
+    XLSX.writeFile(wb, "Modelo-Importacao-Mapeamento.xlsx");
+  };
+  const importarMapa = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const nn = (t) => String(t || "").toLowerCase().replace(/–/g, "-").split(/\s+/).filter(Boolean).join(" ");
+        const g = (row, c) => String(row[c] ?? "").trim();
+        const vistos = new Set([...planningItems, ...docagemItems].map((x) => nn(x.nome)));
+        const achar = (lista, v, pad) => lista.find((o) => nn(o) === nn(v)) || pad;
+        const novosM = [], novosD = []; let dup = 0, vazio = 0;
+        json.forEach((row) => {
+          const nome = g(row, "Manutenção"); if (!nome) { vazio++; return; }
+          if (vistos.has(nn(nome))) { dup++; return; }
+          vistos.add(nn(nome));
+          const origem = achar(FUNIL_ORIGENS, g(row, "Origem"), "Bordo");
+          const status = achar(PLAN_STATUS, g(row, "Status"), "A Executar");
+          const decisao = achar(FUNIL_DECISOES, g(row, "Decisão"), "");
+          const dur = Number(String(g(row, "Duração (h)")).replace(",", ".")); const mat = nn(g(row, "Precisa de material")) === "sim";
+          const base = { nome, empresa: g(row, "Empresa"), planoAcao: g(row, "Plano de ação"), status, decisao, ...(dur > 0 ? { duracaoH: dur } : {}) };
+          if (origem === "DNV") novosD.push({ id: uid("DOC"), ...base, localizacao: g(row, "Área / Localização"), tipoPeriodo: "", necessitaMaterial: mat, poRelacionada: "", previsaoExecucao: "", dataConclusao: "", linkedServiceId: null });
+          else novosM.push({ id: uid("PLAN"), ...base, origem, departamento: g(row, "Área / Localização"), descricaoProblema: "", rc: g(row, "RC"), obs: g(row, "Observação"), precisaMaterial: mat, materialNecessario: g(row, "Material necessário"), poMaterial: "", impacto: achar(IMPACT_LEVELS, g(row, "Impacto"), "Baixo"), dataExecucao: "", linkedServiceId: null, jobTipo: "", jobNo: "", justificativa: "" });
+        });
+        if (!novosM.length && !novosD.length) { alert(`Nada para importar. Duplicados ignorados: ${dup}. Linhas sem nome: ${vazio}.`); return; }
+        if (!window.confirm(`Importar ${novosM.length + novosD.length} item(ns)? Duplicados ignorados: ${dup}. Linhas sem nome: ${vazio}.`)) return;
+        if (novosM.length) setPlanningItems((r) => [...r, ...novosM]);
+        if (novosD.length) setDocagemItems((r) => [...r, ...novosD]);
+        setMsg(`${novosM.length + novosD.length} item(ns) importado(s).`); setTimeout(() => setMsg(""), 4000);
+      } catch (err) { alert("Não consegui ler a planilha. Use o modelo de importação."); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const etapa1 = (
     <>
+      <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12.5 }}>Importar em lote: baixe o modelo, preencha e importe. Itens com nome já existente são ignorados.</span>
+        <span style={{ display: "flex", gap: 8 }}>
+          <button className="g-btn" onClick={baixarModeloMapa}>Baixar modelo</button>
+          <label className="g-btn" style={{ cursor: "pointer" }}>Importar planilha<input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { importarMapa(e.target.files[0]); e.target.value = ""; }} /></label>
+        </span>
+      </div>
       <div className="g-panel" style={{ borderLeft: "4px solid var(--teal)" }}>
         <div className="g-panel-head"><span className="g-panel-title">Lançamento rápido — digite e aperte Enter</span></div>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 2fr 1fr auto", gap: 8, alignItems: "end" }}>
@@ -5365,7 +5423,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
                       <div style={{ fontSize: 11, marginTop: 2, color: ac > 100 ? "var(--crit)" : undefined }}>{ac > 100 ? `soma ${ac}% (passa de 100%)` : `${ac}% feito · falta ${falta}%`}</div>
                     </td>
                     <td><BufInput style={inp} type="date" value={e.pc} onChange={(ev) => trocarData(r, e, ev.target.value)} /></td>
-                    <td style={{ whiteSpace: "normal" }}>{e.conf ? <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓ Em Serviços{e.serviceId ? "" : " (criando…)"}</span> : <button className="g-btn primary g-keep" disabled={!e.ini || !e.fim || invalido} onClick={() => patchExec(r, e.id, { conf: true })}>Confirmar</button>}</td>
+                    <td style={{ whiteSpace: "normal" }}>{(e.conf || e.serviceId) ? <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓ Em Serviços{e.serviceId ? "" : " (criando…)"}</span> : <button className="g-btn primary g-keep" disabled={!e.ini || !e.fim || invalido} onClick={() => patchExec(r, e.id, { conf: true })}>Confirmar</button>}</td>
                     <td><span className="g-btn ghost danger" title="Tirar deste Port Call" onClick={() => tirarExec(r, e)}><Trash2 size={13} /></span></td>
                   </tr>
                 );
@@ -5380,7 +5438,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const etapa3 = (
     <>
       <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}><div>
-        Um mesmo serviço pode ir para <strong>vários Port Calls</strong>: escolha o Port Call (ou digite uma data), clique em <strong>Adicionar</strong> e informe o <strong>% executado</strong> em cada um — o sistema soma o acumulado e mostra quanto falta. Nada some ao trocar a data: o item só muda de Port Call. Ao <strong>Confirmar</strong>, a execução vira um Serviço (com o % em Progresso) e os dois ficam sincronizados.
+        Um mesmo serviço pode ir para <strong>vários Port Calls</strong>: escolha o Port Call (ou digite uma data), clique em <strong>Adicionar</strong> e informe o <strong>% executado</strong> em cada um — o sistema soma o acumulado e mostra quanto falta. Nada some ao trocar a data: o item só muda de Port Call. Assim que a execução entra num Port Call, ela é <strong>criada automaticamente em Serviços</strong> (com o % em Progresso) e os dois ficam sincronizados.
       </div></div>
       <div className="g-panel" style={{ display: "flex", gap: 14, alignItems: "end", flexWrap: "wrap" }}>
         <div className="g-field" style={{ minWidth: 280 }}><label>Port Call de destino</label>
