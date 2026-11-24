@@ -2252,7 +2252,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     const novos = []; const vinc = {};
     const coleta = (items, src) => items.forEach((it) => execsDe(it).forEach((e) => {
       if (!e.pc || (e.serviceId && workPackages.some((w) => w.id === e.serviceId))) return;
-      const ini0 = e.ini || funilIni(e.pc); const fim0 = e.fim || funilSomaH(ini0, durEfH(normDecs(it.decisao), it.duracaoH));
+      const ini0 = e.ini || funilIni(e.pc, portCallMeta); const fim0 = e.fim || funilSomaH(ini0, durEfH(normDecs(it.decisao), it.duracaoH));
       const sid = uid("PC-2026-08"); vinc[`${src}:${it.id}:${e.id}`] = sid;
       const M = src === "M";
       novos.push({
@@ -2266,7 +2266,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     }));
     coleta(planningItems, "M"); coleta(docagemItems, "D");
     if (!novos.length) return;
-    const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`], ini: e.ini || funilIni(e.pc), fim: e.fim || funilSomaH(e.ini || funilIni(e.pc), durEfH(normDecs(it.decisao), it.duracaoH)) } : e)) } : it));
+    const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`], ini: e.ini || funilIni(e.pc, portCallMeta), fim: e.fim || funilSomaH(e.ini || funilIni(e.pc, portCallMeta), durEfH(normDecs(it.decisao), it.duracaoH)) } : e)) } : it));
     setWorkPackages((prev) => [...prev, ...novos]);
     setPlanningItems(ligar("M")); setDocagemItems(ligar("D"));
   }, [planningItems, docagemItems, workPackages]);
@@ -2390,17 +2390,19 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
   /* metadados extras de cada Port Call (duração em dias e local) — permite cadastrar um Port Call
      antes mesmo de ter atividades vinculadas a ele; portCallMeta/setPortCallMeta vêm de props (backend) */
-  const addPortCallRecord = (dateKey, duration, local) => {
-    setPortCallMeta((m) => ({ ...m, [dateKey]: { duration: Number(duration) || 24, local: local || "" } }));
+  const addPortCallRecord = (dateKey, duration, local, startTime) => {
+    setPortCallMeta((m) => ({ ...m, [dateKey]: { duration: Number(duration) || 24, local: local || "", ...(startTime ? { startTime } : {}) } }));
   };
 
   const portCallLabel = (dateKey) => {
     const meta = portCallMeta[dateKey];
-    const start = new Date(`${dateKey}T00:00:00`);
+    const start = new Date(`${dateKey}T${meta?.startTime || "00:00"}:00`);
     const hours = meta?.duration || 24;
     const end = new Date(start.getTime() + hours * 3600000);
     let label;
-    if (hours > 24) {
+    if (meta?.startTime) {
+      label = `Port Call ${pad2(start.getDate())}/${pad2(start.getMonth() + 1)} ${meta.startTime}${hours > 24 || end.getDate() !== start.getDate() ? ` — ${pad2(end.getDate())}/${pad2(end.getMonth() + 1)} ${pad2(end.getHours())}:${pad2(end.getMinutes())}` : ""}`;
+    } else if (hours > 24) {
       const lastDay = new Date(end.getTime() - 1);
       label = `Port Call ${pad2(start.getDate())}/${pad2(start.getMonth() + 1)} — ${pad2(lastDay.getDate())}/${pad2(lastDay.getMonth() + 1)}`;
     } else {
@@ -2441,7 +2443,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
       const meta = portCallMeta[dk];
       const start = new Date(`${dk}T00:00:00`);
       const hours = meta?.duration || 24;
-      const end = new Date(start.getTime() + hours * 3600000);
+      const end = new Date(new Date(`${dk}T${meta?.startTime || "00:00"}:00`).getTime() + hours * 3600000);
       spans.push({ startKey: dk, start, end, hours, local: meta?.local || "" });
       i++;
       while (i < sorted.length) {
@@ -2456,7 +2458,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     const meta = portCallMeta[dateKey];
     const hours = meta?.duration || 24;
     const start = new Date(`${dateKey}T00:00:00`);
-    const end = new Date(start.getTime() + hours * 3600000);
+    const end = new Date(new Date(`${dateKey}T${meta?.startTime || "00:00"}:00`).getTime() + hours * 3600000);
     const affected = workPackages.filter((w) => { const d = new Date(w.start); return d >= start && d < end; });
     if (affected.length > 0 && !window.confirm(`Remover o ${portCallLabel(dateKey)} também vai remover ${affected.length} atividade(s) vinculada(s). Continuar?`)) return;
     setWorkPackages((wps) => wps.filter((w) => !affected.includes(w)));
@@ -3567,26 +3569,12 @@ function GanttView({ workPackages, filterRange, portCallName,
   });
   const isoMin = filterRange.start.toISOString().slice(0, 10);
   const isoMax = filterRange.end.toISOString().slice(0, 10);
-  const [newPc, setNewPc] = useState({ date: isoMin, endDate: isoMin, duration: 24, local: "" });
+  const [newPc, setNewPc] = useState({ date: isoMin, startTime: "08:00", duration: 24, local: "" });
 
-  /* calculadora bidirecional: mudar a Data Fim recalcula a Duração (horas), e vice-versa */
-  const setNewPcStart = (date) => {
-    const end = new Date(`${newPc.endDate || date}T23:59:59`);
-    const start = new Date(`${date}T00:00:00`);
-    const hours = Math.max(1, Math.round((end - start) / 3600000));
-    setNewPc((p) => ({ ...p, date, duration: end >= start ? hours : 24 }));
-  };
-  const setNewPcEnd = (endDate) => {
-    const start = new Date(`${newPc.date}T00:00:00`);
-    const end = new Date(`${endDate}T23:59:59`);
-    const hours = Math.max(1, Math.round((end - start) / 3600000));
-    setNewPc((p) => ({ ...p, endDate, duration: hours }));
-  };
-  const setNewPcDuration = (hours) => {
-    const start = new Date(`${newPc.date}T00:00:00`);
-    const end = new Date(start.getTime() + Number(hours || 0) * 3600000);
-    setNewPc((p) => ({ ...p, duration: hours, endDate: end.toISOString().slice(0, 10) }));
-  };
+  /* início (data + hora) e duração em horas; o fim é calculado sozinho */
+  const setNewPcStart = (date) => setNewPc((p) => ({ ...p, date }));
+  const setNewPcDuration = (hours) => setNewPc((p) => ({ ...p, duration: hours }));
+  const newPcFim = pcFimStr(newPc.date, { [newPc.date]: { startTime: newPc.startTime, duration: newPc.duration } });
 
   const handleStatusChange = (i, v) => {
     updWp(i, "status", v);
@@ -3701,18 +3689,22 @@ function GanttView({ workPackages, filterRange, portCallName,
           <input type="date" value={newPc.date} onChange={(e) => setNewPcStart(e.target.value)} />
         </div>
         <div className="g-field">
-          <label>Fim</label>
-          <input type="date" value={newPc.endDate} onChange={(e) => setNewPcEnd(e.target.value)} />
+          <label>Hora de início</label>
+          <input type="time" value={newPc.startTime} onChange={(e) => setNewPc((p) => ({ ...p, startTime: e.target.value }))} />
         </div>
         <div className="g-field">
-          <label>ou Duração (horas)</label>
+          <label>Duração (horas)</label>
           <input type="number" min="1" value={newPc.duration} onChange={(e) => setNewPcDuration(e.target.value)} style={{ width: 90 }} />
+        </div>
+        <div className="g-field">
+          <label>Fim (automático)</label>
+          <input type="text" readOnly value={newPcFim} style={{ width: 140, background: "var(--bg2, #f3f4f6)" }} />
         </div>
         <div className="g-field">
           <label>Local</label>
           <input type="text" value={newPc.local} onChange={(e) => setNewPc((p) => ({ ...p, local: e.target.value }))} style={{ minWidth: 140 }} placeholder="ex: Base Açu" />
         </div>
-        <button className="g-btn primary" onClick={() => addPortCallRecord(newPc.date, newPc.duration, newPc.local)}>
+        <button className="g-btn primary" onClick={() => addPortCallRecord(newPc.date, newPc.duration, newPc.local, newPc.startTime)}>
           <Plus size={14} />Adicionar Port Call
         </button>
       </div>
@@ -5082,7 +5074,8 @@ const temDec = (r, sel) => (r.decs.length ? r.decs.some((d) => sel.includes(d)) 
 const normDec = (v) => (Object.prototype.hasOwnProperty.call(FUNIL_DEC_LEGADO, v) ? FUNIL_DEC_LEGADO[v] : (v || ""));
 const FUNIL_DEC_COR = { "Porto": "var(--ok)", "Em Operação": "var(--teal)", "Parada Técnica": "var(--warn)", "Docagem": "#8B5CF6", "Aguardando Material": "var(--crit)" };
 const funilAberto = (r) => r.status !== "Concluído" && r.status !== "Cancelado";
-const funilIni = (pc) => `${pc}T08:00`;
+const funilIni = (pc, meta) => `${pc}T${(meta && meta[pc] && meta[pc].startTime) || "08:00"}`;
+const pcFimStr = (pc, meta) => { const m = (meta && meta[pc]) || {}; const d = new Date(new Date(`${pc}T${m.startTime || "00:00"}:00`).getTime() + (Number(m.duration) || 24) * 3600000); const q = (n) => String(n).padStart(2, "0"); return `${q(d.getDate())}/${q(d.getMonth() + 1)}/${d.getFullYear()} ${q(d.getHours())}:${q(d.getMinutes())}`; };
 const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.getMinutes() + Math.round((Number(h) || 9) * 60)); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
 function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setPortCallMeta, setReportFn, setExportXlsxFn }) {
@@ -5317,7 +5310,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const flat = flatTodos.filter((x) => temDec(x.r, decSel));
   const ocultasDec = flatTodos.length - flat.length;
   const mesesDisp = [...new Set(flat.map((x) => x.e.pc.slice(0, 7)))].sort();
-  const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || new Date(`${d}T00:00:00`).getTime() + (portCallMeta?.[d]?.duration || 24) * 3600000 >= Date.now()) && (visMes === "Todos" || d.slice(0, 7) === visMes));
+  const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || new Date(`${d}T${portCallMeta?.[d]?.startTime || "00:00"}:00`).getTime() + (portCallMeta?.[d]?.duration || 24) * 3600000 >= Date.now()) && (visMes === "Todos" || d.slice(0, 7) === visMes));
   const toggleDec = (d) => setDecSel((a) => (a.includes(d) ? a.filter((x) => x !== d) : [...a, d]));
   const candid = abertos.filter((r) => temDec(r, decSel));
   const acumDe = (r) => r.execs.reduce((t, e) => t + (Number(e.pct) || 0), 0);
@@ -5327,14 +5320,14 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
     const doDia = flat.filter((x) => x.e.pc === pcDia);
     const ordem = Math.max(0, ...doDia.map((x) => Number(x.e.ordem) || 0)) + 1;
     const fimMax = doDia.map((x) => x.e.fim).filter(Boolean).sort().pop();
-    const ini = fimMax || funilIni(pcDia);
+    const ini = fimMax || funilIni(pcDia, portCallMeta);
     setExecs(r, (list) => [...list, { id: uid("EX"), pc: pcDia, ini, fim: funilSomaH(ini, durEfH(r.decs, r.duracaoH)), ordem, pct: 0, conf: false, serviceId: null }]);
   };
   const levarTodos = () => {
     if (!destPc) return;
     const doDia = flat.filter((x) => x.e.pc === destPc);
     let o = Math.max(0, ...doDia.map((x) => Number(x.e.ordem) || 0)) + 1;
-    let cur = doDia.map((x) => x.e.fim).filter(Boolean).sort().pop() || funilIni(destPc);
+    let cur = doDia.map((x) => x.e.fim).filter(Boolean).sort().pop() || funilIni(destPc, portCallMeta);
     candid.filter((r) => r.execs.length === 0).forEach((r) => {
       const ini = cur; const fim = funilSomaH(ini, durEfH(r.decs, r.duracaoH));
       setExecs(r, (list) => [...list, { id: uid("EX"), pc: destPc, ini, fim, ordem: o++, pct: 0, conf: false, serviceId: null }]);
@@ -5363,7 +5356,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const blocoPc = (d) => {
     const itens = flat.filter((x) => x.e.pc === d).sort((a, b) => ((Number(a.e.ordem) || 0) - (Number(b.e.ordem) || 0)) || String(a.e.ini).localeCompare(String(b.e.ini)));
     const dur = portCallMeta?.[d]?.duration || 24;
-    const janIni = new Date(`${d}T00:00:00`).getTime();
+    const janIni = new Date(`${d}T${portCallMeta?.[d]?.startTime || "00:00"}:00`).getTime();
     const tempos = itens.flatMap((x) => [x.e.ini, x.e.fim]).filter(Boolean).map((v) => new Date(v).getTime());
     const tIni = Math.min(janIni, ...tempos);
     const tFim = Math.max(janIni + dur * 3600000, ...tempos);
@@ -5453,8 +5446,11 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
         <div className="g-field"><label>ou digite a data</label><BufInput type="date" value={destData} onChange={(e) => setDestData(e.target.value)} /></div>
         <div className="g-field" style={{ minWidth: 300 }}><label>Cronograma de (marque uma ou mais decisões)</label><div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>{[...FUNIL_DECISOES, ""].map((d) => <label key={d || "sem"} style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: 600, color: d ? FUNIL_DEC_COR[d] : "var(--text-dim)" }}><input type="checkbox" checked={decSel.includes(d)} onChange={() => toggleDec(d)} />{d || "Sem decisão"}</label>)}</div></div>
         <div className="g-field"><label>Mês</label><select value={visMes} onChange={(e) => setVisMes(e.target.value)}><option value="Todos">Todos</option>{mesesDisp.map((m) => <option key={m} value={m}>{mesLabelPt(m)}</option>)}</select></div>
+        {destPc && <div className="g-field" style={{ width: 120 }}><label>Hora de início</label>
+          <input type="time" value={portCallMeta?.[destPc]?.startTime || "08:00"} onChange={(e) => { const t = e.target.value || "08:00"; setPortCallMeta && setPortCallMeta((m) => ({ ...m, [destPc]: { duration: 24, local: "", ...(m?.[destPc] || {}), startTime: t } })); }} /></div>}
         {destPc && <div className="g-field" style={{ width: 150 }}><label>Duração do Port Call (h)</label>
           <input type="number" min="1" step="1" title="Quantas horas dura este Port Call (padrão 24)" value={portCallMeta?.[destPc]?.duration || 24} onChange={(e) => { const h = Math.max(1, Number(e.target.value) || 24); setPortCallMeta && setPortCallMeta((m) => ({ ...m, [destPc]: { ...(m?.[destPc] || {}), duration: h, local: m?.[destPc]?.local || "" } })); }} /></div>}
+        {destPc && <div className="g-field" style={{ minWidth: 150 }}><label>Fim (automático)</label><div style={{ padding: "8px 0", fontWeight: 600, fontSize: 13 }}>{pcFimStr(destPc, portCallMeta)}</div></div>}
         <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center", paddingBottom: 8 }}><input type="checkbox" checked={mostrarPassados} onChange={(e) => setMostrarPassados(e.target.checked)} />Mostrar Port Calls passados</label>
         <div className="g-muted" style={{ fontSize: 12, paddingBottom: 8 }}>Port Calls com serviços: <b>{[...new Set(flat.map((x) => x.e.pc))].length}</b> · Execuções: <b>{flat.length}</b>{ocultasDec > 0 && <> · <span title="Execuções de itens com outra decisão, ocultas pelo filtro acima">{ocultasDec} oculta(s) por decisão</span></>}</div>
       </div>
