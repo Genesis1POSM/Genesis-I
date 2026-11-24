@@ -5235,6 +5235,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const [destData, setDestData] = useState("");
   const [visMes, setVisMes] = useState("Todos");
   const [mostrarPassados, setMostrarPassados] = useState(false);
+  const [decSel, setDecSel] = useState(["Porto", ""]);
   const pcsTodos = useMemo(() => [...new Set([...allPortCallDates, ...rows.flatMap((r) => r.execs.map((e) => e.pc))].filter(Boolean))].sort(), [allPortCallDates, rows]);
   const destPc = destData || dest || pcsTodos.find((d) => d >= hoje) || pcsTodos[pcsTodos.length - 1] || "";
   const flatTodos = rows.flatMap((r) => r.execs.filter((e) => e.pc).map((e) => ({ r, e })));
@@ -5242,7 +5243,6 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const ocultasDec = flatTodos.length - flat.length;
   const mesesDisp = [...new Set(flat.map((x) => x.e.pc.slice(0, 7)))].sort();
   const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || new Date(`${d}T00:00:00`).getTime() + (portCallMeta?.[d]?.duration || 24) * 3600000 >= Date.now()) && (visMes === "Todos" || d.slice(0, 7) === visMes));
-  const [decSel, setDecSel] = useState(["Porto", ""]);
   const toggleDec = (d) => setDecSel((a) => (a.includes(d) ? a.filter((x) => x !== d) : [...a, d]));
   const candid = abertos.filter((r) => decSel.includes(r.decisao));
   const acumDe = (r) => r.execs.reduce((t, e) => t + (Number(e.pct) || 0), 0);
