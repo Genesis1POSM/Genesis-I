@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   LayoutGrid, Ship, Wrench, Package, Wallet, Calculator,
   Plus, Trash2, ChevronDown, ChevronUp, ChevronRight, AlertTriangle,
@@ -933,16 +933,27 @@ const ETextArea = ({ value, onChange, rows = 2 }) => {
     />
   );
 };
+// Campo de data que só confirma ao sair do campo (ou Enter): evita a linha mudar de lugar enquanto se digita o ano.
+function BufInput({ value, onChange, onBlur, onKeyDown, ...rest }) {
+  const [v, setV] = useState(value ?? "");
+  const [foco, setFoco] = useState(false);
+  useEffect(() => { if (!foco) setV(value ?? ""); }, [value, foco]);
+  const commit = (x) => { if ((x ?? "") !== (value ?? "")) onChange && onChange({ target: { value: x } }); };
+  return <input {...rest} value={v} onFocus={() => setFoco(true)}
+    onChange={(e) => setV(e.target.value)}
+    onBlur={(e) => { setFoco(false); commit(e.target.value); onBlur && onBlur(e); }}
+    onKeyDown={(e) => { if (e.key === "Enter") { commit(e.currentTarget.value); } onKeyDown && onKeyDown(e); }} />;
+}
 const ENum = ({ value, onChange }) => (
   <input type="number" className="g-edit num" value={value}
     onChange={(e) => onChange(Number(e.target.value))} />
 );
 const EDate = ({ value, onChange }) => (
-  <input type="date" className="g-edit mono" value={value || ""}
+  <BufInput type="date" className="g-edit mono" value={value || ""}
     onChange={(e) => onChange(e.target.value)} />
 );
 const EDateTime = ({ value, onChange }) => (
-  <input type="datetime-local" className="g-edit mono" value={value || ""}
+  <BufInput type="datetime-local" className="g-edit mono" value={value || ""}
     onChange={(e) => onChange(e.target.value)} />
 );
 const ESelect = ({ value, onChange, options, style }) => (
@@ -3822,11 +3833,11 @@ function GanttView({ workPackages, filterRange, portCallName,
                                       onChange={(e) => setTaskDuration(i, w, e.target.value)} />
                                   </div>
                                   <div className="g-gantt-col-date">
-                                    <input type="datetime-local" className="g-gantt-mini-dt" style={{ width: "100%" }} value={w.start || ""}
+                                    <BufInput type="datetime-local" className="g-gantt-mini-dt" style={{ width: "100%" }} value={w.start || ""}
                                       onChange={(e) => updWp(i, "start", e.target.value)} />
                                   </div>
                                   <div className="g-gantt-col-date">
-                                    <input type="datetime-local" className="g-gantt-mini-dt" style={{ width: "100%" }} value={w.end || ""}
+                                    <BufInput type="datetime-local" className="g-gantt-mini-dt" style={{ width: "100%" }} value={w.end || ""}
                                       onChange={(e) => updWp(i, "end", e.target.value)} />
                                   </div>
                                   <div className="g-gantt-col-status">
@@ -4090,7 +4101,7 @@ function PortcallRequestView({ portcallReqs, setPortcallReqs, planningItems, tmD
 const RR_VAZIO = { item: "", sap: "", qty: "", desc: "", sn: "", nfGnsi: "", nfAcu: "", fornecedor: "", po: "", pad: "", bklOut: "", dataEnvio: "", lomRec: "", dataRecebido: "", status: "ABERTO", obs: "" };
 const isIsoD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
 const DateOuTexto = ({ value, onChange }) => (isIsoD(value) || !value
-  ? <input type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ padding: "3px 4px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11.5, background: "var(--panel, #fff)", color: "var(--text)" }} />
+  ? <BufInput type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ padding: "3px 4px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11.5, background: "var(--panel, #fff)", color: "var(--text)" }} />
   : <input type="text" value={value} onChange={(e) => onChange(e.target.value)} title="Valor em texto (ex.: TBA). Apague para escolher uma data." style={{ padding: "3px 4px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11.5, width: 90, background: "var(--panel, #fff)", color: "var(--text)" }} />);
 
 function ReparoRetornoView({ reparoItens, setReparoItens, setReportFn, setExportXlsxFn }) {
@@ -5346,14 +5357,14 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
                     <td style={{ whiteSpace: "nowrap" }}><span className="g-btn ghost" title="Subir" onClick={() => moverExec(itens, i, -1)}>▲</span><span className="g-btn ghost" title="Descer" onClick={() => moverExec(itens, i, 1)}>▼</span></td>
                     <td><b>{i + 1}. {r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.origem} · {r.area || "—"}{r.execs.length > 1 ? ` · ${r.execs.length} Port Calls` : ""}{r.decisao ? <> · <b style={{ color: FUNIL_DEC_COR[r.decisao] }}>{r.decisao}</b></> : ""}</div></td>
                     <td><input style={inp} value={r.empresa} onChange={(ev) => set(r, { empresa: ev.target.value })} /></td>
-                    <td><input style={inp} type="datetime-local" value={e.ini || ""} onChange={(ev) => patchExec(r, e.id, { ini: ev.target.value })} /></td>
-                    <td><input style={{ ...inp, borderColor: fora || invalido ? "var(--crit)" : undefined }} type="datetime-local" value={e.fim || ""} onChange={(ev) => patchExec(r, e.id, { fim: ev.target.value })} />{fora && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>passa da janela do Port Call</div>}{invalido && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>fim antes do início</div>}</td>
+                    <td><BufInput style={inp} type="datetime-local" value={e.ini || ""} onChange={(ev) => patchExec(r, e.id, { ini: ev.target.value })} /></td>
+                    <td><BufInput style={{ ...inp, borderColor: fora || invalido ? "var(--crit)" : undefined }} type="datetime-local" value={e.fim || ""} onChange={(ev) => patchExec(r, e.id, { fim: ev.target.value })} />{fora && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>passa da janela do Port Call</div>}{invalido && <div style={{ color: "var(--crit)", fontSize: 10.5 }}>fim antes do início</div>}</td>
                     <td><input style={{ ...inp, textAlign: "center", fontWeight: 700 }} type="number" min="0" max="100" step="5" value={e.pct === 0 || e.pct ? e.pct : ""} placeholder="0" onChange={(ev) => patchExec(r, e.id, { pct: ev.target.value === "" ? 0 : Math.max(0, Math.min(100, Number(ev.target.value))) })} /></td>
                     <td style={{ whiteSpace: "normal" }}>
                       <div style={{ height: 8, background: "rgba(0,0,0,.08)", borderRadius: 99, overflow: "hidden" }}><div style={{ width: `${acBar}%`, height: "100%", background: ac > 100 ? "var(--crit)" : "linear-gradient(90deg,#3B82F6,#22C55E)" }} /></div>
                       <div style={{ fontSize: 11, marginTop: 2, color: ac > 100 ? "var(--crit)" : undefined }}>{ac > 100 ? `soma ${ac}% (passa de 100%)` : `${ac}% feito · falta ${falta}%`}</div>
                     </td>
-                    <td><input style={inp} type="date" value={e.pc} onChange={(ev) => trocarData(r, e, ev.target.value)} /></td>
+                    <td><BufInput style={inp} type="date" value={e.pc} onChange={(ev) => trocarData(r, e, ev.target.value)} /></td>
                     <td style={{ whiteSpace: "normal" }}>{e.conf ? <span style={{ color: "var(--ok)", fontWeight: 700 }}>✓ Em Serviços{e.serviceId ? "" : " (criando…)"}</span> : <button className="g-btn primary g-keep" disabled={!e.ini || !e.fim || invalido} onClick={() => patchExec(r, e.id, { conf: true })}>Confirmar</button>}</td>
                     <td><span className="g-btn ghost danger" title="Tirar deste Port Call" onClick={() => tirarExec(r, e)}><Trash2 size={13} /></span></td>
                   </tr>
@@ -5375,7 +5386,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
         <div className="g-field" style={{ minWidth: 280 }}><label>Port Call de destino</label>
           <select value={destData ? "" : destPc} onChange={(e) => { setDest(e.target.value); setDestData(""); }}>{pcsTodos.length === 0 && <option value="">Nenhum Port Call — use a data ao lado</option>}{destData && <option value="">— data digitada —</option>}{pcsTodos.map((d) => <option key={d} value={d}>{portCallLabel(d)}</option>)}</select>
         </div>
-        <div className="g-field"><label>ou digite a data</label><input type="date" value={destData} onChange={(e) => setDestData(e.target.value)} /></div>
+        <div className="g-field"><label>ou digite a data</label><BufInput type="date" value={destData} onChange={(e) => setDestData(e.target.value)} /></div>
         <div className="g-field" style={{ minWidth: 300 }}><label>Cronograma de (marque uma ou mais decisões)</label><div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>{[...FUNIL_DECISOES, ""].map((d) => <label key={d || "sem"} style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: 600, color: d ? FUNIL_DEC_COR[d] : "var(--text-dim)" }}><input type="checkbox" checked={decSel.includes(d)} onChange={() => toggleDec(d)} />{d || "Sem decisão"}</label>)}</div></div>
         <div className="g-field"><label>Mês</label><select value={visMes} onChange={(e) => setVisMes(e.target.value)}><option value="Todos">Todos</option>{mesesDisp.map((m) => <option key={m} value={m}>{mesLabelPt(m)}</option>)}</select></div>
         <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center", paddingBottom: 8 }}><input type="checkbox" checked={mostrarPassados} onChange={(e) => setMostrarPassados(e.target.checked)} />Mostrar Port Calls passados</label>
@@ -5763,10 +5774,10 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                       </td>
                       <td style={{ minWidth: 140 }}>
                         {p.dataExecucao
-                          ? <input type="date" value={p.dataExecucao} onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
+                          ? <BufInput type="date" value={p.dataExecucao} onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
                               style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "5px 6px", fontSize: 11.5 }} />
                           : <div className="g-flex" style={{ gap: 6 }}><span style={{ color: "var(--text-faint)", fontSize: 11 }}>sem data</span>
-                              <input type="date" value="" onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
+                              <BufInput type="date" value="" onChange={(e) => updPlan(i, "dataExecucao", e.target.value)}
                                 style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "5px 6px", fontSize: 11.5 }} /></div>}
                       </td>
                       <td>
@@ -5961,7 +5972,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                         )}
                       </td>
                       <td style={{ minWidth: 140 }}>
-                        <input type="date" value={d.previsaoExecucao || ""} onChange={(e) => updDocagem(i, "previsaoExecucao", e.target.value)}
+                        <BufInput type="date" value={d.previsaoExecucao || ""} onChange={(e) => updDocagem(i, "previsaoExecucao", e.target.value)}
                           style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "5px 6px", fontSize: 11.5 }} />
                       </td>
                       <td style={{ minWidth: 150 }}>
@@ -5989,7 +6000,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
                             <div className="g-field"><label>Tipo</label><EText value={d.tipoPeriodo} onChange={(v) => updDocagem(i, "tipoPeriodo", v)} /></div>
                             <div className="g-field"><label>Empresa</label><EText value={d.empresa} onChange={(v) => updDocagem(i, "empresa", v)} /></div>
                             <div className="g-field"><label>Data de Conclusão</label>
-                              <input type="date" value={d.dataConclusao || ""} onChange={(e) => updDocagem(i, "dataConclusao", e.target.value)}
+                              <BufInput type="date" value={d.dataConclusao || ""} onChange={(e) => updDocagem(i, "dataConclusao", e.target.value)}
                                 style={{ background: "var(--panel-raised)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 8px", fontSize: 12 }} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Plano de Ação</label><ETextArea rows={1} value={d.planoAcao} onChange={(v) => updDocagem(i, "planoAcao", v)} /></div>
                             <div className="g-field" style={{ gridColumn: "1 / -1" }}><label>Resposta do bordo (Plano de Ação com Bordo, mesmo item)</label><ETextArea rows={1} value={(planosBordo || []).find((x) => x.key === `D:${d.id}`)?.resposta || ""} onChange={(v) => updPlanoBordoKey(setPlanosBordo, `D:${d.id}`, "resposta", v)} /></div>
