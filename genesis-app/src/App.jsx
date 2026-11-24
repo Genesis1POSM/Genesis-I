@@ -2251,13 +2251,14 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   React.useEffect(() => {
     const novos = []; const vinc = {};
     const coleta = (items, src) => items.forEach((it) => execsDe(it).forEach((e) => {
-      if (!(e.pc && e.ini && e.fim && !e.serviceId)) return;
+      if (!(e.pc && !e.serviceId)) return;
+      const ini0 = e.ini || funilIni(e.pc); const fim0 = e.fim || funilSomaH(ini0, it.duracaoH);
       const sid = uid("PC-2026-08"); vinc[`${src}:${it.id}:${e.id}`] = sid;
       const M = src === "M";
       novos.push({
         id: sid, name: it.nome, discipline: "Marine", group: (M ? it.departamento : it.localizacao) || "Sem categoria",
         ganttCategory: "Manutenção", empresa: it.empresa || "", md: "Não", rc: M ? (it.rc || "") : "", obs: M ? (it.obs || "") : "",
-        budget: 0, committed: 0, actual: 0, forecast: 0, start: e.ini, end: e.fim,
+        budget: 0, committed: 0, actual: 0, forecast: 0, start: ini0, end: fim0,
         status: Number(e.pct) > 0 ? "Em andamento" : "Planejamento", progress: Number(e.pct) || 0, createdAt: new Date().toISOString(),
         planoAcao: it.planoAcao || "", precisaMaterial: (M ? it.precisaMaterial : it.necessitaMaterial) || false,
         materialNecessario: M ? (it.materialNecessario || "") : "", impacto: M ? (it.impacto || "Baixo") : "Baixo",
@@ -2265,7 +2266,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     }));
     coleta(planningItems, "M"); coleta(docagemItems, "D");
     if (!novos.length) return;
-    const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`] } : e)) } : it));
+    const ligar = (src) => (prev) => prev.map((it) => (execsDe(it).some((e) => vinc[`${src}:${it.id}:${e.id}`]) ? { ...it, execucoes: execsDe(it).map((e) => (vinc[`${src}:${it.id}:${e.id}`] ? { ...e, serviceId: vinc[`${src}:${it.id}:${e.id}`], ini: e.ini || funilIni(e.pc), fim: e.fim || funilSomaH(e.ini || funilIni(e.pc), it.duracaoH) } : e)) } : it));
     setWorkPackages((prev) => [...prev, ...novos]);
     setPlanningItems(ligar("M")); setDocagemItems(ligar("D"));
   }, [planningItems, docagemItems]);
