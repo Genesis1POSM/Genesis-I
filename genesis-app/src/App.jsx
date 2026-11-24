@@ -3107,7 +3107,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "manutencao" && manSub === "docagem" && (
-          <PlanejamentoView soDocagem tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={[]} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <PlanejamentoView soDocagem tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={[]} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -3116,7 +3116,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "manutencao" && manSub === "planejamento" && (
-          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={[]} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
+          <PlanejamentoView tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} reparoItens={reparoItens} portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} workPackages={workPackages} updWp={updWp} materials={[]} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} addWpOnDate={addWpOnDate}
             planningItems={planningItems} updPlan={updPlan} remPlan={remPlan} addPlanningItem={addPlanningItem}
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
@@ -5085,7 +5085,7 @@ const funilAberto = (r) => r.status !== "Concluído" && r.status !== "Cancelado"
 const funilIni = (pc) => `${pc}T08:00`;
 const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.getMinutes() + Math.round((Number(h) || 9) * 60)); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
-function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setReportFn, setExportXlsxFn }) {
+function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setPortCallMeta, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
   const rows = useMemo(() => [
     ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decs: normDecs(p.decisao), decisao: normDecs(p.decisao)[0] || "", duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId, execs: execsDe(p) })),
@@ -5453,6 +5453,8 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
         <div className="g-field"><label>ou digite a data</label><BufInput type="date" value={destData} onChange={(e) => setDestData(e.target.value)} /></div>
         <div className="g-field" style={{ minWidth: 300 }}><label>Cronograma de (marque uma ou mais decisões)</label><div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>{[...FUNIL_DECISOES, ""].map((d) => <label key={d || "sem"} style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: 600, color: d ? FUNIL_DEC_COR[d] : "var(--text-dim)" }}><input type="checkbox" checked={decSel.includes(d)} onChange={() => toggleDec(d)} />{d || "Sem decisão"}</label>)}</div></div>
         <div className="g-field"><label>Mês</label><select value={visMes} onChange={(e) => setVisMes(e.target.value)}><option value="Todos">Todos</option>{mesesDisp.map((m) => <option key={m} value={m}>{mesLabelPt(m)}</option>)}</select></div>
+        {destPc && <div className="g-field" style={{ width: 150 }}><label>Duração do Port Call (h)</label>
+          <input type="number" min="1" step="1" title="Quantas horas dura este Port Call (padrão 24)" value={portCallMeta?.[destPc]?.duration || 24} onChange={(e) => { const h = Math.max(1, Number(e.target.value) || 24); setPortCallMeta && setPortCallMeta((m) => ({ ...m, [destPc]: { ...(m?.[destPc] || {}), duration: h, local: m?.[destPc]?.local || "" } })); }} /></div>}
         <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center", paddingBottom: 8 }}><input type="checkbox" checked={mostrarPassados} onChange={(e) => setMostrarPassados(e.target.checked)} />Mostrar Port Calls passados</label>
         <div className="g-muted" style={{ fontSize: 12, paddingBottom: 8 }}>Port Calls com serviços: <b>{[...new Set(flat.map((x) => x.e.pc))].length}</b> · Execuções: <b>{flat.length}</b>{ocultasDec > 0 && <> · <span title="Execuções de itens com outra decisão, ocultas pelo filtro acima">{ocultasDec} oculta(s) por decisão</span></>}</div>
       </div>
@@ -5497,7 +5499,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   );
 }
 
-function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
+function PlanejamentoView({ setPortCallMeta, workPackages, updWp, materials, setReportFn, setExportXlsxFn, allPortCallDates, portCallLabel, addWpOnDate,
   planningItems, updPlan, remPlan, addPlanningItem, newRowId, handleImportPlanejamento,
   docagemItems, updDocagem, remDocagem, addDocagemItem, handleImportDocagem, planosBordo, setPlanosBordo, planSubTab: planSubTabProp, setPlanSubTab, setPlanningItems, setDocagemItems, tmDue, tmHistory, tmFailures, reparoItens, portCallMeta, portcallReqs, setPortcallReqs, soDocagem }) {
   const planSubTab = soDocagem ? "docagem" : planSubTabProp;
@@ -5704,7 +5706,7 @@ function PlanejamentoView({ workPackages, updWp, materials, setReportFn, setExpo
 
       {planSubTab === "funil" ? (
         <FunilManutencaoView stage={funilStage} setStage={setFunilStage} planningItems={planningItems} setPlanningItems={setPlanningItems} docagemItems={docagemItems} setDocagemItems={setDocagemItems}
-          allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} portCallMeta={portCallMeta} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
+          allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "acao" ? (
         <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} updPlan={updPlan} remPlan={remPlan} updDocagem={updDocagem} remDocagem={remDocagem} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "escopo" ? (
