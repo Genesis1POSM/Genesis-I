@@ -5303,6 +5303,8 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const [destData, setDestData] = useState("");
   const [visMes, setVisMes] = useState("Todos");
   const [mostrarPassados, setMostrarPassados] = useState(false);
+  const [lAberta, setLAberta] = useState(true);
+  const [lTodos, setLTodos] = useState(false);
   const [decSel, setDecSel] = useState(["Porto", ""]);
   const pcsTodos = useMemo(() => [...new Set([...allPortCallDates, ...rows.flatMap((r) => r.execs.map((e) => e.pc))].filter(Boolean))].sort(), [allPortCallDates, rows]);
   const destPc = destData || dest || pcsTodos.find((d) => d >= hoje) || pcsTodos[pcsTodos.length - 1] || "";
@@ -5313,6 +5315,7 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
   const pcsComExec = [...new Set(flat.map((x) => x.e.pc))].sort().filter((d) => (mostrarPassados || new Date(`${d}T${portCallMeta?.[d]?.startTime || "00:00"}:00`).getTime() + (portCallMeta?.[d]?.duration || 24) * 3600000 >= Date.now()) && (visMes === "Todos" || d.slice(0, 7) === visMes));
   const toggleDec = (d) => setDecSel((a) => (a.includes(d) ? a.filter((x) => x !== d) : [...a, d]));
   const candid = abertos.filter((r) => temDec(r, decSel));
+  const candidVis = lTodos ? candid : candid.slice(0, 8);
   const acumDe = (r) => r.execs.reduce((t, e) => t + (Number(e.pct) || 0), 0);
 
   const addExec = (r, pcDia) => {
@@ -5456,10 +5459,10 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
       </div>
 
       <div className="g-panel">
-        <div className="g-panel-head"><span className="g-panel-title">Itens das decisões marcadas ({candid.length}) — adicione ao Port Call de destino{destPc ? `: ${portCallLabel(destPc)}` : ""}</span>{candid.some((r) => r.execs.length === 0) && <button className="g-btn g-keep" disabled={!destPc} onClick={levarTodos}>Levar todos os sem Port Call</button>}</div>
-        {candid.length === 0 ? <div className="g-muted" style={{ fontSize: 12 }}>Nenhum item. Na etapa 2, defina a decisão dos itens (ou marque outras decisões acima).</div> : (
-          <div className="g-table-wrap"><table className="g-table"><tbody>
-            {candid.map((r) => {
+        <div className="g-panel-head"><span className="g-panel-title">Itens das decisões marcadas ({candid.length}) — adicione ao Port Call de destino{destPc ? `: ${portCallLabel(destPc)}` : ""}</span><button className="g-btn" style={{ marginLeft: "auto", marginRight: 6, padding: "2px 10px", fontSize: 11 }} onClick={() => setLAberta((v) => !v)}>{lAberta ? "▲ Recolher lista" : "▼ Expandir lista"}</button>{candid.some((r) => r.execs.length === 0) && <button className="g-btn g-keep" disabled={!destPc} onClick={levarTodos}>Levar todos os sem Port Call</button>}</div>
+        {!lAberta ? <div className="g-muted" style={{ fontSize: 12 }}>Lista recolhida — {candid.length} item(ns) aguardando Port Call. Clique em “Expandir lista” para ver.</div> : candid.length === 0 ? <div className="g-muted" style={{ fontSize: 12 }}>Nenhum item. Na etapa 2, defina a decisão dos itens (ou marque outras decisões acima).</div> : (
+          <><div className="g-table-wrap"><table className="g-table"><tbody>
+            {candidVis.map((r) => {
               const ac = acumDe(r); const falta = Math.max(0, 100 - ac); const ja = r.execs.some((e) => e.pc === destPc);
               return (
                 <tr className="g-row" key={r.key}>
@@ -5474,6 +5477,8 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
               );
             })}
           </tbody></table></div>
+          {candid.length > 8 && <div style={{ textAlign: "center", marginTop: 8 }}><button className="g-btn" onClick={() => setLTodos((v) => !v)}>{lTodos ? "Mostrar menos (8 primeiros)" : `Mostrar todos (${candid.length})`}</button></div>}
+          </>
         )}
       </div>
 
