@@ -7516,7 +7516,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
         if (hi < 0) throw new Error("não achei a linha de cabeçalho (Data, Departamento…). Use o modelo baixado no portal.");
         const lin = mat.slice(hi + 1).map((row) => { const o = {}; mat[hi].forEach((h, j) => { if (String(h).trim()) o[String(h).trim()] = row[j] === undefined ? "" : row[j]; }); o.__n = 0; return o; }).map((o, k) => { o.__n = hi + 2 + k; return o; });
         const col = (o, ...nomes) => { for (const k of Object.keys(o)) if (nomes.some((n) => sa(k).startsWith(sa(n)))) return o[k]; return ""; };
-        const dataDe = (v) => { if (typeof v === "number" && v > 20000) return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000).toISOString().slice(0, 10); if (v instanceof Date) return isoDia(v); return isoDia(v); };
+        const dataDe = (v) => { if (typeof v === "number" && v > 20000) return new Date(Date.UTC(1899, 11, 30) + Math.floor(v + 1e-6) * 86400000).toISOString().slice(0, 10); if (v instanceof Date) return isoDia(v); return isoDia(v); };
         const chave = (x) => `${x.departamento}|${x.data}|${sa(x.descricao)}|${bordoNorm(x.jobTipo)}|${bordoNorm(x.jobNo)}`;
         const existentes = new Set(tmBordo.map(chave)); const novas = []; const erros = []; let dup = 0; const vistos = new Set();
         lin.forEach((o, i) => {
