@@ -5202,7 +5202,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
 const execsDe = (it) => (it && Array.isArray(it.execucoes) ? it.execucoes : []);
 const pctAcumDe = (it) => execsDe(it).reduce((t, e) => t + (Number(e.pct) || 0), 0);
 const mesLabelPt = (ym) => { const [y, m] = String(ym).split("-"); const n = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][Number(m) - 1] || ym; return `${n.charAt(0).toUpperCase()}${n.slice(1)} de ${y}`; };
-const FUNIL_ORIGENS = ["Bordo", "DNV", "TM Master", "Inspeção", "DUE", "Failure Report", "Outro"];
+const FUNIL_ORIGENS = ["Bordo", "TM Master", "Inspeção", "DUE", "Failure Report", "DNV", "Outro"];
 const FUNIL_DECISOES = ["Porto", "Em Operação", "Parada Técnica", "Docagem", "Aguardando Material"];
 const FUNIL_DEC_LEGADO = { "Faz no porto": "Porto", "Precisa de parada": "Parada Técnica", "Só docagem": "Docagem", "Aguardando material": "Aguardando Material", "Descartar": "" };
 const normDecs = (v) => [...new Set((Array.isArray(v) ? v : [v]).map((x) => normDec(x)).filter(Boolean))];
