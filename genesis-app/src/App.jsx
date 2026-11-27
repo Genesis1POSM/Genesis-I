@@ -1187,6 +1187,7 @@ const PERM_TABS = [
   { key: "dashboard", label: "Dashboard" },
   { key: "manutencao", label: "Manutenção" },
   { key: "tmmaster", label: "TM Master" },
+  { key: "certificacoes", label: "Certificações" },
   { key: "materials", label: "Materiais" },
   { key: "payments", label: "Pagamentos" },
   { key: "costs", label: "Custos" },
@@ -1583,6 +1584,7 @@ export default function Root() {
   const [tmBordo, setTmBordo] = useState(INITIAL_TM_BORDO);
   const [portcallReqs, setPortcallReqs] = useState([]);
   const [reparoItens, setReparoItens] = useState([]);
+  const [certificacoes, setCertificacoes] = useState([]);
   const [planosBordo, setPlanosBordo] = useState([]);
 
   /* carrega o estado salvo assim que o site abre — igual para qualquer usuário que entrar.
@@ -1624,6 +1626,7 @@ export default function Root() {
           if (Array.isArray(d.tmBordo)) setTmBordo(d.tmBordo);
           if (Array.isArray(d.portcallReqs)) setPortcallReqs(d.portcallReqs);
           if (Array.isArray(d.reparoItens)) setReparoItens(d.reparoItens);
+          if (Array.isArray(d.certificacoes)) setCertificacoes(d.certificacoes);
           if (Array.isArray(d.planosBordo)) setPlanosBordo(d.planosBordo);
           if (d.tmFailures) setTmFailures({ ...INITIAL_TM_FAILURES, ...d.tmFailures });
         }
@@ -1646,7 +1649,7 @@ export default function Root() {
   React.useEffect(() => {
     if (!loaded || !saveEnabled) return;
     const cargaMat = matReqs;
-    const cheio = () => (roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined });
+    const cheio = () => (roMode ? { matReqs, matDeleted, tmBordo, bordoDeleted } : { workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, certificacoes, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig: regObrig || undefined });
     /* primeira rodada após o carregamento: só memoriza o que já está no servidor (não reenvia tudo) */
     if (lastSentRef.current === null) { const f0 = cheio(); const b0 = {}; Object.keys(f0).forEach((k) => { b0[k] = JSON.stringify(f0[k] === undefined ? null : f0[k]); }); lastSentRef.current = b0; return; }
     const seq = ++seqSaveRef.current;
@@ -1689,7 +1692,7 @@ export default function Root() {
       }).catch((e) => { setSaveStatus("erro"); setAvisoSalvar(`Não foi possível salvar no servidor agora (${(e && e.message) || "sem conexão"}). Suas alterações ficam neste navegador e o portal tenta de novo sozinho.`); clearTimeout(retryRef.current); retryRef.current = setTimeout(() => setSaveRetry((n) => n + 1), 8000); });
     }, 700);
     return () => clearTimeout(t);
-  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig, saveRetry]);
+  }, [loaded, saveEnabled, roMode, currentUserRaw?.id, workPackages, materials, payments, serviceInvoices, portCallMeta, opCategories, exchangeRate, planningItems, docagemItems, tmDue, tmHistory, tmDueSnapshots, tmFailures, tmBordo, portcallReqs, reparoItens, certificacoes, planosBordo, matReqs, matDeleted, bordoDeleted, regObrig, saveRetry]);
 
   /* atualiza Materiais a cada 20 s com o que os outros departamentos salvaram */
   const salvarUsuariosAgora = React.useCallback(async () => {
@@ -1793,7 +1796,7 @@ export default function Root() {
       tmDueSnapshots={tmDueSnapshots} setTmDueSnapshots={roMode ? noop : setTmDueSnapshots}
       tmFailures={tmFailures} setTmFailures={roMode ? noop : setTmFailures}
       tmBordo={tmBordo} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={roMode ? noop : setRegObrig}
-      portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
+      portcallReqs={portcallReqs} setPortcallReqs={roMode ? noop : setPortcallReqs} reparoItens={reparoItens} setReparoItens={roMode ? noop : setReparoItens} certificacoes={certificacoes} setCertificacoes={roMode ? noop : setCertificacoes} planosBordo={planosBordo} setPlanosBordo={roMode ? noop : setPlanosBordo}
       loadError={loadError}
     />
       {false && avisoSalvar && (
@@ -1814,7 +1817,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   serviceInvoices, setServiceInvoices, portCallMeta, setPortCallMeta,
   opCategories, setOpCategories, exchangeRate, setExchangeRate,
   planningItems, setPlanningItems, docagemItems, setDocagemItems,
-  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, setBordoDeleted, regObrig, setRegObrig, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, planosBordo, setPlanosBordo, loadError }) {
+  tmDue, setTmDue, tmHistory, setTmHistory, tmDueSnapshots, setTmDueSnapshots, tmFailures, setTmFailures, tmBordo, setTmBordo, setBordoDeleted, regObrig, setRegObrig, portcallReqs, setPortcallReqs, reparoItens, setReparoItens, certificacoes, setCertificacoes, planosBordo, setPlanosBordo, loadError }) {
   const isAdmin = isAdminUser(currentUser);
   const allowedTabs = allowedTabsOf(currentUser);
   const [tabState, setTab] = useState(allowedTabs[0]);
@@ -1828,7 +1831,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
   };
   const [expandedWp, setExpandedWp] = useState(null);
   const [paySubTab, setPaySubTab] = useState("total"); // "total" | "status" | "dashboard"
-  const [manSub, setManSub] = useState("services"); // "services" | "planejamento" | "portcall" | "reparo"
+  const [manSub, setManSub] = useState("planejamento"); // "services" | "planejamento" | "portcall" | "reparo"
   const [planSubTab, setPlanSubTab] = useState("funil"); // "funil" | "mapeados" | "docagem" | ...
   const [tmSubTab, setTmSubTab] = useState("due"); // "due" | "history" | "metricas"
   const [alertaDias, setAlertaDias] = useState(20);
@@ -2945,6 +2948,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
     { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
     { key: "manutencao", label: "Manutenção", icon: Wrench },
     { key: "tmmaster", label: "TM Master", icon: Gauge },
+    { key: "certificacoes", label: "Certificações", icon: ClipboardList },
     { key: "materials", label: "Materiais", icon: Package },
     { key: "payments", label: "Pagamentos", icon: Wallet },
     { key: "costs", label: "Custos", icon: Calculator },
@@ -3049,7 +3053,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         </div>
         <div className="g-flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
-          {tab !== "tmmaster" && tab !== "materials" && !(tab === "manutencao" && manSub !== "services") && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
+          {tab !== "tmmaster" && tab !== "certificacoes" && tab !== "materials" && !(tab === "manutencao" && manSub !== "services") && <button className="g-btn g-edit-only" onClick={handleImportClick} title="Importar planilha (.xlsx) — reconhece abas Servicos, Materiais, Pagamentos, StatusPagamentos e Alocacoes"><Upload size={14} />Importar</button>}
           {tab !== "materials" && <button className="g-btn" onClick={() => exportXlsxFn && exportXlsxFn()} disabled={!exportXlsxFn} style={{ opacity: exportXlsxFn ? 1 : 0.5 }} title="Exportar em planilha (.xlsx) o conteúdo desta página, já filtrado"><Download size={14} />Exportar planilha</button>}
           {tab !== "materials" && <button className="g-btn" onClick={() => reportFn && reportFn()} disabled={!reportFn}
             title="Exportar relatório em PDF, com o conteúdo exato da página aberta"><FileText size={14} />Exportar relatório</button>}
@@ -3095,7 +3099,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
 
         {tab === "manutencao" && (
           <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content" }}>
-            {[["services", "Serviços"], ["planejamento", "Planejamento"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
+            {[["planejamento", "Planejamento"], ["services", "Serviços"], ["reparo", "Reparo e Retorno"], ["resumo", "Resumo por E-mail"]].map(([k, l]) => (
               <button key={k} className={manSub === k ? "active" : ""} onClick={() => { if (k !== manSub) { setReportFn(null); setExportXlsxFn(null); setManSub(k); } }}>{l}</button>
             ))}
           </div>
@@ -3107,7 +3111,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         )}
 
         {tab === "manutencao" && manSub === "resumo" && (
-          <ResumoEmailManutencao workPackages={workPackages} planningItems={planningItems} portcallReqs={portcallReqs} reparoItens={reparoItens} tmDue={tmDue} tmHistory={tmHistory}
+          <ResumoEmailManutencao docagemItems={docagemItems} tmFailures={tmFailures} workPackages={workPackages} planningItems={planningItems} portcallReqs={portcallReqs} reparoItens={reparoItens} tmDue={tmDue} tmHistory={tmHistory}
             allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
@@ -3131,6 +3135,10 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
             docagemItems={docagemItems} updDocagem={updDocagem} remDocagem={remDocagem} addDocagemItem={addDocagemItem}
             handleImportDocagem={handleImportDocagem} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} planSubTab={planSubTab} setPlanSubTab={setPlanSubTab} setPlanningItems={setPlanningItems} setDocagemItems={setDocagemItems}
             newRowId={newRowId} handleImportPlanejamento={handleImportPlanejamento} />
+        )}
+
+        {tab === "certificacoes" && (
+          <CertificacoesView certificacoes={certificacoes} setCertificacoes={setCertificacoes} readOnly={readOnly} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
         )}
 
         {tab === "tmmaster" && (
@@ -4098,6 +4106,130 @@ function PortcallRequestView({ portcallReqs, setPortcallReqs, planningItems, tmD
   );
 }
 
+/* ============================================================
+   MAPEAMENTO DAS CERTIFICAÇÕES
+   ============================================================ */
+const CERT_TIPOS = ["Classe", "Estatutário", "Equipamento", "Segurança / Salvatagem", "Pessoal / Tripulação", "Outro"];
+const CERT_VAZIO = { nome: "", tipo: "Classe", emissor: "", numero: "", emissao: "", validade: "", proxVistoria: "", responsavel: "", obs: "" };
+const certStatus = (c, hoje) => {
+  if (!isIsoD(c.validade)) return { k: "Sem validade", cor: "var(--text-dim)", d: null };
+  const d = Math.floor((new Date(c.validade + "T00:00:00") - new Date(hoje + "T00:00:00")) / 86400000);
+  if (d < 0) return { k: "Vencido", cor: "var(--crit)", d };
+  if (d <= 90) return { k: "Vencendo (≤ 90 d)", cor: "var(--warn)", d };
+  return { k: "Válido", cor: "var(--ok)", d };
+};
+function CertificacoesView({ certificacoes, setCertificacoes, readOnly, setReportFn, setExportXlsxFn }) {
+  const itens = certificacoes || [];
+  const hoje = todayISO();
+  const [f, setF] = useState({ busca: "", tipo: "Todos", st: "Todos" });
+  const [msg, setMsg] = useState("");
+  const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
+  const rows = useMemo(() => itens.map((c) => ({ ...c, _s: certStatus(c, hoje) })), [itens, hoje]);
+  const vis = useMemo(() => {
+    const b = f.busca.trim().toLowerCase();
+    return rows.filter((c) => (f.tipo === "Todos" || c.tipo === f.tipo) && (f.st === "Todos" || c._s.k === f.st) && (!b || `${c.nome} ${c.emissor} ${c.numero} ${c.responsavel} ${c.obs}`.toLowerCase().includes(b)))
+      .sort((a, b2) => (a._s.d ?? 99999) - (b2._s.d ?? 99999));
+  }, [rows, f]);
+  const n = (k) => rows.filter((c) => c._s.k === k).length;
+  const upd = (id, patch) => setCertificacoes((a) => (a || []).map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const add = () => setCertificacoes((a) => [{ id: uid("CERT"), ...CERT_VAZIO }, ...(a || [])]);
+  const rem = (c) => { if (window.confirm(`Excluir a certificação "${c.nome || "sem nome"}"?`)) setCertificacoes((a) => (a || []).filter((x) => x.id !== c.id)); };
+  const COLS = ["Certificação", "Tipo", "Emissor", "Número", "Emissão", "Validade", "Próxima vistoria", "Responsável", "Observação"];
+  const CHAVES = ["nome", "tipo", "emissor", "numero", "emissao", "validade", "proxVistoria", "responsavel", "obs"];
+  const baixarModelo = () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([COLS, ["Ex.: Certificado de Classe", "Classe", "DNV", "123456", "2025-01-10", "2030-01-10", "2027-01-10", "Comandante", ""]]), "Certificações"); XLSX.writeFile(wb, "Modelo-Importacao-Certificacoes.xlsx"); };
+  const dataIso = (v) => {
+    if (v instanceof Date && !isNaN(v)) return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+    const t = String(v === undefined || v === null ? "" : v).trim(); if (!t) return "";
+    if (isIsoD(t.slice(0, 10))) return t.slice(0, 10);
+    const m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/); if (m) return `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    return "";
+  };
+  const importar = (file) => {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array", cellDates: true });
+        const m = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: true });
+        const nrm = (c) => String(c).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        const hi = m.findIndex((r) => r.some((c) => nrm(c) === "certificacao" || nrm(c) === "nome"));
+        if (hi < 0) throw new Error("cab");
+        const cab = m[hi].map(nrm);
+        const ix = { nome: cab.findIndex((c) => c === "certificacao" || c === "nome"), tipo: cab.findIndex((c) => c === "tipo"), emissor: cab.findIndex((c) => c.includes("emissor")), numero: cab.findIndex((c) => c.includes("numero")), emissao: cab.findIndex((c) => c.includes("emiss") && !c.includes("emissor")), validade: cab.findIndex((c) => c.includes("validade") || c.includes("vencimento")), proxVistoria: cab.findIndex((c) => c.includes("vistoria")), responsavel: cab.findIndex((c) => c.includes("respons")), obs: cab.findIndex((c) => c.includes("observ")) };
+        const txt = (v) => String(v === undefined || v === null ? "" : v).trim();
+        const lidos = m.slice(hi + 1).map((r) => { const o = { ...CERT_VAZIO }; Object.keys(ix).forEach((k) => { if (ix[k] < 0) return; o[k] = ["emissao", "validade", "proxVistoria"].includes(k) ? dataIso(r[ix[k]]) : txt(r[ix[k]]); }); if (!CERT_TIPOS.includes(o.tipo)) o.tipo = CERT_TIPOS.find((t) => nrm(t).startsWith(nrm(o.tipo).slice(0, 4)) && o.tipo) || "Outro"; return o; }).filter((o) => o.nome);
+        let add2 = 0, atu = 0;
+        setCertificacoes((prev) => { const arr = [...(prev || [])]; lidos.forEach((o) => { const j = arr.findIndex((x) => bordoNorm(x.nome) === bordoNorm(o.nome) && bordoNorm(x.numero) === bordoNorm(o.numero)); if (j >= 0) { arr[j] = { ...arr[j], ...o }; atu++; } else { arr.push({ id: uid("CERT"), ...o }); add2++; } }); return arr; });
+        setMsg(`Importado: ${add2} nova(s), ${atu} atualizada(s).`);
+      } catch (e) { setMsg("Não consegui ler a planilha. Use o modelo (coluna “Certificação” obrigatória)."); }
+      setTimeout(() => setMsg(""), 7000);
+    };
+    rd.readAsArrayBuffer(file);
+  };
+  React.useEffect(() => {
+    if (!setExportXlsxFn || !setReportFn) return;
+    const lin = () => vis.map((c) => ({ ...Object.fromEntries(COLS.map((h, i) => [h, c[CHAVES[i]]])), Situação: c._s.k, "Dias p/ vencer": c._s.d ?? "" }));
+    setExportXlsxFn(() => () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lin().length ? lin() : [{ "—": "Sem itens" }]), "Certificações"); XLSX.writeFile(wb, `genesis-certificacoes-${todayISO()}.xlsx`); });
+    setReportFn(() => () => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = pdfHeader(doc, "Mapeamento das Certificações", `Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+      y = pdfKpis(doc, y, [{ label: "Total", value: rows.length }, { label: "Vencidas", value: n("Vencido") }, { label: "Vencendo (≤ 90 d)", value: n("Vencendo (≤ 90 d)") }, { label: "Válidas", value: n("Válido") }]);
+      pdfTable(doc, y, ["Certificação", "Tipo", "Emissor", "Número", "Validade", "Próx. vistoria", "Responsável", "Situação"], vis.map((c) => [c.nome, c.tipo, c.emissor || "—", c.numero || "—", c.validade ? fmtDataCompleta(c.validade) : "—", c.proxVistoria ? fmtDataCompleta(c.proxVistoria) : "—", c.responsavel || "—", c._s.d === null ? c._s.k : `${c._s.k} (${c._s.d} d)`]));
+      pdfSave(doc, "certificacoes");
+    });
+  }, [vis, rows]);
+  return (
+    <>
+      <div className="g-kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+        {bigKpi("Certificações", rows.length, "var(--teal)", ClipboardList)}
+        {bigKpi("Vencidas", n("Vencido"), n("Vencido") ? "var(--crit)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Vencendo (≤ 90 d)", n("Vencendo (≤ 90 d)"), n("Vencendo (≤ 90 d)") ? "var(--warn)" : "var(--ok)", AlertTriangle)}
+        {bigKpi("Válidas", n("Válido"), "var(--ok)", ClipboardList)}
+      </div>
+      {!readOnly && <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12.5 }}>Cadastre manualmente ou importe em lote: baixe o modelo, preencha e importe (mesmo nome + número atualiza). A situação (vencido / vencendo) é calculada pela data de validade.</span>
+        <span style={{ display: "flex", gap: 8 }}>
+          <button className="g-btn" onClick={baixarModelo}>Baixar modelo</button>
+          <label className="g-btn" style={{ cursor: "pointer" }}>Importar planilha<input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { importar(e.target.files[0]); e.target.value = ""; }} /></label>
+          <button className="g-btn primary g-keep" onClick={add}><Plus size={14} />Nova certificação</button>
+        </span>
+      </div>}
+      {msg && <div className="g-alert" style={{ marginBottom: 12 }}>{msg}</div>}
+      <div className="g-filterbar" style={{ padding: "10px 16px", marginBottom: 12, borderRadius: 6 }}>
+        <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="nome, emissor, número…" /></div>
+        <div className="g-field"><label>Tipo</label><select value={f.tipo} onChange={(e) => setF((p) => ({ ...p, tipo: e.target.value }))}>{["Todos", ...CERT_TIPOS].map((o) => <option key={o}>{o}</option>)}</select></div>
+        <div className="g-field"><label>Situação</label><select value={f.st} onChange={(e) => setF((p) => ({ ...p, st: e.target.value }))}>{["Todos", "Vencido", "Vencendo (≤ 90 d)", "Válido", "Sem validade"].map((o) => <option key={o}>{o}</option>)}</select></div>
+      </div>
+      <div className="g-panel">
+        <div className="g-panel-head"><span className="g-panel-title">Certificações ({vis.length})</span></div>
+        <div className="g-table-wrap" style={{ maxHeight: 640, overflow: "auto" }}>
+          <table className="g-table tbl-modern g-editavel">
+            <thead><tr><th style={{ minWidth: 200 }}>Certificação</th><th style={{ minWidth: 130 }}>Tipo</th><th style={{ minWidth: 110 }}>Emissor</th><th style={{ minWidth: 100 }}>Número</th><th style={{ minWidth: 130 }}>Emissão</th><th style={{ minWidth: 130 }}>Validade</th><th style={{ minWidth: 130 }}>Próx. vistoria</th><th style={{ minWidth: 110 }}>Responsável</th><th style={{ minWidth: 150 }}>Situação</th><th style={{ minWidth: 180 }}>Observação</th><th></th></tr></thead>
+            <tbody>
+              {vis.length === 0 && <tr><td colSpan={11} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nenhuma certificação{itens.length ? " com esse filtro" : " cadastrada — use “Nova certificação” ou importe a planilha"}.</td></tr>}
+              {vis.map((c) => (
+                <tr className="g-row tbl-row" key={c.id} style={{ "--c": c._s.cor }}>
+                  <td><BufInput style={inp} value={c.nome} onChange={(e) => upd(c.id, { nome: e.target.value })} disabled={readOnly} /></td>
+                  <td><select style={inp} value={c.tipo} onChange={(e) => upd(c.id, { tipo: e.target.value })} disabled={readOnly}>{CERT_TIPOS.map((o) => <option key={o}>{o}</option>)}</select></td>
+                  <td><BufInput style={inp} value={c.emissor} onChange={(e) => upd(c.id, { emissor: e.target.value })} disabled={readOnly} /></td>
+                  <td><BufInput style={inp} value={c.numero} onChange={(e) => upd(c.id, { numero: e.target.value })} disabled={readOnly} /></td>
+                  <td><BufInput style={inp} type="date" value={c.emissao} onChange={(e) => upd(c.id, { emissao: e.target.value })} disabled={readOnly} /></td>
+                  <td><BufInput style={inp} type="date" value={c.validade} onChange={(e) => upd(c.id, { validade: e.target.value })} disabled={readOnly} /></td>
+                  <td><BufInput style={inp} type="date" value={c.proxVistoria} onChange={(e) => upd(c.id, { proxVistoria: e.target.value })} disabled={readOnly} /></td>
+                  <td><BufInput style={inp} value={c.responsavel} onChange={(e) => upd(c.id, { responsavel: e.target.value })} disabled={readOnly} /></td>
+                  <td><b style={{ color: c._s.cor }}>{c._s.k}</b>{c._s.d !== null && <div className="g-muted" style={{ fontSize: 11 }}>{c._s.d < 0 ? `há ${Math.abs(c._s.d)} d` : `em ${c._s.d} d`}</div>}</td>
+                  <td><BufInput style={inp} value={c.obs} onChange={(e) => upd(c.id, { obs: e.target.value })} disabled={readOnly} /></td>
+                  <td>{!readOnly && <span className="g-btn ghost danger" title="Excluir" onClick={() => rem(c)}><Trash2 size={13} /></span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const RR_VAZIO = { item: "", sap: "", qty: "", desc: "", sn: "", nfGnsi: "", nfAcu: "", fornecedor: "", po: "", pad: "", bklOut: "", dataEnvio: "", lomRec: "", dataRecebido: "", status: "ABERTO", obs: "" };
 const isIsoD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
 const DateOuTexto = ({ value, onChange }) => (isIsoD(value) || !value
@@ -4465,66 +4597,62 @@ function AnaliseEscopoView({ tmDue, tmHistory, planningItems, tmFailures, reparo
 /* ============================================================
    MANUTENÇÃO › Resumo por e-mail (Mapeados + Solicitação Port Call + Serviços + Reparo e Retorno)
    ============================================================ */
-function ResumoEmailManutencao({ workPackages, planningItems, portcallReqs, reparoItens, tmDue, tmHistory, allPortCallDates, portCallLabel, setReportFn, setExportXlsxFn }) {
+function ResumoEmailManutencao({ docagemItems, tmFailures, workPackages, planningItems, portcallReqs, reparoItens, tmDue, tmHistory, allPortCallDates, portCallLabel, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
   const futuros = useMemo(() => allPortCallDates.filter((d) => d >= hoje), [allPortCallDates]);
   const [pc, setPc] = useState("");
   const pcAtual = pc || futuros[0] || "";
   const [para, setPara] = useState(() => { try { return localStorage.getItem("genesis_resumo_man_para") || ""; } catch (e) { return ""; } });
   const [msg, setMsg] = useState("");
-  const [inc, setInc] = useState({ geral: true, mapeados: true, manuais: true, servicos: true, reparo: true });
+  const [inc, setInc] = useState({ geral: true, tm: true, atencao: true });
   const rotulo = (dk) => { try { return dk ? portCallLabel(dk) : "—"; } catch (e) { return dk || "—"; } };
   const fmt = (iso) => (iso && isIsoD(iso) ? fmtDataCompleta(iso) : (iso || "—"));
-  const assunto = `Resumo de Manutenção — Port Call ${rotulo(pcAtual)}`;
+  const assunto = `Overview Manutenção e TM Master — Port Call ${rotulo(pcAtual)}`;
 
   const secoes = useMemo(() => {
-    const reqs = portcallReqs || [];
-    const reqDoPc = reqs.filter((r) => r.portCall === pcAtual);
-    const solicDe = (planId) => { const r = reqDoPc.find((x) => x.itens.some((i) => i.planId === planId)) || reqs.find((x) => x.itens.some((i) => i.planId === planId)); return r || null; };
-    const abertos = planningItems.filter((p) => p.status !== "Concluído" && p.status !== "Cancelado");
-    const achar = (t, n) => { if (!n) return null; const k = (x) => `${bordoNorm(x.jobType)}|${bordoNorm(x.jobNo)}`; const al = `${bordoNorm(t)}|${bordoNorm(n)}`; return tmDue.find((x) => k(x) === al) || tmHistory.find((x) => k(x) === al) || null; };
-    const semSolic = abertos.filter((p) => !solicDe(p.id));
     const S = [];
-    const itensPc = reqDoPc.flatMap((r) => r.itens);
-    S.push({ id: "geral", titulo: "Situação geral da Manutenção", explicacao: "Visão resumida do que está mapeado, do que já foi solicitado para o Port Call e do que está parado em reparo.",
-      cols: ["Indicador", "Quantidade"], rows: [
-        { key: "a", cells: ["Mapeados para execução (não concluídos)", abertos.length], auto: `${abertos.filter((p) => p.status === "Em Andamento").length} já em andamento` },
-        { key: "b", cells: ["Mapeados já na solicitação do Port Call", abertos.length - semSolic.length], auto: semSolic.length ? `${semSolic.length} ainda fora da solicitação` : "Todos incluídos" },
-        { key: "c", cells: ["Mapeados que precisam de material sem PO", abertos.filter((p) => p.precisaMaterial && !p.poMaterial).length], auto: "Sem PO não dá para executar — bordo/terra devem informar a PO" },
-        { key: "d", cells: ["Mapeados sem job vinculado no TM", abertos.filter((p) => !p.jobNo).length], auto: "Vincular a um job do plano ou abrir 1 job ONE (corretiva)" },
-        { key: "e", cells: [`Itens na solicitação do Port Call ${rotulo(pcAtual)}`, itensPc.length], auto: `${itensPc.filter((i) => i.linkado !== "sim" && i.tipo === "Corretiva" && !i.oneNo).length} corretiva(s) sem job ONE aberto` },
-        { key: "f", cells: ["Itens em Reparo e Retorno em aberto", (reparoItens || []).filter((r) => r.status !== "RECEBIDO").length], auto: `${(reparoItens || []).filter((r) => r.status !== "RECEBIDO" && isIsoD(r.dataEnvio) && frDias(r.dataEnvio, hoje) > 90).length} há mais de 90 dias` },
-      ] });
-    S.push({ id: "mapeados", titulo: `Mapeados para execução e solicitação ao Port Call (${abertos.length})`,
-      explicacao: "Tudo que está mapeado para execução, já cruzado com a solicitação do Port Call: a coluna “Na solicitação?” indica se o item foi pedido para o Port Call. Responder na coluna “Resposta”: confirmação de que é viável, PO do material e nº do job.",
-      cols: ["Item", "Dept.", "Impacto", "Status", "Data de execução", "Material / PO", "Job vinculado", "Na solicitação?"], blankCols: ["Resposta"],
-      rows: abertos.map((p) => {
-        const r = solicDe(p.id); const it = r ? r.itens.find((i) => i.planId === p.id) : null; const j = achar(p.jobTipo, p.jobNo);
-        const obs = []; if (p.precisaMaterial && !p.poMaterial) obs.push("INFORMAR A PO do material"); if (!p.jobNo) obs.push("sem job vinculado no TM"); else if (!j) obs.push("job não encontrado no TM");
-        if (r && r.portCall !== pcAtual) obs.push(`solicitado para outro Port Call (${rotulo(r.portCall)})`); if (!r) obs.push("não está na solicitação do Port Call");
-        if (it?.justificativa) obs.push(`Justificativa: ${it.justificativa}`); else if (p.justificativa) obs.push(`Justificativa: ${p.justificativa}`);
-        return { key: p.id, cells: [p.nome, p.departamento || "—", p.impacto || "—", p.status, fmt(p.dataExecucao), p.precisaMaterial ? (p.poMaterial ? `PO ${p.poMaterial}` : "precisa — sem PO") : "não precisa", p.jobNo ? `${p.jobTipo || ""} ${p.jobNo}`.trim() : "—", r ? `Sim — ${rotulo(r.portCall)}` : "Não"], auto: obs.join(" · ") || "Sem pendência" };
-      }) });
-    const manuais = itensPc.filter((i) => !i.planId);
-    S.push({ id: "manuais", titulo: `Outros itens solicitados para o Port Call (${manuais.length})`, explicacao: "Itens da solicitação que não vieram dos Mapeados. Corretivas sem job no plano devem ter 1 job ONE aberto no TM.",
-      cols: ["Manutenção", "Componente", "Tipo", "Ligada a job do plano?", "Job ONE"],
-      rows: manuais.map((i) => ({ key: i.id, cells: [i.descricao || "—", i.componente || "—", i.tipo, i.linkado === "sim" ? `Sim — ${`${i.jobTipo} ${i.jobNo}`.trim() || "job não informado"}` : "Não", i.linkado !== "sim" && i.tipo === "Corretiva" ? (i.oneNo ? `ONE ${i.oneNo}` : "ABRIR no TM") : "—"], auto: i.justificativa ? `Justificativa: ${i.justificativa}` : "Sem justificativa" })) });
+    const F = tmFailures || FR_EMPTY;
+    const abertos = [...planningItems.map((p) => ({ ...p, _d: normDecs(p.decisao) })), ...(docagemItems || []).map((p) => ({ ...p, _d: normDecs(p.decisao) }))].filter((p) => p.status !== "Concluído" && p.status !== "Cancelado");
+    const nDec = (d) => abertos.filter((p) => p._d.includes(d)).length;
+    const progPc = [...planningItems, ...(docagemItems || [])].filter((p) => execsDe(p).some((e) => e.pc === pcAtual)).length;
     const svc = workPackages.filter((w) => (w.start || "").slice(0, 10) === pcAtual);
-    S.push({ id: "servicos", titulo: `Serviços programados para o Port Call (${svc.length})`, explicacao: "Serviços cadastrados em Manutenção › Serviços com início na data do Port Call.",
-      cols: ["Manutenção", "Categoria", "Empresa", "RC", "Status", "Progresso"],
-      rows: svc.map((w) => ({ key: w.id, cells: [w.name, w.group || "—", w.empresa || "—", w.rc || "—", w.status, `${w.progress ?? 0}%`], auto: w.obs || (w.status === "Concluído" ? "Concluído" : "Acompanhar") })) });
-    const rr = (reparoItens || []).filter((r) => r.status !== "RECEBIDO").map((r) => ({ r, d: isIsoD(r.dataEnvio) ? frDias(r.dataEnvio, hoje) : null })).sort((a, b) => (b.d ?? -1) - (a.d ?? -1));
-    S.push({ id: "reparo", titulo: `Reparo e Retorno em aberto (${rr.length})`, explicacao: "Itens enviados para reparo que ainda não retornaram, do mais antigo para o mais recente. Para cada item, confirmar previsão de retorno.",
-      cols: ["Item", "SAP", "S/N", "Fornecedor", "REQ/PO", "Enviado", "Dias em reparo"], blankCols: ["Previsão de retorno"],
-      rows: rr.map(({ r, d }) => ({ key: r.id, cells: [r.desc || "—", r.sap || "—", r.sn || "—", r.fornecedor || "—", r.po || "—", fmt(r.dataEnvio), d ?? "—"], auto: d !== null && d > 90 ? `Em reparo há mais de 90 dias — cobrar ${r.fornecedor || "fornecedor"}${r.obs ? ` · ${r.obs}` : ""}` : (r.obs || "Acompanhar retorno") })) });
+    const rr = (reparoItens || []).filter((r) => r.status !== "RECEBIDO");
+    const rr90 = rr.filter((r) => isIsoD(r.dataEnvio) && frDias(r.dataEnvio, hoje) > 90).length;
+    S.push({ id: "geral", titulo: "Manutenção — overview", explicacao: "Visão geral do que está mapeado, da decisão de onde será feito e do que está programado.",
+      cols: ["Indicador", "Qtd."], rows: [
+        { key: "a", cells: ["Mapeados em aberto (Bordo, DNV, DUE, Failure Report…)", abertos.length], auto: `${abertos.filter((p) => !p._d.length).length} ainda sem decisão` },
+        { key: "b", cells: ["Decisão: Porto / Em Operação", `${nDec("Porto")} / ${nDec("Em Operação")}`], auto: "Executáveis sem parar a máquina" },
+        { key: "c", cells: ["Decisão: Parada Técnica / Docagem", `${nDec("Parada Técnica")} / ${nDec("Docagem")}`], auto: "Dependem de parada ou doca" },
+        { key: "d", cells: ["Aguardando material", nDec("Aguardando Material"), ], auto: `${abertos.filter((p) => (p.precisaMaterial || p.necessitaMaterial) && !(p.poMaterial || p.poRelacionada)).length} precisam de material e ainda sem PO` },
+        { key: "e", cells: [`Programados no Port Call ${rotulo(pcAtual)}`, progPc], auto: "Itens do Cronograma deste Port Call" },
+        { key: "f", cells: ["Serviços do Port Call (aba Serviços)", svc.length], auto: `${svc.filter((w) => w.status === "Concluído").length} concluído(s) · ${svc.filter((w) => w.status === "Em Andamento").length} em andamento` },
+        { key: "g", cells: ["Reparo e Retorno em aberto", rr.length], auto: rr90 ? `${rr90} há mais de 90 dias — cobrar fornecedor` : "Nenhum com mais de 90 dias" },
+      ] });
+    const dias = (d) => (d.diffValue !== null && d.diffValue !== undefined && d.diffUnit === "D" ? d.diffValue : (d.dueDate ? -frDias(d.dueDate, hoje) : null));
+    const dd = (tmDue || []).map((d) => ({ d, n: dias(d) })).filter((x) => x.n !== null);
+    const venc = dd.filter((x) => x.n < 0), prox = dd.filter((x) => x.n >= 0 && x.n <= 30);
+    const gaps = frGaps(F, hoje);
+    S.push({ id: "tm", titulo: "TM Master — overview", explicacao: "Situação do plano de manutenção (Due) e dos Failure Reports em aberto.",
+      cols: ["Indicador", "Qtd."], rows: [
+        { key: "a", cells: ["Jobs vencidos (Due)", venc.length], auto: `${venc.filter((x) => x.d.pri === "High").length} de prioridade alta` },
+        { key: "b", cells: ["Jobs que vencem em até 30 dias", prox.length], auto: `${prox.filter((x) => x.d.pri === "High").length} de prioridade alta` },
+        { key: "c", cells: ["Failure Reports em aberto", gaps.length], auto: `${gaps.filter((g) => g.noJob).length} sem job · ${gaps.filter((g) => g.noAct).length} sem action · ${gaps.filter((g) => g.noOrd).length} sem order` },
+        { key: "d", cells: ["Failure Reports sem nenhuma tratativa", gaps.filter((g) => g.n === 3).length], auto: gaps.some((g) => g.n === 3) ? "Priorizar abertura de job/action" : "—" },
+      ] });
+    const aten = [];
+    if (venc.length) aten.push(`${venc.length} job(s) vencido(s) no TM Master — definir onde serão executados (Mapear → Analisar → Programar).`);
+    if (gaps.some((g) => g.noJob)) aten.push(`${gaps.filter((g) => g.noJob).length} Failure Report(s) sem job — abrir job ONE no TM.`);
+    if (abertos.some((p) => !p._d.length)) aten.push(`${abertos.filter((p) => !p._d.length).length} item(ns) mapeado(s) sem decisão.`);
+    if (rr90) aten.push(`${rr90} item(ns) em Reparo e Retorno há mais de 90 dias.`);
+    S.push({ id: "atencao", titulo: "Pontos de atenção", explicacao: "Resumo do que precisa de ação.", cols: ["Ponto"], rows: (aten.length ? aten : ["Sem pontos críticos."]).map((t, i) => ({ key: "t" + i, cells: [t], auto: "" })) });
     return S.filter((x) => inc[x.id]);
-  }, [planningItems, portcallReqs, reparoItens, workPackages, tmDue, tmHistory, pcAtual, inc]);
+  }, [planningItems, docagemItems, tmFailures, reparoItens, workPackages, tmDue, pcAtual, inc]);
   secoes.forEach((x, i) => { x._t = `${i + 1}. ${x.titulo}`; });
 
   const montarHtml = () => {
     const th = (t) => `<th style="border:1px solid #1F3A5F;background:#1F3A5F;color:#fff;padding:5px 7px;font-size:12px;text-align:left">${escHtml(t)}</th>`;
     const td = (t) => `<td style="border:1px solid #cfd8e6;padding:5px 7px;font-size:12px;vertical-align:top">${escHtml(t)}</td>`;
-    return `<div style="font-family:Calibri,Arial,sans-serif;color:#1b2430"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 6px;font-size:13px">Prezados, segue o resumo de manutenção para o Port Call de <b>${escHtml(rotulo(pcAtual))}</b>, com os itens mapeados já cruzados com a solicitação ao Port Call.</p>`
+    return `<div style="font-family:Calibri,Arial,sans-serif;color:#1b2430"><h2 style="margin:0 0 4px">${escHtml(assunto)}</h2><p style="margin:0 0 6px;font-size:13px">Prezados, segue o overview de Manutenção e TM Master (Port Call de <b>${escHtml(rotulo(pcAtual))}</b>).</p>`
       + secoes.map((s) => `<h3 style="margin:16px 0 2px;font-size:15px;color:#1F3A5F">${escHtml(s._t)}</h3><p style="margin:0 0 6px;font-size:12px;color:#51607a">${escHtml(s.explicacao)}</p><table style="border-collapse:collapse;width:100%"><tr>${[...s.cols, "Observação", ...(s.blankCols || [])].map(th).join("")}</tr>${s.rows.length ? s.rows.map((r) => `<tr>${[...r.cells, r.auto, ...(s.blankCols || []).map(() => "")].map(td).join("")}</tr>`).join("") : `<tr>${td("(nenhum item)")}</tr>`}</table>`).join("") + "</div>";
   };
   const montarTexto = () => [assunto, ""].concat(secoes.flatMap((s) => [s._t, s.explicacao, [...s.cols, "Observação", ...(s.blankCols || [])].join(" | "), ...(s.rows.length ? s.rows.map((r) => [...r.cells, r.auto, ...(s.blankCols || []).map(() => "______")].join(" | ")) : ["(nenhum item)"]), ""])).join("\n");
@@ -4555,13 +4683,13 @@ function ResumoEmailManutencao({ workPackages, planningItems, portcallReqs, repa
     });
   }, [secoes, assunto]);
 
-  const nomes = { geral: "Situação geral", mapeados: "Mapeados + Solicitação Port Call", manuais: "Outros itens solicitados", servicos: "Serviços do Port Call", reparo: "Reparo e Retorno" };
+  const nomes = { geral: "Manutenção", tm: "TM Master", atencao: "Pontos de atenção" };
   return (
     <>
       <div className="g-panel">
         <div className="g-panel-head"><span className="g-panel-title">Resumo por e-mail — Manutenção</span></div>
         <div className="g-muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>
-          Um único e-mail com <b>Mapeados para Execução já cruzados com a Solicitação ao Port Call</b>, os serviços do Port Call e o Reparo e Retorno. Cada tabela tem a coluna <b>Observação</b> (pendências) e, onde precisa de resposta, uma coluna em branco. O e-mail não carrega tabelas pelo link, então o portal <b>copia o resumo</b> e abre o e-mail: é só colar (Ctrl+V).
+          Um e-mail curto com o <b>overview da Manutenção e do TM Master juntos</b>, sem detalhes item a item, e os pontos de atenção. O e-mail não carrega tabelas pelo link, então o portal <b>copia o resumo</b> e abre o e-mail: é só colar (Ctrl+V).
         </div>
         <div className="g-flex" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div className="g-field"><label>Port Call</label>
@@ -5074,7 +5202,7 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
 const execsDe = (it) => (it && Array.isArray(it.execucoes) ? it.execucoes : []);
 const pctAcumDe = (it) => execsDe(it).reduce((t, e) => t + (Number(e.pct) || 0), 0);
 const mesLabelPt = (ym) => { const [y, m] = String(ym).split("-"); const n = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][Number(m) - 1] || ym; return `${n.charAt(0).toUpperCase()}${n.slice(1)} de ${y}`; };
-const FUNIL_ORIGENS = ["Bordo", "DNV", "TM Master", "Inspeção", "Outro"];
+const FUNIL_ORIGENS = ["Bordo", "DNV", "TM Master", "Inspeção", "DUE", "Failure Report", "Outro"];
 const FUNIL_DECISOES = ["Porto", "Em Operação", "Parada Técnica", "Docagem", "Aguardando Material"];
 const FUNIL_DEC_LEGADO = { "Faz no porto": "Porto", "Precisa de parada": "Parada Técnica", "Só docagem": "Docagem", "Aguardando material": "Aguardando Material", "Descartar": "" };
 const normDecs = (v) => [...new Set((Array.isArray(v) ? v : [v]).map((x) => normDec(x)).filter(Boolean))];
@@ -5087,20 +5215,49 @@ const funilIni = (pc, meta) => `${pc}T${(meta && meta[pc] && meta[pc].startTime)
 const pcFimStr = (pc, meta) => { const m = (meta && meta[pc]) || {}; const d = new Date(new Date(`${pc}T${m.startTime || "00:00"}:00`).getTime() + (Number(m.duration) || 24) * 3600000); const q = (n) => String(n).padStart(2, "0"); return `${q(d.getDate())}/${q(d.getMonth() + 1)}/${d.getFullYear()} ${q(d.getHours())}:${q(d.getMinutes())}`; };
 const funilSomaH = (iniStr, h) => { const d = new Date(iniStr); d.setMinutes(d.getMinutes() + Math.round((Number(h) || 9) * 60)); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
-function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setPortCallMeta, setReportFn, setExportXlsxFn }) {
+function FunilManutencaoView({ tmDue, tmFailures, stage, setStage, planningItems, setPlanningItems, docagemItems, setDocagemItems, allPortCallDates, portCallLabel, portCallMeta, setPortCallMeta, setReportFn, setExportXlsxFn }) {
   const hoje = todayISO();
+  /* itens do DUE (TM Master) e Failure Reports ainda não mapeados: aparecem na mesma tabela e viram item mapeado assim que o usuário age neles */
+  const virtuais = useMemo(() => {
+    const out = [];
+    const mats = new Set(planningItems.map((p) => p.refKey).filter(Boolean));
+    const jobs = new Set(planningItems.filter((p) => p.jobNo).map((p) => `${bordoNorm(p.jobTipo)}|${bordoNorm(p.jobNo)}`));
+    const dias = (d) => (d.diffValue !== null && d.diffValue !== undefined && d.diffUnit === "D" ? d.diffValue : (d.dueDate ? -frDias(d.dueDate, hoje) : null));
+    (tmDue || []).forEach((d) => {
+      const dd = dias(d); if (dd === null || dd > 60) return;
+      const jk = `${bordoNorm(d.jobType)}|${bordoNorm(d.jobNo)}`; const ref = "T:" + jk;
+      if (mats.has(ref) || jobs.has(jk) || out.some((o) => o.refKey === ref)) return;
+      out.push({ key: "V:" + ref, refKey: ref, src: "V", id: ref, origem: "DUE", nome: d.jobName || d.component || "—", area: d.department || "", empresa: "", plano: d.planoAcao || "", impacto: "—", status: "A Executar", material: false, po: d.po || "", decs: [], decisao: "", duracaoH: "", analise: "", pc: "", ordem: 0, ini: "", fim: "", conf: false, linked: null, execs: [],
+        info: `${d.jobType || ""} ${d.jobNo || ""} · ${dd < 0 ? `vencido há ${Math.abs(dd)} d` : `vence em ${dd} d`}${d.pri === "High" ? " · prioridade alta" : ""}`.trim(), jobTipo: d.jobType || "", jobNo: d.jobNo || "", sortDias: dd });
+    });
+    const F = tmFailures || FR_EMPTY;
+    frGaps(F, hoje).filter((g) => g.noJob).forEach((g) => {
+      const ref = "F:" + g.r.no; if (mats.has(ref)) return;
+      out.push({ key: "V:" + ref, refKey: ref, src: "V", id: ref, origem: "Failure Report", nome: g.r.name || g.r.no, area: g.r.department || "", empresa: "", plano: "", impacto: "—", status: "A Executar", material: false, po: "", decs: [], decisao: "", duracaoH: "", analise: "", pc: "", ordem: 0, ini: "", fim: "", conf: false, linked: null, execs: [],
+        info: `${g.r.no} · aberto há ${g.dias ?? "?"} d · sem job${g.noAct ? " · sem action" : ""}${g.noOrd ? " · sem order" : ""}`, jobTipo: "", jobNo: "", sortDias: -(g.dias || 0), desc: g.r.description || "" });
+    });
+    return out.sort((a, b) => a.sortDias - b.sortDias);
+  }, [tmDue, tmFailures, planningItems, hoje]);
   const rows = useMemo(() => [
+    ...virtuais,
     ...planningItems.map((p) => ({ key: "M:" + p.id, src: "M", id: p.id, origem: p.origem || "Bordo", nome: p.nome, area: p.departamento || "", empresa: p.empresa || "", plano: p.planoAcao || "", impacto: p.impacto || "Baixo", status: p.status || "A Executar", material: !!p.precisaMaterial, po: p.poMaterial || "", decs: normDecs(p.decisao), decisao: normDecs(p.decisao)[0] || "", duracaoH: p.duracaoH || "", analise: p.analise || "", pc: p.cronoPC || "", ordem: p.cronoOrdem || 0, ini: p.cronoIni || "", fim: p.cronoFim || "", conf: !!p.cronoConf, linked: p.linkedServiceId, execs: execsDe(p) })),
     ...docagemItems.map((d) => ({ key: "D:" + d.id, src: "D", id: d.id, origem: "DNV", nome: d.nome, area: d.localizacao || "", empresa: d.empresa || "", plano: d.planoAcao || "", impacto: d.impacto || "—", status: d.status || "A Executar", material: !!d.necessitaMaterial, po: d.poRelacionada || "", decs: normDecs(d.decisao), decisao: normDecs(d.decisao)[0] || "", duracaoH: d.duracaoH || "", analise: d.analise || "", pc: d.cronoPC || "", ordem: d.cronoOrdem || 0, ini: d.cronoIni || "", fim: d.cronoFim || "", conf: !!d.cronoConf, linked: d.linkedServiceId, execs: execsDe(d) })),
-  ], [planningItems, docagemItems]);
+  ], [planningItems, docagemItems, virtuais]);
   const MAPA_M = { area: "departamento", plano: "planoAcao", material: "precisaMaterial", po: "poMaterial", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise", origem: "origem" };
   const MAPA_D = { area: "localizacao", plano: "planoAcao", material: "necessitaMaterial", po: "poRelacionada", ini: "cronoIni", fim: "cronoFim", pc: "cronoPC", ordem: "cronoOrdem", conf: "cronoConf", decisao: "decisao", duracaoH: "duracaoH", analise: "analise" };
   const set = (r, patch) => {
-    const mapa = r.src === "M" ? MAPA_M : MAPA_D;
+    const mapa = r.src === "D" ? MAPA_D : MAPA_M;
     const real = Object.fromEntries(Object.entries(patch).map(([k, v]) => [mapa[k] || k, v]));
+    if (r.src === "V") {
+      setPlanningItems((arr) => {
+        if (arr.some((x) => x.refKey === r.refKey)) return arr.map((x) => (x.refKey === r.refKey ? { ...x, ...real } : x));
+        return [...arr, { id: uid("PLAN"), refKey: r.refKey, nome: r.nome, departamento: r.area, empresa: r.empresa, descricaoProblema: r.desc || r.info || "", planoAcao: r.plano, rc: "", obs: "", status: "A Executar", precisaMaterial: false, materialNecessario: "", poMaterial: r.po || "", impacto: r.origem === "DUE" ? "Médio" : "Alto", dataExecucao: "", linkedServiceId: null, jobTipo: r.jobTipo, jobNo: r.jobNo, justificativa: r.info || "", origem: r.origem, ...real }];
+      });
+      return;
+    }
     (r.src === "M" ? setPlanningItems : setDocagemItems)((arr) => arr.map((x) => (x.id === r.id ? { ...x, ...real } : x)));
   };
-  const apagar = (r) => { if (!window.confirm(`Excluir "${r.nome}"?`)) return; (r.src === "M" ? setPlanningItems : setDocagemItems)((arr) => arr.filter((x) => x.id !== r.id)); };
+  const apagar = (r) => { if (!window.confirm(`Excluir "${r.nome}"?`)) return; if (r.src === "V") { set(r, { status: "Cancelado" }); return; } (r.src === "M" ? setPlanningItems : setDocagemItems)((arr) => arr.filter((x) => x.id !== r.id)); };
   const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12, background: "var(--panel, #fff)", color: "var(--text)", width: "100%" };
   const abertos = rows.filter(funilAberto);
   const norm = (v) => String(v || "").toLowerCase();
@@ -5242,13 +5399,13 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
             <tbody>
               {lista.length === 0 && <tr><td colSpan={8} className="g-muted" style={{ textAlign: "center", padding: 18 }}>Nada mapeado com esse filtro.</td></tr>}
               {lista.map((r) => (
-                <tr className="g-row tbl-row" key={r.key}>
-                  <td><TextoAuto style={inp} value={r.nome} onChange={(v) => set(r, { nome: v })} /></td>
-                  <td>{r.src === "M" ? <select style={inp} value={r.origem} onChange={(e) => set(r, { origem: e.target.value })}>{FUNIL_ORIGENS.filter((o) => o !== "DNV").map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">DNV</span>}</td>
+                <tr className="g-row tbl-row" key={r.refKey || r.key}>
+                  <td><TextoAuto style={inp} value={r.nome} onChange={(v) => set(r, { nome: v })} />{r.info && <div className="g-muted" style={{ fontSize: 10.5, marginTop: 2 }}>{r.info}</div>}</td>
+                  <td>{r.src !== "D" ? <select style={inp} value={r.origem} onChange={(e) => set(r, { origem: e.target.value })}>{FUNIL_ORIGENS.filter((o) => o !== "DNV").map((o) => <option key={o}>{o}</option>)}</select> : <span className="tbl-chip">DNV</span>}</td>
                   <td><TextoAuto style={inp} value={r.area} onChange={(v) => set(r, { area: v })} /></td>
                   <td><TextoAuto style={inp} value={r.empresa} onChange={(v) => set(r, { empresa: v })} /></td>
                   <td><TextoAuto style={{ ...inp, borderColor: String(r.plano).trim() ? undefined : "var(--warn)" }} value={r.plano} onChange={(v) => set(r, { plano: v })} placeholder="o que será feito" /></td>
-                  <td>{r.src === "M" ? <select style={inp} value={r.impacto} onChange={(e) => set(r, { impacto: e.target.value })}>{IMPACT_LEVELS.map((o) => <option key={o}>{o}</option>)}</select> : <span className="g-muted">—</span>}</td>
+                  <td>{r.src !== "D" ? <select style={inp} value={r.impacto === "—" ? "Médio" : r.impacto} onChange={(e) => set(r, { impacto: e.target.value })}>{IMPACT_LEVELS.map((o) => <option key={o}>{o}</option>)}</select> : <span className="g-muted">—</span>}</td>
                   <td><select style={inp} value={r.status} onChange={(e) => set(r, { status: e.target.value })}>{PLAN_STATUS.map((o) => <option key={o}>{o}</option>)}</select></td>
                   <td><span className="g-btn ghost danger" title="Excluir" onClick={() => apagar(r)}><Trash2 size={13} /></span></td>
                 </tr>
@@ -5281,8 +5438,8 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
               {lista.map((r) => {
                 const semPo = r.material && !String(r.po).trim();
                 return (
-                  <tr className="g-row tbl-row" key={r.key} style={{ "--c": r.decisao ? FUNIL_DEC_COR[r.decisao] : "var(--warn)" }}>
-                    <td><b>{r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.area || "—"}</div></td>
+                  <tr className="g-row tbl-row" key={r.refKey || r.key} style={{ "--c": r.decisao ? FUNIL_DEC_COR[r.decisao] : "var(--warn)" }}>
+                    <td><b>{r.nome}</b><div className="g-muted" style={{ fontSize: 11 }}>{r.area || "—"}{r.info ? ` · ${r.info}` : ""}</div></td>
                     <td><span className="tbl-chip">{r.origem}</span></td>
                     <td style={{ whiteSpace: "normal", fontSize: 12 }}>{r.plano || <span className="g-muted">sem plano</span>}</td>
                     <td><input style={inp} value={r.empresa} onChange={(e) => set(r, { empresa: e.target.value })} /></td>
@@ -5448,6 +5605,39 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
     );
   };
 
+  const exportarCrono = () => {
+    const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const blocos = pcsComExec.map((d) => {
+      const itens = flat.filter((x) => x.e.pc === d).sort((a, b) => ((Number(a.e.ordem) || 0) - (Number(b.e.ordem) || 0)) || String(a.e.ini).localeCompare(String(b.e.ini)));
+      const dur = portCallMeta?.[d]?.duration || 24;
+      const janIni = new Date(`${d}T${portCallMeta?.[d]?.startTime || "00:00"}:00`).getTime();
+      const tempos = itens.flatMap((x) => [x.e.ini, x.e.fim]).filter(Boolean).map((v) => new Date(v).getTime()).filter((t) => Number.isFinite(t) && Math.abs(t - janIni) <= 45 * 86400000);
+      const tIni = Math.min(janIni, ...tempos), tFim = Math.max(janIni + dur * 3600000, ...tempos);
+      const span = Math.max(3600000, tFim - tIni);
+      const passoH = span <= 36 * 3600000 ? 3 : span <= 96 * 3600000 ? 6 : 24;
+      const ticks = []; for (let t = Math.ceil(tIni / (passoH * 3600000)) * passoH * 3600000; t <= tFim && ticks.length < 200; t += passoH * 3600000) ticks.push(t);
+      const lbl = (t) => { const x = new Date(t); return passoH >= 24 ? `${p2(x.getDate())}/${p2(x.getMonth() + 1)}` : `${p2(x.getDate())}/${p2(x.getMonth() + 1)} ${p2(x.getHours())}h`; };
+      const horas = itens.reduce((t, x) => t + (x.e.ini && x.e.fim ? Math.max(0, (new Date(x.e.fim) - new Date(x.e.ini)) / 3600000) : 0), 0);
+      const tk = ticks.map((t) => `<div class="tk" style="left:${((t - tIni) / span) * 100}%">${lbl(t)}</div>`).join("");
+      const linhas = itens.map(({ r, e }, i) => {
+        const ok = e.ini && e.fim && e.fim > e.ini;
+        const l0 = ok ? ((new Date(e.ini).getTime() - tIni) / span) * 100 : 0;
+        const w0 = ok ? Math.max(0.8, ((new Date(e.fim).getTime() - new Date(e.ini).getTime()) / span) * 100) : 0;
+        const l = Math.max(0, Math.min(99, l0)); const w = Math.max(0.8, Math.min(100 - l, w0 + Math.min(0, l0)));
+        const pct = Math.max(0, Math.min(100, Number(e.pct) || 0)); const c = corExec(e);
+        const grid = ticks.map((t) => `<div class="gl" style="left:${((t - tIni) / span) * 100}%"></div>`).join("");
+        const barra = ok ? `<div class="bar" style="left:${l}%;width:${w}%;background:${c}33;border-color:${c}"><div style="width:${pct}%;background:${c}"></div><span>${pct}%</span></div>` : `<span class="sem">informe início e fim</span>`;
+        return `<div class="ln"><div class="nm">${i + 1}. ${esc(r.nome)}${r.empresa ? `<small> · ${esc(r.empresa)}</small>` : ""}</div><div class="tr">${grid}${barra}</div></div>`;
+      }).join("");
+      return `<section><h2>${esc(portCallLabel(d))}</h2><div class="sub">${itens.length} serviço(s) · ${horas.toFixed(1)}h · ${esc(portCallMeta?.[d]?.local || "")} · ${esc(fmtDataCompleta(d))} ${esc(portCallMeta?.[d]?.startTime || "")} → ${esc(pcFimStr(d, portCallMeta))}</div><div class="gt"><div class="ln hd"><div class="nm">Serviço</div><div class="tr">${tk}</div></div>${linhas}</div></section>`;
+    }).join("");
+    const css = "body{font-family:Arial,sans-serif;margin:18px;color:#111}h1{font-size:18px;margin:0 0 2px}.leg{font-size:11px;color:#555;margin-bottom:12px}.leg i{display:inline-block;width:10px;height:10px;margin:0 3px 0 10px;border-radius:2px}section{margin-bottom:18px;page-break-inside:avoid}h2{font-size:14px;margin:0;color:#1d4f80}.sub{font-size:11px;color:#555;margin-bottom:4px}.gt{border:1px solid #bbb;border-radius:4px;font-size:11px}.ln{display:flex;border-top:1px solid #ddd;min-height:26px;align-items:center}.ln.hd{border-top:0;background:#f1f1f1}.nm{width:230px;flex:none;padding:3px 6px}.nm small{color:#777}.tr{flex:1;position:relative;height:26px}.tk{position:absolute;top:0;bottom:0;border-left:1px solid #bbb;padding-left:2px;font-size:9px;color:#555;white-space:nowrap;line-height:26px}.gl{position:absolute;top:0;bottom:0;border-left:1px dotted #ccc}.bar{position:absolute;top:4px;height:18px;border:1px solid;border-radius:3px;overflow:hidden;box-sizing:border-box}.bar div{height:100%}.bar span{position:absolute;inset:0;text-align:center;line-height:16px;font-size:10px;font-weight:700}.sem{position:absolute;left:6px;top:6px;color:#888;font-size:10px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 landscape;margin:10mm}";
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cronograma de manutenção</title><style>${css}</style></head><body><h1>Cronograma de manutenção — por Port Call</h1><div class="leg">Gerado em ${esc(new Date().toLocaleString("pt-BR"))}<i style="background:#22C55E"></i>Confirmado (em Serviços)<i style="background:#F59E0B"></i>Programado (a confirmar) · barra cheia = % executado</div>${blocos || "<p>Nenhum serviço programado.</p>"}<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.open(); w.document.write(html); w.document.close(); }
+    else { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([html], { type: "text/html" })); a.download = "Cronograma-manutencao.html"; a.click(); }
+  };
+
   const etapa3 = (
     <>
       <div className="g-alert" style={{ background: "rgba(37,104,160,0.08)", borderColor: "rgba(37,104,160,0.35)", color: "var(--accent)" }}><div>
@@ -5500,6 +5690,10 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
           {pcsComExec.filter((d) => d.slice(0, 7) === ym).map(blocoPc)}
         </div>
       ))}
+      {pcsComExec.length > 0 && <div className="g-panel" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div><div className="g-panel-title" style={{ marginBottom: 2 }}>Exportar cronograma</div><div className="g-muted" style={{ fontSize: 12 }}>Gera o cronograma como está na tela (barras, % executado e o Port Call de cada bloco, respeitando os filtros acima). Na janela que abrir, escolha “Salvar como PDF”.</div></div>
+        <button className="g-btn primary g-keep" style={{ marginLeft: "auto" }} onClick={exportarCrono}>📄 Exportar cronograma (PDF)</button>
+      </div>}
     </>
   );
 
@@ -5617,14 +5811,13 @@ function PlanejamentoView({ setPortCallMeta, workPackages, updWp, materials, set
   /* vínculo Mapeados ↔ Solicitação Portcall */
   const emSolic = useMemo(() => { const m = {}; (portcallReqs || []).forEach((r) => r.itens.forEach((it) => { if (it.planId) (m[it.planId] = m[it.planId] || []).push(r); })); return m; }, [portcallReqs]);
   const solicitar = (p) => {
-    if (emSolic[p.id]) { setPlanSubTab("portcall"); return; }
+    if (emSolic[p.id]) return;
     const item = { id: uid("PCI"), descricao: p.nome, componente: "", tipo: "Preventiva", justificativa: p.justificativa || p.descricaoProblema || p.planoAcao || "", linkado: p.jobNo ? "sim" : "nao", jobTipo: p.jobTipo || "", jobNo: p.jobNo || "", oneNo: "", planId: p.id };
     setPortcallReqs((a) => {
       const arr = a || []; const alvo = arr.find((r) => !r.enviado);
       if (alvo) return arr.map((r) => (r === alvo ? { ...r, itens: [...r.itens, item] } : r));
       return [{ id: uid("PCR"), portCall: allPortCallDates.find((d) => d >= todayISO()) || allPortCallDates[allPortCallDates.length - 1] || "", itens: [item], criado: todayISO(), enviado: "" }, ...arr];
     });
-    setPlanSubTab("portcall");
   };
   const mapGroups = useMemo(() => groupRows(filteredMapeados, groupMap, (p) => p.departamento, "Sem departamento"), [filteredMapeados, groupMap]);
   const docGroups = useMemo(() => groupRows(filteredDocagem, groupDoc, (d) => d.localizacao, "Sem localização"), [filteredDocagem, groupDoc]);
@@ -5712,22 +5905,13 @@ function PlanejamentoView({ setPortCallMeta, workPackages, updWp, materials, set
     <>
       <div className="g-mode-toggle" style={{ marginBottom: 16, width: "fit-content", display: soDocagem ? "none" : undefined }}>
         <button className={planSubTab === "funil" ? "active" : ""} onClick={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("funil"); }}>Mapear → Analisar → Programar</button>
-        <button className={planSubTab === "escopo" ? "active" : ""} onClick={() => setPlanSubTab("escopo")}>Análise de Escopo</button>
-        <button className={planSubTab === "portcall" ? "active" : ""} onClick={() => setPlanSubTab("portcall")}>Solicitação Portcall</button>
       </div>
 
       {planSubTab === "funil" ? (
-        <FunilManutencaoView stage={funilStage} setStage={setFunilStage} planningItems={planningItems} setPlanningItems={setPlanningItems} docagemItems={docagemItems} setDocagemItems={setDocagemItems}
+        <FunilManutencaoView tmDue={tmDue} tmFailures={tmFailures} stage={funilStage} setStage={setFunilStage} planningItems={planningItems} setPlanningItems={setPlanningItems} docagemItems={docagemItems} setDocagemItems={setDocagemItems}
           allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} portCallMeta={portCallMeta} setPortCallMeta={setPortCallMeta} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "acao" ? (
         <PlanoAcaoBordoView planningItems={planningItems} docagemItems={docagemItems} planosBordo={planosBordo} setPlanosBordo={setPlanosBordo} updPlan={updPlan} remPlan={remPlan} updDocagem={updDocagem} remDocagem={remDocagem} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
-      ) : planSubTab === "escopo" ? (
-        <AnaliseEscopoView tmDue={tmDue} tmHistory={tmHistory} planningItems={planningItems} tmFailures={tmFailures} reparoItens={reparoItens}
-          allPortCallDates={allPortCallDates} portCallMeta={portCallMeta} portCallLabel={portCallLabel} portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs}
-          irSolicitacao={() => { setReportFn(null); setExportXlsxFn(null); setPlanSubTab("portcall"); }} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
-      ) : planSubTab === "portcall" ? (
-        <PortcallRequestView portcallReqs={portcallReqs} setPortcallReqs={setPortcallReqs} planningItems={planningItems} tmDue={tmDue} tmHistory={tmHistory}
-          allPortCallDates={allPortCallDates} portCallLabel={portCallLabel} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} />
       ) : planSubTab === "mapeados" ? (
         <>
           <div className="g-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -5847,7 +6031,7 @@ function PlanejamentoView({ setPortCallMeta, workPackages, updWp, materials, set
                           {p.precisaMaterial && p.poMaterial && <span className="tbl-chip">PO {p.poMaterial}</span>}
                           {p.planoAcao && <span className="tbl-chip" title={p.planoAcao}>com plano de ação</span>}
                           {(planosBordo || []).find((x) => x.key === `M:${p.id}`)?.status && <span className="tbl-chip" title="Status no Plano de Ação com Bordo (mesmo item)">📋 Bordo: {(planosBordo || []).find((x) => x.key === `M:${p.id}`).status}</span>}
-                          {emSolic[p.id] && <span className="tbl-chip" style={{ color: "var(--ok)", cursor: "pointer" }} onClick={() => setPlanSubTab("portcall")} title="Já está em uma solicitação ao Port Call">📨 Solicitação Port Call</span>}
+                          
                         </div>
                       </td>
                       <td style={{ minWidth: 140 }}>
@@ -5897,7 +6081,6 @@ function PlanejamentoView({ setPortCallMeta, workPackages, updWp, materials, set
                         )}
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <span className="g-btn ghost g-keep" onClick={() => solicitar(p)} title={emSolic[p.id] ? "Já está na solicitação — abrir" : "Incluir na solicitação ao Port Call"}>📨</span>
                         <span className="g-btn ghost" onClick={() => setExpandedPlanRow(isOpen ? null : p.id)} title="Ver todos os detalhes">
                           {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </span>
