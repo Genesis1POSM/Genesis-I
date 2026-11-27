@@ -5369,12 +5369,12 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
     const itens = flat.filter((x) => x.e.pc === d).sort((a, b) => ((Number(a.e.ordem) || 0) - (Number(b.e.ordem) || 0)) || String(a.e.ini).localeCompare(String(b.e.ini)));
     const dur = portCallMeta?.[d]?.duration || 24;
     const janIni = new Date(`${d}T${portCallMeta?.[d]?.startTime || "00:00"}:00`).getTime();
-    const tempos = itens.flatMap((x) => [x.e.ini, x.e.fim]).filter(Boolean).map((v) => new Date(v).getTime());
+    const tempos = itens.flatMap((x) => [x.e.ini, x.e.fim]).filter(Boolean).map((v) => new Date(v).getTime()).filter((t) => Number.isFinite(t) && Math.abs(t - janIni) <= 45 * 86400000); /* datas muito fora do Port Call (ex.: ano errado) não esticam o Gantt */
     const tIni = Math.min(janIni, ...tempos);
     const tFim = Math.max(janIni + dur * 3600000, ...tempos);
     const span = Math.max(3600000, tFim - tIni);
     const passoH = span <= 36 * 3600000 ? 3 : span <= 96 * 3600000 ? 6 : 24;
-    const ticks = []; for (let t = Math.ceil(tIni / (passoH * 3600000)) * passoH * 3600000; t <= tFim; t += passoH * 3600000) ticks.push(t);
+    const ticks = []; for (let t = Math.ceil(tIni / (passoH * 3600000)) * passoH * 3600000; t <= tFim && ticks.length < 200; t += passoH * 3600000) ticks.push(t);
     const lbl = (t) => { const x = new Date(t); return passoH >= 24 ? `${p2(x.getDate())}/${p2(x.getMonth() + 1)}` : `${p2(x.getDate())}/${p2(x.getMonth() + 1)} ${p2(x.getHours())}h`; };
     const pend = itens.filter((x) => !x.e.conf && x.e.ini && x.e.fim && x.e.fim > x.e.ini).length;
     const horas = itens.reduce((t, x) => t + (x.e.ini && x.e.fim ? Math.max(0, (new Date(x.e.fim) - new Date(x.e.ini)) / 3600000) : 0), 0);
@@ -5394,12 +5394,14 @@ function FunilManutencaoView({ stage, setStage, planningItems, setPlanningItems,
           </div>
           {itens.map(({ r, e }, i) => {
             const ok = e.ini && e.fim && e.fim > e.ini;
-            const l = ok ? ((new Date(e.ini).getTime() - tIni) / span) * 100 : 0;
-            const w = ok ? Math.max(0.8, ((new Date(e.fim).getTime() - new Date(e.ini).getTime()) / span) * 100) : 0;
+            const l0 = ok ? ((new Date(e.ini).getTime() - tIni) / span) * 100 : 0;
+            const w0 = ok ? Math.max(0.8, ((new Date(e.fim).getTime() - new Date(e.ini).getTime()) / span) * 100) : 0;
+            const l = Math.max(0, Math.min(99, l0)); const w = Math.max(0.8, Math.min(100 - l, w0 + Math.min(0, l0)));
+            const foraJanela = ok && (l0 < -1 || l0 > 100);
             const pct = Math.max(0, Math.min(100, Number(e.pct) || 0));
             return (
               <div key={e.id} style={{ display: "flex", borderTop: "1px solid var(--border)", alignItems: "center", minHeight: 30 }}>
-                <div style={{ width: 240, flex: "none", padding: "4px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.nome}>{i + 1}. {r.nome}</div>
+                <div style={{ width: 240, flex: "none", padding: "4px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={foraJanela ? `${r.nome} — atenção: as datas desta execução estão fora do Port Call (confira o ano)` : r.nome}>{i + 1}. {r.nome}{foraJanela && <b style={{ color: "var(--warn)" }}> ⚠ data fora do Port Call</b>}</div>
                 <div style={{ flex: 1, position: "relative", height: 30 }}>
                   {ticks.map((t) => <div key={t} style={{ position: "absolute", left: `${((t - tIni) / span) * 100}%`, top: 0, bottom: 0, borderLeft: "1px dotted var(--border)" }} />)}
                   {ok ? (
