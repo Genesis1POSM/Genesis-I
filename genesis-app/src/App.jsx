@@ -5263,14 +5263,16 @@ function FunilManutencaoView({ tmDue, tmFailures, stage, setStage, planningItems
   const norm = (v) => String(v || "").toLowerCase();
 
   /* ---------- filtros comuns ---------- */
-  const [f, setF] = useState({ busca: "", origem: "Todas", dec: "Todas", area: "", sit: "Em aberto" });
+  const [f, setF] = useState({ busca: "", origens: [], dec: "Todas", area: "", sit: "Em aberto" });
   const sitOk = (r) => f.sit === "Todos" || (f.sit === "Concluídos" ? r.status === "Concluído" : f.sit === "Cancelados" ? r.status === "Cancelado" : funilAberto(r));
-  const lista = rows.filter((r) => sitOk(r) && (f.origem === "Todas" || r.origem === f.origem) && (f.dec === "Todas" || (f.dec === "Sem decisão" ? !r.decs.length : r.decs.includes(f.dec))) && (!f.busca || norm(`${r.nome} ${r.area} ${r.empresa} ${r.plano}`).includes(norm(f.busca))));
+  const ordO = (o) => { const i = FUNIL_ORIGENS.indexOf(o); return i < 0 ? 99 : i; };
+  const lista = rows.filter((r) => sitOk(r) && (!f.origens.length || f.origens.includes(r.origem)) && (f.dec === "Todas" || (f.dec === "Sem decisão" ? !r.decs.length : r.decs.includes(f.dec))) && (!f.busca || norm(`${r.nome} ${r.area} ${r.empresa} ${r.plano}`).includes(norm(f.busca))));
+  lista.sort((a, b) => ordO(a.origem) - ordO(b.origem));
   const filtros = (comDec) => (
     <div className="g-filterbar" style={{ padding: "10px 16px", marginBottom: 12, borderRadius: 6 }}>
       <div className="g-field"><label>Buscar</label><input type="text" value={f.busca} onChange={(e) => setF((p) => ({ ...p, busca: e.target.value }))} placeholder="nome, área, empresa…" /></div>
       <div className="g-field"><label>Situação</label><select value={f.sit} onChange={(e) => setF((p) => ({ ...p, sit: e.target.value }))}>{["Em aberto", "Concluídos", "Cancelados", "Todos"].map((o) => <option key={o}>{o}</option>)}</select></div>
-      <div className="g-field"><label>Origem</label><select value={f.origem} onChange={(e) => setF((p) => ({ ...p, origem: e.target.value }))}>{["Todas", ...FUNIL_ORIGENS].map((o) => <option key={o}>{o}</option>)}</select></div>
+      <div className="g-field"><label>Origem (marque uma ou mais)</label><div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12.5, paddingTop: 4 }}><label style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: 700 }}><input type="checkbox" checked={!f.origens.length} onChange={() => setF((p) => ({ ...p, origens: [] }))} />Todas</label>{FUNIL_ORIGENS.map((o) => <label key={o} style={{ display: "flex", gap: 4, alignItems: "center", fontWeight: 600 }}><input type="checkbox" checked={f.origens.includes(o)} onChange={(e) => setF((p) => ({ ...p, origens: e.target.checked ? [...p.origens, o] : p.origens.filter((x) => x !== o) }))} />{o}</label>)}</div></div>
       {comDec && <div className="g-field"><label>Decisão</label><select value={f.dec} onChange={(e) => setF((p) => ({ ...p, dec: e.target.value }))}>{["Todas", "Sem decisão", ...FUNIL_DECISOES].map((o) => <option key={o}>{o}</option>)}</select></div>}
     </div>
   );
