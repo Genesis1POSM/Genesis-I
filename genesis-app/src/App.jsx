@@ -910,18 +910,25 @@ const statusColor = (status) => {
 /* ============================================================
    REUSABLE EDITABLE CELLS
    ============================================================ */
+/* ajusta a altura de vários campos de uma vez (1 recálculo de layout no total, em vez de 1 por campo — com centenas de linhas travava a tela) */
+const _taFila = new Set(); let _taAgendado = false;
+const agendarAjusteTA = (el) => {
+  _taFila.add(el);
+  if (_taAgendado) return; _taAgendado = true;
+  Promise.resolve().then(() => {
+    _taAgendado = false; const els = [..._taFila]; _taFila.clear();
+    els.forEach((x) => { x.style.height = "auto"; });
+    const hs = els.map((x) => x.scrollHeight);
+    els.forEach((x, i) => { x.style.height = hs[i] + 2 + "px"; });
+  });
+};
 const EText = ({ value, onChange, mono, align }) => (
   <input className={`g-edit ${mono ? "mono" : ""}`} style={{ textAlign: align }} value={value}
     onChange={(e) => onChange(e.target.value)} />
 );
 const ETextArea = ({ value, onChange, rows = 2 }) => {
   const ref = useRef(null);
-  const autoSize = (el) => {
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  };
-  React.useEffect(() => { autoSize(ref.current); }, [value]);
+  React.useLayoutEffect(() => { if (ref.current) agendarAjusteTA(ref.current); }, [value]);
   return (
     <textarea
       ref={ref}
@@ -2036,7 +2043,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
           const r4 = mergeBy(base.jobHistory, p.jobHistory || [], (x) => x.number);
           const r5 = mergeBy(base.orders, p.orders || [], (x) => x.no);
           setImportMsg(`Failure Reports importado: ${r1.add} novo(s)/${r1.upd} atualizado(s) · Actions ${r2.add}+${r2.upd} · Jobs ${r3.add}+${r3.upd} · Job History ${r4.add}+${r4.upd} · Orders ${r5.add}+${r5.upd}.`);
-          return { reports: r1.list, actions: r2.list, jobs: r3.list, jobHistory: r4.list, orders: r5.list, importedAt: new Date().toLocaleString("pt-BR") };
+          return { reports: r1.list, actions: r2.list, jobs: r3.list, jobHistory: r4.list, orders: r5.list, desc: base.desc || {}, importedAt: new Date().toLocaleString("pt-BR") };
         });
       } catch (err) {
         setImportMsg("Erro ao ler a planilha de Failure Reports. Confira se as abas seguem o padrão esperado.");
@@ -3129,7 +3136,7 @@ function Genesis({ currentUser, onLogout, readOnly, users, setUsers,
         {tab === "tmmaster" && (
           <TmMasterView tmDue={tmDue} tmHistory={tmHistory} tmDueSnapshots={tmDueSnapshots} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn}
             handleImportTmDue={handleImportTmDue} handleImportTmHistory={handleImportTmHistory}
-            tmFailures={tmFailures} handleImportFailures={handleImportFailures} tmBordo={tmBordo} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={setRegObrig} currentUser={currentUser}
+            tmFailures={tmFailures} setTmFailures={setTmFailures} handleImportFailures={handleImportFailures} tmBordo={tmBordo} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={setRegObrig} currentUser={currentUser}
             tmSubTab={tmSubTab} setTmSubTab={setTmSubTab} updTmDue={updTmDue} onToggleAddToPlanning={onToggleAddToPlanning} />
         )}
 
@@ -4803,6 +4810,8 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
   const sorted = useMemo(() => sortRows(visiveis, sort), [visiveis, sort]);
   const [groupByPc, setGroupByPc] = useState(true);
   const [collapsedWp, setCollapsedWp] = useState(new Set());
+  /* ao mostrar os passados, eles abrem recolhidos (só o cabeçalho de cada Port Call): renderizar centenas de linhas de uma vez travava a tela */
+  const alternarPassadosSv = (on) => { setMostrarPassadosSv(on); if (on) setCollapsedWp((p) => { const n = new Set(p); Object.keys(pcPassado).forEach((k) => { if (pcPassado[k]) n.add(k); }); return n; }); };
   const toggleWpGroup = (k) => setCollapsedWp((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const wpGroups = useMemo(() => {
     if (!groupByPc) return [{ key: "todos", label: "Todos", rows: sorted }];
@@ -4913,13 +4922,13 @@ function ServicesView({ workPackages, updWp, remWp, repeatWp, expandedWp, setExp
 
       {visiveis.length === 0 ? (
         <div className="g-panel">
-          <div className="g-muted">Nenhum serviço em andamento ou futuro com esses filtros.{nPassadosOcultos > 0 && <> {nPassadosOcultos} serviço(s) de Port Calls passados estão ocultos — <a href="#" onClick={(e) => { e.preventDefault(); setMostrarPassadosSv(true); }}>mostrar Port Calls passados</a>.</>}</div>
+          <div className="g-muted">Nenhum serviço em andamento ou futuro com esses filtros.{nPassadosOcultos > 0 && <> {nPassadosOcultos} serviço(s) de Port Calls passados estão ocultos — <a href="#" onClick={(e) => { e.preventDefault(); alternarPassadosSv(true); }}>mostrar Port Calls passados</a>.</>}</div>
         </div>
       ) : (
       <div className="g-panel" style={{ padding: 0, overflow: "hidden" }}>
         <div className="tbl-toolbar">
           <label className="tbl-check"><input type="checkbox" checked={groupByPc} onChange={(e) => setGroupByPc(e.target.checked)} />Agrupar por Port Call</label>
-          <label className="tbl-check"><input type="checkbox" checked={mostrarPassadosSv} onChange={(e) => setMostrarPassadosSv(e.target.checked)} />Mostrar Port Calls passados{!mostrarPassadosSv && nPassadosOcultos > 0 ? ` (${nPassadosOcultos} oculto(s))` : ""}</label>
+          <label className="tbl-check"><input type="checkbox" checked={mostrarPassadosSv} onChange={(e) => alternarPassadosSv(e.target.checked)} />Mostrar Port Calls passados{!mostrarPassadosSv && nPassadosOcultos > 0 ? ` (${nPassadosOcultos} oculto(s))` : ""}</label>
           <span className="g-muted" style={{ fontSize: 11 }}>{visiveis.length} serviço(s) · clique na seta de uma linha para editar data, categoria, MD, RC e observação</span>
         </div>
         <div className="g-table-wrap">
@@ -6691,7 +6700,19 @@ const mergeBy = (prev, rows, keyFn) => {
   return { list: [...map.values()], add, upd };
 };
 
-const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, setExportXlsxFn, active }) => {
+/* descrição do failure: a planilha do TM Master não traz descrição, então é preenchida aqui (guarda ao sair do campo) */
+const FrDescricao = ({ no, valor, salvar }) => {
+  const [v, setV] = useState(valor);
+  const ref = useRef(valor); ref.current = v;
+  useEffect(() => () => { if (ref.current !== valor) salvar(ref.current); }, []);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div className="g-muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>Descrição do failure (preencha aqui — salva ao sair do campo)</div>
+      <textarea value={v} onChange={(e) => setV(e.target.value)} onBlur={() => { if (v !== valor) salvar(v); }} rows={4} placeholder="Descreva o que aconteceu, sintomas, causa provável, o que foi feito…" style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: 8, borderRadius: 6, border: "1px solid var(--border, #ccc)", resize: "vertical", fontFamily: "inherit" }} />
+    </div>
+  );
+};
+const FailureReportsView = ({ tmFailures, setTmFailures, handleImportFailures, setReportFn, setExportXlsxFn, active }) => {
   const fileRef = useRef(null);
   const hoje = todayISO();
   const F = tmFailures || FR_EMPTY;
@@ -6725,7 +6746,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
     (f.status === "Todos" || r.status === f.status) && (f.dept === "Todos" || r.department === f.dept)
     && (f.crit === "Todas" || r.criticality === f.crit) && (f.mes.length === 0 || f.mes.includes(frMesKey(r.failureDate)))
     && (!f.pend || pendencias(r) > 0)
-    && (!f.busca || norm(`${r.no} ${r.name} ${r.compCode} ${r.compName} ${r.cause} ${r.mechanism} ${r.createdBy}`).includes(norm(f.busca)))
+    && (!f.busca || norm(`${r.no} ${r.name} ${(F.desc || {})[r.no] || ""} ${r.compCode} ${r.compName} ${r.cause} ${r.mechanism} ${r.createdBy}`).includes(norm(f.busca)))
   ).sort((a, b) => (b.failureDate || "").localeCompare(a.failureDate || "") || b.no.localeCompare(a.no)), [F, f, links]);
 
   const nos = new Set(filtered.map((r) => r.no));
@@ -6798,7 +6819,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
   /* exportações: seguem os filtros e trazem o Failure Report ligado em cada aba */
   const pack = () => {
     const resumo = filtered.map((r) => { const l = L(r.no); return {
-      "Failure Report No.": r.no, Nome: r.name, "Data da falha": r.failureDate ? fmtDataCompleta(r.failureDate) : r.failureRaw, Status: r.status, Departamento: r.department,
+      "Failure Report No.": r.no, Nome: r.name, "Descrição do failure": (F.desc || {})[r.no] || "", "Data da falha": r.failureDate ? fmtDataCompleta(r.failureDate) : r.failureRaw, Status: r.status, Departamento: r.department,
       "Código do componente": r.compCode, Componente: r.compName, Criticidade: r.criticality, Sistema: r.system, Mecanismo: r.mechanism, Causa: r.cause, Efeito: r.effect,
       "Actions (total)": l.actions.length, "Actions abertas": l.actions.filter((a) => !frActionConcluida(a)).length, "Jobs abertos": l.jobs.length,
       "Job History": l.jobHistory.length, Orders: l.orders.length, "Orders em aberto": l.orders.filter((o) => !frOrderEncerrada(o)).length }; });
@@ -6870,6 +6891,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
     const sec = (titulo, n, corpo) => (<div style={{ marginBottom: 14 }}><div style={{ fontSize: 12, fontWeight: 700, margin: "0 0 6px", color: "var(--text)" }}>{titulo} <span className="g-muted">({n})</span></div>{corpo}</div>);
     return (
       <div style={{ padding: "14px 16px", background: "var(--panel-raised, rgba(0,0,0,0.02))", borderLeft: "3px solid var(--accent, #3B82F6)" }}>
+        <FrDescricao no={r.no} valor={(tmFailures.desc || {})[r.no] || ""} salvar={(v) => setTmFailures && setTmFailures((prev) => ({ ...prev, desc: { ...((prev && prev.desc) || {}), [r.no]: v } }))} />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "8px 18px", marginBottom: 14, fontSize: 12.5 }}>
           {[["Data da falha", r.failureDate ? fmtDataCompleta(r.failureDate) : "—"], ["Componente", `${r.compCode} ${r.compName}`.trim() || "—"], ["Descoberto durante", r.discoveredDuring], ["Atividade", r.activity],
             ["Mecanismo", r.mechanism], ["Causa", r.cause], ["Efeito", r.effect], ["Severidade / Risco", [r.severity, r.risk].filter(Boolean).join(" / ")], ["Criado por", r.createdBy], ["Fechado em", r.closedDate ? fmtDataCompleta(r.closedDate) : ""]].map(([k, v]) => (
@@ -7032,7 +7054,7 @@ const FailureReportsView = ({ tmFailures, handleImportFailures, setReportFn, set
                         <td style={{ textAlign: "right" }}>{l.jobs.length}</td><td style={{ textAlign: "right" }}>{l.jobHistory.length}</td>
                         <td style={{ textAlign: "right" }}>{oa > 0 ? <b style={{ color: "var(--warn)" }}>{oa}/{l.orders.length}</b> : `${l.orders.length}`}</td>
                       </tr>
-                      {open.has(r.no) && <tr><td colSpan={11} style={{ padding: 0 }}><Detalhe r={r} /></td></tr>}
+                      {open.has(r.no) && <tr><td colSpan={11} style={{ padding: 0 }}>{Detalhe({ r })}</td></tr>}
                       </React.Fragment>
                     ); })}
                 </tbody>
@@ -7810,7 +7832,7 @@ const BordoRegistroView = ({ tmBordo, setTmBordo, setBordoDeleted, tmDue, tmHist
   );
 };
 
-function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImportFailures, tmBordo, setTmBordo, setBordoDeleted, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
+function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, setTmFailures, handleImportFailures, tmBordo, setTmBordo, setBordoDeleted, regObrig, setRegObrig, currentUser, setReportFn, setExportXlsxFn, handleImportTmDue, handleImportTmHistory, tmSubTab, setTmSubTab, updTmDue, onToggleAddToPlanning }) {
   const dueFileRef = useRef(null);
   const historyFileRef = useRef(null);
 
@@ -8494,7 +8516,7 @@ function TmMasterView({ tmDue, tmHistory, tmDueSnapshots, tmFailures, handleImpo
 
       {tmSubTab === "bordo" && <BordoRegistroView tmBordo={tmBordo || []} setTmBordo={setTmBordo} setBordoDeleted={setBordoDeleted} regObrig={regObrig} setRegObrig={setRegObrig} currentUser={currentUser} tmDue={tmDue} tmHistory={tmHistory} tmFailures={tmFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
-      {tmSubTab === "falhas" && <FailureReportsView tmFailures={tmFailures} handleImportFailures={handleImportFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
+      {tmSubTab === "falhas" && <FailureReportsView tmFailures={tmFailures} setTmFailures={setTmFailures} handleImportFailures={handleImportFailures} setReportFn={setReportFn} setExportXlsxFn={setExportXlsxFn} active />}
 
       {tmSubTab === "due" && (
         <>
@@ -9172,7 +9194,7 @@ function FiltroMeses({ meses, sel, onChange, label }) {
 /* campo de texto que cresce em altura e quebra linha, para mostrar tudo que está escrito */
 function TextoAuto({ value, onChange, style, placeholder }) {
   const ref = React.useRef(null);
-  const ajusta = () => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; } };
+  const ajusta = () => { const el = ref.current; if (el) agendarAjusteTA(el); };
   React.useLayoutEffect(ajusta, [value]);
   return <textarea ref={ref} rows={1} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...style, resize: "none", overflow: "hidden", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.35, fontFamily: "inherit", display: "block" }} />;
 }
